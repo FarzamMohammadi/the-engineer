@@ -1,13 +1,16 @@
 import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parse as yamlParse } from "yaml";
 
+import { ALL_PLUGIN_DOCS } from "../../../../src/cli/bundled/plugin-docs.js";
 import { DAEMON_TEMPLATE } from "../../../../src/cli/bundled/templates.js";
 import {
   ADAPTER_TYPE_CONFIGS,
+  PEOPLE_PLACEHOLDERS,
   activateTelemetryBlock,
   detectEnvironment,
   generateConfigFiles,
@@ -179,8 +182,8 @@ describe("generateConfigFiles", () => {
   it("generates plugin documentation files", () => {
     const files = generateConfigFiles([], {});
     const docs = files.filter((f) => f.relativePath.startsWith("docs/plugins/"));
-    // 4 adapter READMEs + 7 plugin docs = 11
-    expect(docs.length).toBe(11);
+    // Every bundled doc is written — ALL_PLUGIN_DOCS is the single source of truth (no magic count).
+    expect(docs.map((f) => f.relativePath).sort()).toEqual(ALL_PLUGIN_DOCS.map((d) => d.relativePath).sort());
   });
 
   it("generates plugin docs for every adapter type", () => {
@@ -473,6 +476,22 @@ describe("generateConfigFiles with people", () => {
   });
 });
 
+// ── PEOPLE_PLACEHOLDERS vs shipped seed ──────────────────────────────────────
+
+describe("PEOPLE_PLACEHOLDERS", () => {
+  it("flags every placeholder the shipped seed people.yaml ships", () => {
+    // The seed-copy path warns when a copied people.yaml still holds a placeholder,
+    // so the detector must recognize the exact values the seed ships (including the
+    // telegram handle "your_telegram_username"). This guards against drift between them.
+    const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+    const seedPeople = readFileSync(join(repoRoot, "seed-example/configs/people.yaml"), "utf8");
+    const matched = PEOPLE_PLACEHOLDERS.filter((placeholder) => seedPeople.includes(placeholder));
+    expect(matched).toContain("your_telegram_username");
+    expect(matched).toContain("your-github-username");
+    expect(matched).toContain("Your Name");
+  });
+});
+
 // ── writePluginDocs ─────────────────────────────────────────────────────────
 
 describe("writePluginDocs", () => {
@@ -538,8 +557,7 @@ describe("doc path conventions", () => {
     );
   });
 
-  it("every builtin plugin has a matching doc in ALL_PLUGIN_DOCS", async () => {
-    const { ALL_PLUGIN_DOCS } = await import("../../../../src/cli/bundled/plugin-docs.js");
+  it("every builtin plugin has a matching doc in ALL_PLUGIN_DOCS", () => {
     for (const plugin of BUILTIN_PLUGINS) {
       const type = plugin.manifest.type.replace(/_/g, "-");
       const expectedPath = `docs/plugins/${type}/${plugin.manifest.id}.md`;

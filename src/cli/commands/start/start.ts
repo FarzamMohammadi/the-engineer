@@ -337,6 +337,13 @@ async function handleFirstRunSetup(engineerHome: string, options: StartOptions):
     dryRun: options.dryRun,
   });
   if (!completed) {
+    // In seed mode, `false` means setup was INCOMPLETE (the seed path already printed
+    // the real reason, e.g. missing required secrets) — not a human choosing to cancel.
+    // Return non-zero so an agent gating on exit status doesn't see a false success.
+    if (options.seedPath) {
+      out.log("Setup did not complete — resolve the items above and re-run.");
+      return 1;
+    }
     out.log("Setup cancelled. Run 'engineer start' to try again.");
     return 0;
   }

@@ -13,6 +13,17 @@ export const AdapterTypes = AdapterTypeSchema.enum;
 export const PluginRequirementSchema = z.object({
   type: z.enum(["binary", "env"]),
   name: z.string(),
+  // ── Secret-acquisition metadata (optional) ──
+  // Lead the human to where a required secret is obtained. These fields are STATIC
+  // PUBLIC content — a public acquisition URL, scope names, and one concise how-to
+  // line — and MUST NEVER hold a secret value: they flow unredacted into
+  // `doctor --json` remedies and logs. Trust Through Restraint forbids any token,
+  // key, or credential here.
+  // `.url()` parses the link at the boundary so a malformed acquire_url fails loudly
+  // at manifest parse time rather than reaching the human as a dead pointer.
+  acquire_url: z.string().url().optional(),
+  scopes: z.array(z.string()).optional(),
+  instructions: z.string().optional(),
 });
 export type PluginRequirement = z.output<typeof PluginRequirementSchema>;
 

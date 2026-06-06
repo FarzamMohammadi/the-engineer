@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
 import { loadEnvFile, writeEnvFile } from "../../config/env.js";
-import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { BUILTIN_PLUGINS, describeSecretAcquisition } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { ALL_PLUGIN_DOCS } from "../bundled/plugin-docs.js";
 import { ALL_EXAMPLE_TEMPLATES, ALL_TEMPLATES } from "../bundled/templates.js";
@@ -202,7 +202,7 @@ async function showOperatingSystemGate(isInteractive: boolean): Promise<boolean>
 // ── Non-Interactive Setup ────────────────────────────────────────────────────
 
 /** Known placeholder values that indicate people.yaml was never configured. */
-const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"] as const;
+export const PEOPLE_PLACEHOLDERS = ["your_telegram_username", "your-github-username", "Your Name"] as const;
 
 function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: boolean): boolean {
   const out = getOutput();
@@ -242,7 +242,8 @@ function runNonInteractiveSetup(engineerHome: string, seedPath: string, dryRun: 
   if (missingVars.length > 0) {
     out.error("Seed incomplete — missing required environment variables:");
     for (const v of missingVars) {
-      out.log(`    ${v}`);
+      const acquisition = describeSecretAcquisition(v);
+      out.log(acquisition ? `    ${v} — obtain it: ${acquisition}` : `    ${v}`);
     }
     out.log("  Add them to ~/.engineer/.env or set them in your environment, then restart.");
     return false;

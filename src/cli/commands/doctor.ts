@@ -8,7 +8,7 @@ import type { ConfigBundle } from "../../config/loader.js";
 import { MONTHLY_REPLAY_FLOOR_DAYS, inspectRetentionConfig } from "../../core/data-lifecycle/index.js";
 import type { PeopleDirectoryWarning } from "../../core/people-directory/index.js";
 import { inspectPeopleDirectory } from "../../core/people-directory/index.js";
-import { BUILTIN_PLUGINS } from "../../plugins/builtin.js";
+import { BUILTIN_PLUGINS, describeSecretAcquisition } from "../../plugins/builtin.js";
 import { AdapterTypes } from "../../schemas/adapters.js";
 import { TimeoutStageActions } from "../../schemas/config.js";
 import {
@@ -300,7 +300,7 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
       label: varName,
       status: "fail",
       message: `Environment variable ${varName} is not set`,
-      remedy: `Add ${varName}=<value> to ~/.engineer/.env, or export ${varName}=<value>`,
+      remedy: secretRemedy(varName),
     });
   }
 
@@ -313,6 +313,18 @@ export function checkRequiredSecrets(configDir: string): DoctorCategory {
   }
 
   return { category: "Required Secrets", checks };
+}
+
+/**
+ * Build the remedy for a missing required secret: the generic "add it to .env" line,
+ * plus the secret's acquisition steps when a plugin manifest declares them. When no
+ * acquisition metadata exists (every secret until populated, every third-party plugin),
+ * the generic remedy stands alone — never an `undefined` tail.
+ */
+function secretRemedy(varName: string): string {
+  const generic = `Add ${varName}=<value> to ~/.engineer/.env, or export ${varName}=<value>`;
+  const acquisition = describeSecretAcquisition(varName);
+  return acquisition ? `${generic}. Obtain it: ${acquisition}` : generic;
 }
 
 function scanDirForEnvVars(dir: string, pattern: RegExp, missing: Set<string>, found: Set<string>): void {

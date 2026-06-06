@@ -1,5 +1,5 @@
 import type { BaseAdapter } from "../adapters/base.js";
-import type { PluginManifest } from "../schemas/adapters.js";
+import type { PluginManifest, PluginRequirement } from "../schemas/adapters.js";
 import { AdapterTypes, PluginManifestSchema } from "../schemas/adapters.js";
 import { ClaudeCodeAgentPlugin } from "./agent/claude-code-agent/claude-code-agent.js";
 import { GeminiCliAgentPlugin } from "./agent/gemini-cli-agent/gemini-cli-agent.js";
@@ -24,6 +24,28 @@ export interface BuiltinPlugin {
   readonly promptForConfig?: () => Promise<Record<string, unknown>>;
 }
 
+// ── Secret-Acquisition Metadata ───────────────────────────────────────────────
+// Single source of truth for how the human obtains each shipped secret. These are
+// STATIC PUBLIC pointers (URLs, scope names, a one-line how-to) — never a secret
+// value (Trust Through Restraint). GITHUB_TOKEN is declared by three GitHub
+// manifests; defining it once here keeps their acquisition text from ever diverging
+// and makes the var-name → metadata lookup deterministic.
+
+const GITHUB_TOKEN_REQUIREMENT = {
+  type: "env",
+  name: "GITHUB_TOKEN",
+  acquire_url: "https://github.com/settings/tokens",
+  scopes: ["repo"],
+  instructions: "Create a GitHub personal access token",
+} as const;
+
+const TELEGRAM_BOT_TOKEN_REQUIREMENT = {
+  type: "env",
+  name: "TELEGRAM_BOT_TOKEN",
+  acquire_url: "https://t.me/BotFather",
+  instructions: "Message @BotFather on Telegram, send /newbot, and copy the bot token",
+} as const;
+
 // ── Manifests ───────────────────────────────────────────────────────────────
 
 const manifests = [
@@ -34,7 +56,7 @@ const manifests = [
     name: "GitHub Trigger",
     description: "Polls GitHub for assigned issues",
     critical: true,
-    requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
+    requirements: [GITHUB_TOKEN_REQUIREMENT],
     combined_with: ["github-comm", "github-hosting"],
     entry: "builtin",
     poll_interval_ms: 30_000,
@@ -84,7 +106,7 @@ const manifests = [
     name: "GitHub Communication",
     description: "Posts comments and manages labels on GitHub issues/PRs",
     critical: false,
-    requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
+    requirements: [GITHUB_TOKEN_REQUIREMENT],
     combined_with: ["github-trigger", "github-hosting"],
     entry: "builtin",
     adapter_meta: { capabilities: ["send", "sync", "ticket_management"], channel: "github" },
@@ -97,7 +119,7 @@ const manifests = [
     name: "Telegram Communication",
     description: "Sends notifications and polls for replies via Telegram bot",
     critical: false,
-    requirements: [{ type: "env", name: "TELEGRAM_BOT_TOKEN" }],
+    requirements: [TELEGRAM_BOT_TOKEN_REQUIREMENT],
     entry: "builtin",
     adapter_meta: { capabilities: ["send", "receive"], channel: "telegram" },
     contributes: { events: ["comm.message_sent"] },
@@ -112,7 +134,7 @@ const manifests = [
     name: "GitHub Hosting",
     description: "PR lifecycle management via GitHub API",
     critical: true,
-    requirements: [{ type: "env", name: "GITHUB_TOKEN" }],
+    requirements: [GITHUB_TOKEN_REQUIREMENT],
     combined_with: ["github-trigger", "github-comm"],
     entry: "builtin",
     adapter_meta: { action_classes: ["git-remote", "merge"] },
@@ -164,3 +186,70 @@ export const BUILTIN_PLUGINS: BuiltinPlugin[] = validatedManifests.map((manifest
     ...(promptFn ? { promptForConfig: promptFn } : {}),
   };
 });
+
+// ── Secret-Acquisition Lookup ─────────────────────────────────────────────────
+
+/** Acquisition metadata for a required secret — the static public pointers that lead the human to obtain it. */
+export interface SecretAcquisition {
+  readonly acquireUrl?: string;
+  readonly scopes?: readonly string[];
+  readonly instructions?: string;
+}
+
+/**
+ * Find how the human obtains the env var named `varName` by scanning every built-in
+ * plugin's `env` requirements (plugin-opaque — never branches on a plugin id). First
+ * match by name wins; because each shipped secret's acquisition text is single-sourced,
+ * the result is deterministic regardless of how many plugins declare the same var.
+ * Returns null when no `env` requirement carries any acquisition metadata, so callers
+ * degrade gracefully to a generic remedy instead of printing `undefined`.
+ */
+export function findSecretAcquisition(varName: string): SecretAcquisition | null {
+  for (const { manifest } of BUILTIN_PLUGINS) {
+    for (const req of manifest.requirements) {
+      if (req.type === "env" && req.name === varName) {
+        const acquisition = toSecretAcquisition(req);
+        if (acquisition) {
+          return acquisition;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/** Project a requirement's acquisition fields into a SecretAcquisition, or null when it declares none. */
+function toSecretAcquisition(req: PluginRequirement): SecretAcquisition | null {
+  if (req.acquire_url === undefined && req.scopes === undefined && req.instructions === undefined) {
+    return null;
+  }
+  return {
+    ...(req.acquire_url !== undefined ? { acquireUrl: req.acquire_url } : {}),
+    ...(req.scopes !== undefined ? { scopes: req.scopes } : {}),
+    ...(req.instructions !== undefined ? { instructions: req.instructions } : {}),
+  };
+}
+
+/**
+ * Render an acquisition into one human-and-agent-readable line, or null when no
+ * acquisition metadata exists for `varName`. Single-sourced so doctor remedies and
+ * setup's missing-secret report read identically; callers append it after their own
+ * generic remedy when present and keep the generic remedy alone when it is null.
+ */
+export function describeSecretAcquisition(varName: string): string | null {
+  const acquisition = findSecretAcquisition(varName);
+  if (!acquisition) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (acquisition.instructions) {
+    parts.push(acquisition.instructions);
+  }
+  if (acquisition.scopes && acquisition.scopes.length > 0) {
+    parts.push(`scopes: ${acquisition.scopes.join(", ")}`);
+  }
+  if (acquisition.acquireUrl) {
+    parts.push(acquisition.acquireUrl);
+  }
+  return parts.length > 0 ? parts.join(" — ") : null;
+}

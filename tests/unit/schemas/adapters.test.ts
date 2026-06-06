@@ -35,6 +35,7 @@ import {
   PluginHealthStateSchema,
   PluginHealthStates,
   PluginManifestSchema,
+  PluginRequirementSchema,
   ReconciliationResultSchema,
   RegistrationResultSchema,
   ReviewStatusSchema,
@@ -61,6 +62,33 @@ describe("AdapterTypeSchema", () => {
 
   it("rejects invalid values", () => {
     expect(() => AdapterTypeSchema.parse("webhook")).toThrow();
+  });
+});
+
+describe("PluginRequirementSchema", () => {
+  it("parses an env requirement with no acquisition metadata", () => {
+    const req = PluginRequirementSchema.parse({ type: "env", name: "GITHUB_TOKEN" });
+    expect(req.acquire_url).toBeUndefined();
+    expect(req.scopes).toBeUndefined();
+    expect(req.instructions).toBeUndefined();
+  });
+
+  it("parses acquisition metadata when present", () => {
+    const req = PluginRequirementSchema.parse({
+      type: "env",
+      name: "GITHUB_TOKEN",
+      acquire_url: "https://github.com/settings/tokens",
+      scopes: ["repo"],
+      instructions: "Create a token with the repo scope",
+    });
+    expect(req.acquire_url).toBe("https://github.com/settings/tokens");
+    expect(req.scopes).toEqual(["repo"]);
+  });
+
+  it("rejects a malformed acquire_url at the boundary", () => {
+    expect(() =>
+      PluginRequirementSchema.parse({ type: "env", name: "GITHUB_TOKEN", acquire_url: "not-a-url" }),
+    ).toThrow();
   });
 });
 

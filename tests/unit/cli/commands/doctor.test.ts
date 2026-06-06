@@ -144,6 +144,36 @@ describe("checkRequiredSecrets", () => {
     const homeCheck = result.checks.find((c) => c.label === "HOME");
     expect(homeCheck?.status).toBe("pass");
   });
+
+  it("enriches a missing GITHUB_TOKEN remedy with acquisition instructions and URL", () => {
+    const savedToken = process.env["GITHUB_TOKEN"];
+    delete process.env["GITHUB_TOKEN"];
+    try {
+      const configDir = join(tempDir, "config");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "github.yaml"), 'token: "${GITHUB_TOKEN}"', "utf8");
+      const result = checkRequiredSecrets(configDir);
+      const tokenCheck = result.checks.find((c) => c.label === "GITHUB_TOKEN");
+      expect(tokenCheck?.status).toBe("fail");
+      expect(tokenCheck?.remedy).toContain("scopes: repo");
+      expect(tokenCheck?.remedy).toContain("https://github.com/settings/tokens");
+    } finally {
+      if (savedToken !== undefined) {
+        process.env["GITHUB_TOKEN"] = savedToken;
+      }
+    }
+  });
+
+  it("degrades to the generic remedy for a missing var with no acquisition metadata", () => {
+    const configDir = join(tempDir, "config");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "test.yaml"), 'token: "${NONEXISTENT_SECRET_12345}"', "utf8");
+    const result = checkRequiredSecrets(configDir);
+    const failure = result.checks.find((c) => c.label === "NONEXISTENT_SECRET_12345");
+    expect(failure?.remedy).toContain("Add NONEXISTENT_SECRET_12345=<value>");
+    expect(failure?.remedy).not.toContain("undefined");
+    expect(failure?.remedy).not.toContain("Obtain it:");
+  });
 });
 
 // ── Category 5: Database ──────────────────────────────────────────────────
@@ -590,6 +620,58 @@ describe("runAllChecks", () => {
     const names = runAllChecks(tempDir, makeSafeBundle()).map((c) => c.category);
     expect(names).toContain("People Directory");
     expect(names).toContain("Risky Config Warnings");
+  });
+});
+
+// ── Agent-facing doctor --json contract ──────────────────────────────────────
+
+describe("doctor --json shape", () => {
+  // `engineer doctor --json` emits `out.data({ checks: categories, exitCode: code })`.
+  // This freezes the agent-parseable contract: agents read this JSON to decide whether the
+  // daemon is ready, so its shape must not silently drift. We assert structure and field
+  // types rather than a literal blob (the live category set is environment-dependent).
+  //
+  // The same contract must hold whether the system is healthy or broken — an agent runs
+  // `doctor` precisely when something is wrong. The action try/catches a failed config load
+  // and leaves the bundle undefined, suppressing the human warning in JSON mode so stdout
+  // stays pure JSON; so a missing/undefined bundle (config absent, unreadable, or corrupt
+  // YAML all collapse here) and a missing home must still serialize, never throw.
+  it.each([
+    { scenario: "a healthy system", run: () => runAllChecks(tempDir, makeSafeBundle()) },
+    { scenario: "a failed config load (no bundle)", run: () => runAllChecks(tempDir, undefined) },
+    { scenario: "a missing engineer home", run: () => runAllChecks(join(tempDir, "does-not-exist")) },
+  ])("serializes a valid { checks, exitCode } payload for $scenario", ({ run }) => {
+    const categories = run();
+    const payload = { checks: categories, exitCode: computeExitCode(categories) };
+
+    // Round-trip through JSON exactly as `out.data` would, then assert the contract.
+    const parsed = JSON.parse(JSON.stringify(payload)) as {
+      checks: Array<{
+        category: string;
+        checks: Array<{ label: string; status: string; message: string; remedy?: string }>;
+      }>;
+      exitCode: number;
+    };
+
+    expect(typeof parsed.exitCode).toBe("number");
+    expect(Array.isArray(parsed.checks)).toBe(true);
+    expect(parsed.checks.length).toBeGreaterThan(0);
+
+    for (const category of parsed.checks) {
+      expect(typeof category.category).toBe("string");
+      expect(Array.isArray(category.checks)).toBe(true);
+      for (const check of category.checks) {
+        expect(typeof check.label).toBe("string");
+        expect(["pass", "fail", "warn"]).toContain(check.status);
+        expect(typeof check.message).toBe("string");
+        if (check.remedy !== undefined) {
+          expect(typeof check.remedy).toBe("string");
+        }
+      }
+    }
+
+    // The agent-facing payload has exactly these two top-level keys — nothing leaks in.
+    expect(Object.keys(parsed).sort()).toEqual(["checks", "exitCode"]);
   });
 });
 

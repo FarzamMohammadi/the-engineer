@@ -185,8 +185,4 @@ A seed directory holds saved configuration (`configs/` and `plugins/` YAML) so s
 
 ## License
 
-[MIT](LICENSE) © 2026 Farzam Mohammadi
-
----
-
-Built by [Farzam Mohammadi](https://github.com/FarzamMohammadi).
+[MIT](LICENSE)

@@ -45,6 +45,7 @@
     "build:dashboard": "vite build --config src/dashboard/client/vite.config.ts",
     "dev": "tsx src/index.ts",
     "dev:dashboard": "vite --config src/dashboard/client/vite.config.ts",
+    "docs:bundle": "tsx scripts/gen-bundled-docs.ts && biome format --write src/cli/bundled/plugin-docs.ts",
     "lint": "biome check . && tsc --noEmit && tsc --noEmit -p tsconfig.test.json && knip && madge --circular --extensions ts src/",
     "lint:fix": "biome check --write .",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",

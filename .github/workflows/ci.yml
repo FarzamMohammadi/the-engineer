@@ -18,6 +18,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - name: Verify bundled docs are in sync with docs/plugins/
+        run: |
+          pnpm run docs:bundle
+          git diff --exit-code src/cli/bundled/plugin-docs.ts || {
+            echo "::error::Bundled plugin docs are stale. Run 'pnpm run docs:bundle' and commit the result."
+            exit 1
+          }
 
   test:
     runs-on: ubuntu-latest

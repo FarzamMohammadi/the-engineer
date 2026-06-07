@@ -81,6 +81,20 @@ Biome uses the `all` preset with specific exceptions documented in `biome.json`.
 - `noExplicitAny`: error
 - Maximum TypeScript strictness (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)
 
+## Documentation Site
+
+The docs in [`docs/`](docs/) double as a [VitePress](https://vitepress.dev/) site published to GitHub Pages. The site reads `docs/` directly, so the docs and the site are one source of truth.
+
+```bash
+pnpm docs:dev       # Local dev server with hot reload
+pnpm docs:build     # Build the static site (docs/.vitepress/dist)
+pnpm docs:preview   # Preview the production build
+```
+
+It deploys automatically on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml). One-time repo setup: **Settings → Pages → Source: GitHub Actions**. The internal build journal under `docs/archived/` is excluded from the site and linked out instead.
+
+> This is separate from `pnpm run docs:bundle`, which regenerates the plugin docs the CLI ships (see the [Pull Request Process](#pull-request-process) below).
+
 ## Commit Conventions
 
 Every commit has a **title** and a **description**:

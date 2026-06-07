@@ -166,6 +166,18 @@ npx tsx src/index.ts  # Run CLI in dev mode
 
 CI runs lint, typecheck, and tests on every push and pull request. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
+### Documentation site
+
+The docs in [`docs/`](docs/) are also published as a [VitePress](https://vitepress.dev/) site on GitHub Pages — it reads `docs/` directly, so there's one source of truth and no duplication.
+
+```bash
+pnpm docs:dev       # Run the docs site locally with hot reload
+pnpm docs:build     # Build the static site to docs/.vitepress/dist
+pnpm docs:preview   # Preview the production build locally
+```
+
+The site deploys automatically on every push to `main` via [`.github/workflows/docs.yml`](.github/workflows/docs.yml). One-time repo setup: **Settings → Pages → Source: GitHub Actions**. (This is separate from `pnpm run docs:bundle`, which regenerates the plugin docs the CLI ships.)
+
 ### Resetting
 
 For a clean rebuild:

@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md): why we're doing this, what done looks like
 - [approach.md](approach.md): strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current slice: **Slice 13 (Dashboard Revisit + Final Polish) — NOT STARTED.** Slices 11 (Background Services) and 12 (Agent Readiness) are merged to `main`; durable design records `slices/11-background-services.md` and `slices/12-agent-readiness.md`.
+- Current: **Phase 9 Finale — v1.0.0 Release (docs site + release polish; npm deferred; demo + tag LAST).** Reshaped from the original Slice 14 (npm Publish Readiness) + the remaining Slice 13 polish. Requirements captured in `.claude/temp/requirements-gathering/v1-release-finale.md`. Slices 11–12 merged to `main`; durable records `slices/11-background-services.md`, `slices/12-agent-readiness.md`.
 
 ## How This File Works
 
@@ -21,9 +21,20 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Slice 13 (Dashboard Revisit + Final Polish) — NOT STARTED.** The last slice of Phase 9: a docs site (VitePress on GitHub Pages) plus the `llms.txt` coordination deferred here from Slice 12, demo mode, license, and the design-history archive. The new-shape dashboard UI was already pulled forward and shipped via the Dashboard Sync tangent, so only the non-sync polish remains. Begin with RRPIR per `approach.md`.
+**Phase 9 Finale — v1.0.0 Release. RRPIR in progress (requirements DONE this session).** The last push of Phase 9: ship a polished, working **v1.0.0 as a GitHub release** (not npm). Reshaped from the original Slice 14 (npm Publish Readiness) + the remaining Slice 13 polish through a long requirements session. Full requirements: `.claude/temp/requirements-gathering/v1-release-finale.md`.
 
-**Just landed (Sessions 65–66):** Slices 11 (Background Services) and 12 (Agent Readiness) are both merged to `main`. Slice 12 was integrated in Session 66 — rebased onto the landed Slice 11 and the `0.7.0-preview` version bump, consolidated from eleven build commits into six cohesive freshly-timestamped commits, blind-validated, and merged by clean fast-forward with the integration verified non-overriding (main's version bump, README footer, and plugin-health-at-boot work all preserved). `main` is at `0.7.0-preview`.
+**Scope — do everything *except* the tag + the demo video:**
+- **Docs site** — VitePress on GitHub Pages, presenting the existing `docs/` + a hero landing page; `docs/` as the VitePress root, internal planning (`docs/archived/implementation-docs/`) excluded, Build Journal linked; GitHub Action deploy; no custom domain; theme via live probes during build.
+- **Release polish** — `package.json` → `1.0.0`; README posture "preview / interfaces will change" → "v1.0.0, young/working/feedback-welcome"; reconcile version+status references repo-wide; npm-deferral entry in `docs/future-considerations.md`; CI green.
+- **Hero placeholder** — strong static hero now (never "coming soon"), structured for a later GIF swap.
+
+**Deferred to the very end (separate, when ready — this or another session):** produce the **demo video → GIF**, embed it as the hero, **then** cut the `v1.0.0` tag/GitHub release. "All actual work done first; tag + video last."
+
+**Cut (deliberate, recorded):** npm publish (→ `future-considerations`), npm-publish mechanics, importable SDK/`exports` (CLI-only), demo-as-code (`pnpm demo` / `demo/`), design-history archive (covered by `docs/archived/`), `llms.txt`.
+
+**Working model:** R/R/P inline (owner + agent); build orchestrated via workflow subagents with the agent as orchestrator + independent verifier + gap-fixer; owner = co-owner + final call.
+
+**Just landed (Sessions 65–66):** Slices 11 (Background Services) and 12 (Agent Readiness) are both merged to `main`. Slice 12 was integrated in Session 66 — rebased onto the landed Slice 11 and the `0.7.0-preview` version bump, consolidated from eleven build commits into six cohesive freshly-timestamped commits, blind-validated, and merged by clean fast-forward with the integration verified non-overriding (main's version bump, README footer, and plugin-health-at-boot work all preserved). `main` is now at `0.8.0-preview` (later bump); the finale takes it to `1.0.0`.
 
 **Pre-v1 run note (still stands):** delete `~/.engineer/data/engineer.db` before running (or `rm -rf ~/.engineer` for a full reset) — recent slices changed the schema + config, so the DB wipe is the migration.
 

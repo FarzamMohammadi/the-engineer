@@ -4,6 +4,10 @@ node_modules
 # Build output
 dist/
 
+# Docs site (VitePress) build output + cache
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Testing
 coverage/
 

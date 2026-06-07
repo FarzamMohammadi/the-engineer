@@ -150,6 +150,16 @@
           }
         }
       }
+    },
+    {
+      "include": ["docs/.vitepress/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
     }
   ],
   "vcs": {

@@ -272,4 +272,4 @@ The bar: any user with any coding agent CLI can set up, extend, and contribute t
 
 ---
 
-*Ready to contribute? See [`CONTRIBUTING.md`](../CONTRIBUTING.md) for how to start.*
+*Ready to contribute? See [`CONTRIBUTING.md`](https://github.com/FarzamMohammadi/the-engineer/blob/main/CONTRIBUTING.md) for how to start.*

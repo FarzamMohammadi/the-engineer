@@ -4,7 +4,7 @@ This is the one methodology for building a plugin behind any of The Engineer's f
 
 You can run this yourself or hand it to a coding agent — every step is concrete and verifiable. The worked example throughout is a hypothetical **Linear** trigger plugin (Linear is an issue tracker), but every step applies unchanged to a communication, git-hosting, or agent plugin; the per-adapter contract page fills in the specifics.
 
-**Prerequisites:** a working clone with `engineer` built and linked (the [README → Get Running](../../../../README.md#get-running) section), and the [Contributing guide](../../../../CONTRIBUTING.md) open for the gates and project structure.
+**Prerequisites:** a working clone with `engineer` built and linked (the [README → Get Running](https://github.com/FarzamMohammadi/the-engineer/blob/main/README.md#get-running) section), and the [Contributing guide](https://github.com/FarzamMohammadi/the-engineer/blob/main/CONTRIBUTING.md) open for the gates and project structure.
 
 The four adapter contract pages — each step below jumps into the one that matches your tool:
 
@@ -108,7 +108,7 @@ api_key: "${LINEAR_API_KEY}"
 team_id: "your-team-id"
 ```
 
-For a reusable setup, add the same file under a seed directory (copy the shipped [`seed-example/`](../../../../seed-example/) layout, drop your YAML into `plugins/`, fill real values) so `engineer start --seed <dir>` configures it non-interactively. The [configuration guide](../../../configuration/README.md) covers `${VAR}` resolution and config-directory precedence.
+For a reusable setup, add the same file under a seed directory (copy the shipped [`seed-example/`](https://github.com/FarzamMohammadi/the-engineer/tree/main/seed-example) layout, drop your YAML into `plugins/`, fill real values) so `engineer start --seed <dir>` configures it non-interactively. The [configuration guide](../../../configuration/README.md) covers `${VAR}` resolution and config-directory precedence.
 
 ## Step 8 — Verify
 
@@ -133,7 +133,7 @@ Your plugin loads on startup (you'll see it in the logs and on the dashboard). F
 
 ## Step 9 — Contribute it back
 
-A working plugin on your machine is useful to you. Contributed upstream, it's useful to everyone — the next person who uses your tool finds it already supported, no authoring needed. This is the natural close of the methodology: you built it, you verified it, now share it. Open a first-party plugin PR per the [Contributing guide](../../../../CONTRIBUTING.md).
+A working plugin on your machine is useful to you. Contributed upstream, it's useful to everyone — the next person who uses your tool finds it already supported, no authoring needed. This is the natural close of the methodology: you built it, you verified it, now share it. Open a first-party plugin PR per the [Contributing guide](https://github.com/FarzamMohammadi/the-engineer/blob/main/CONTRIBUTING.md).
 
 A contribution-ready plugin PR contains exactly what the steps above already produced, plus a per-plugin doc and green gates:
 
@@ -143,7 +143,7 @@ A contribution-ready plugin PR contains exactly what the steps above already pro
 4. **A per-plugin doc** — add a page under `docs/plugins/<type>/<your-plugin>.md` modeled on the existing per-plugin pages (for example `docs/plugins/trigger/github-trigger.md`), and add your plugin to the **Built-in Plugins** table in that adapter's `README.md`. Keep both accurate to the code — they are derived from it, not from memory, and they must not duplicate the contract that already lives in the README.
 5. **A seed YAML (optional)** — if your plugin should ship configured by default, add `seed-example/plugins/<your-plugin-id>.yaml`; otherwise leave it opt-in (Step 7).
 
-Before opening the PR, run the full gates from the [Contributing guide](../../../../CONTRIBUTING.md):
+Before opening the PR, run the full gates from the [Contributing guide](https://github.com/FarzamMohammadi/the-engineer/blob/main/CONTRIBUTING.md):
 
 ```bash
 pnpm test:all && pnpm run lint && pnpm run typecheck
@@ -151,6 +151,6 @@ pnpm test:all && pnpm run lint && pnpm run typecheck
 
 > **Note for agent plugins:** if you edit any `docs/plugins/**/*.md` file (the per-plugin doc and the README table in step 4), regenerate the bundled docs the CLI ships and commit the result — `pnpm run docs:bundle`. A CI guard fails the PR if the bundle is out of sync. This applies to every adapter, but you only touch it because step 4 edits a docs file.
 
-Then open the PR and fill out the [pull-request template](../../../../.github/PULL_REQUEST_TEMPLATE.md) — summary, the changes above, how you tested it (the contract suite plus your manual verification from Step 8), and the checklist (tests pass, lint clean, types check, docs updated, no secrets committed). Keep the PR to one plugin, one logical change, per the Contributing guide.
+Then open the PR and fill out the [pull-request template](https://github.com/FarzamMohammadi/the-engineer/blob/main/.github/PULL_REQUEST_TEMPLATE.md) — summary, the changes above, how you tested it (the contract suite plus your manual verification from Step 8), and the checklist (tests pass, lint clean, types check, docs updated, no secrets committed). Keep the PR to one plugin, one logical change, per the Contributing guide.
 
 That's the whole loop: identify the slot, read the contract, scaffold, implement, register, verify against the suite, configure, confirm it runs, and share it so the next person's tooling is already supported.

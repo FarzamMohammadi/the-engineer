@@ -4,7 +4,7 @@ This is the runbook for standing up a working, configured Engineer daemon for a 
 
 The shape of the job: **the agent self-serves everything it can, and pulls the human in only for the irreducibly-human steps — obtaining secrets — leading them precisely.** Configuration, plugin discovery, tool-to-plugin mapping, and verification are all the agent's to do without a human present. The only thing a person must do is create a token in a web UI, because only they hold the account. When that moment comes, the daemon prints exactly what to do, and the agent relays it.
 
-This runbook assumes an **editable clone** with `engineer` built and linked (the [README → Get Running](../../../../README.md#get-running) section). It does not cover installing from npm.
+This runbook assumes an **editable clone** with `engineer` built and linked (the [README → Get Running](https://github.com/FarzamMohammadi/the-engineer/blob/main/README.md#get-running) section). It does not cover installing from npm.
 
 The worked example throughout is a human who uses **GitHub** (issues + code), **Telegram** (chat), and **Claude Code** (their coding CLI) — all of which ship as plugins. Step 4a covers the harder, more impressive case: a tool with **no shipping plugin** (Linear, Discord, GitLab), where the agent authors one on the spot and returns to finish.
 
@@ -35,7 +35,7 @@ agent interviews human → discovers shipping plugins → maps tools to plugins
 
 Every later step calls the `engineer` command, and a fresh clone has no `engineer` to call: the `bin` in `package.json` points at `./dist/index.mjs`, which does not exist until the project is built. Do this once, first, before anything else.
 
-Run the project's setup, which installs dependencies, builds, and links the `engineer` CLI globally — the [README → Get Running](../../../../README.md#get-running) section is canonical:
+Run the project's setup, which installs dependencies, builds, and links the `engineer` CLI globally — the [README → Get Running](https://github.com/FarzamMohammadi/the-engineer/blob/main/README.md#get-running) section is canonical:
 
 ```bash
 pnpm run setup
@@ -66,7 +66,7 @@ For the worked example: coding CLI = **Claude Code**, issue tracker = **GitHub I
 
 ## Step 2 — Discover which plugins ship
 
-Do not assume which plugins exist — **discover them from the repo.** The shipping plugins are documented under [`docs/plugins/`](../../../plugins/), one directory per adapter type, each with a `README.md` whose **Built-in Plugins** table lists every plugin that ships for that adapter:
+Do not assume which plugins exist — **discover them from the repo.** The shipping plugins are documented under [`docs/plugins/`](../../../plugins/plugin-context.md), one directory per adapter type, each with a `README.md` whose **Built-in Plugins** table lists every plugin that ships for that adapter:
 
 - [`docs/plugins/trigger/README.md`](../../../plugins/trigger/README.md) — issue-tracker / task-source plugins
 - [`docs/plugins/communication/README.md`](../../../plugins/communication/README.md) — chat plugins
@@ -90,7 +90,7 @@ If **every** tool maps to a shipping plugin, go to Step 4. If **any** tool has n
 
 The Engineer configures non-interactively from a **seed directory**: a folder with `plugins/` and `configs/` subdirectories of YAML, passed to `engineer start --seed <dir>`. You do not write this YAML from scratch and you do not read `config.ts` Zod schemas to synthesize it — **you copy the shipped example and edit values.**
 
-The repo ships [`seed-example/`](../../../../seed-example/) as a complete, working reference layout:
+The repo ships [`seed-example/`](https://github.com/FarzamMohammadi/the-engineer/tree/main/seed-example) as a complete, working reference layout:
 
 ```
 seed-example/
@@ -114,7 +114,7 @@ Now edit `seed-example-acme/` for the chosen plugins:
 For what each field means, the references are:
 
 - [`docs/cli.md` § First Run](../../../cli.md#first-run) — the seed-directory contract and what `--seed` does.
-- [`docs/configuration/`](../../../configuration/) — one page per core config (daemon, safety, workspace, orchestrator, people) explaining every field.
+- [`docs/configuration/`](../../../configuration/README.md) — one page per core config (daemon, safety, workspace, orchestrator, people) explaining every field.
 
 Only when a plugin field is **not shown in the example** do you reach into that plugin's `src/plugins/<type>/<plugin-id>/config.ts` to see the field name and default — the example covers the common case, the schema is the fallback.
 

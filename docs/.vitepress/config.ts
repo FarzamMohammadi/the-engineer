@@ -14,8 +14,9 @@ export default defineConfig({
   // The build journal + internal planning under docs/archived/ are linked from the nav, not built as
   // site pages.
   srcExclude: ["archived/**"],
-  // TEMP — Chunk B's markdown-compat pass audits cross-doc links; this is tightened/removed then.
-  ignoreDeadLinks: true,
+  // localhostLinks keeps the local dashboard URLs (http://localhost:3847) valid; all other links
+  // must resolve to real site pages or absolute external URLs.
+  ignoreDeadLinks: "localhostLinks",
   themeConfig: {
     nav: [
       { text: "Guide", link: "/cli" },

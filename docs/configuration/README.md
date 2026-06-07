@@ -12,7 +12,7 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 | [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, branch retention |
 | [people.yaml](people.md) | People directory: roles, contacts, notification preferences |
 
-Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented in [docs/plugins/](../plugins/).
+Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented in [docs/plugins/](../plugins/plugin-context.md).
 
 ## How Config Loading Works
 

@@ -7,7 +7,7 @@ Controls cost limits, scope boundaries, autonomy levels, response timeouts, and 
 
 ## Cost Limits
 
-Set spending caps to prevent runaway costs. Warnings fire at 80% of each limit. On a breach The Engineer terminates the offending in-flight task and tells the owner: a per-task or per-provider breach blocks that one task and DMs you about it, while a global daily or monthly breach terminates every in-flight task with a single alert. See [Safety in the README](../../README.md#safety) for the full behavior.
+Set spending caps to prevent runaway costs. Warnings fire at 80% of each limit. On a breach The Engineer terminates the offending in-flight task and tells the owner: a per-task or per-provider breach blocks that one task and DMs you about it, while a global daily or monthly breach terminates every in-flight task with a single alert. See [Safety in the README](https://github.com/FarzamMohammadi/the-engineer/blob/main/README.md#safety) for the full behavior.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

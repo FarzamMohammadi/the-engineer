@@ -2,7 +2,7 @@
 
 The three-tier model that governs how The Engineer integrates with the outside world. This is the authoritative reference for the Core / Adapter / Plugin separation.
 
-The companion to the [architecture overview](overview.md) and [the pipeline](pipeline.md). The original layer-by-layer design treatment is preserved in the [build journal archive](../archived/).
+The companion to the [architecture overview](overview.md) and [the pipeline](pipeline.md). The original layer-by-layer design treatment is preserved in the [build journal archive](https://github.com/FarzamMohammadi/the-engineer/tree/main/docs/archived).
 
 ---
 
@@ -69,7 +69,7 @@ Nine components that are always present, invariant across all configurations.
 
 The adapter tier is **open-ended** — the list below captures today's known integration boundaries, but new adapter types can be added as The Engineer's capabilities evolve. Adding a new adapter type means defining a new contract that extends the Universal Adapter Contract and registering a new type in the Registry. No changes to Core logic, existing adapters, or existing plugins are required.
 
-Four adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in the [plugin docs](../plugins/) (each adapter's `README.md`).
+Four adapter types are currently defined, each representing a category of external integration where technologies vary. Full contract specifications live in the [plugin docs](../plugins/plugin-context.md) (each adapter's `README.md`).
 
 | Adapter | Core Consumer | What It Abstracts |
 |---------|--------------|-------------------|
@@ -136,7 +136,7 @@ Plugins are concrete implementations that satisfy an adapter contract. Mix and m
 | AgentAdapter | ClaudeCodeAgentPlugin, _(future: OpenRouterAgentPlugin, OllamaAgentPlugin)_ | Switch from Claude to a local Ollama model |
 | GitHostingAdapter | GitHubHostingPlugin, _(future: GitLabHostingPlugin, GiteaHostingPlugin)_ | Switch from GitHub to self-hosted Gitea |
 
-**The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from the [communication plugin docs](../plugins/communication/). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
+**The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from the [communication plugin docs](../plugins/communication/README.md). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
 
 ---
 

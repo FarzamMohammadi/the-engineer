@@ -193,7 +193,7 @@ Each plugin implements one adapter contract. Plugins are registered in `src/plug
 
 **Health state machine:** `healthy` > `unhealthy` (1 failed check) > `failed` (3 consecutive failures). Health checks run on the configured interval.
 
-To add a plugin, see the per-adapter guides under [docs/plugins/](../plugins/) — each ends with a "Registration in builtin.ts" section.
+To add a plugin, see the per-adapter guides under [docs/plugins/](../plugins/plugin-context.md) — each ends with a "Registration in builtin.ts" section.
 
 ## Event Bus
 
@@ -219,6 +219,6 @@ The SafetyLayer tracks cost across configurable time windows and can escalate to
 - [The Pipeline](pipeline.md) — How a task flows through the six phases: sub-phases, routing, loop caps, and external re-entry
 - [Observability](observability.md) — The three systems (logging, tracing, event bus), one-trace-per-dispatch, the SQLite system of record, the dashboard, and external OTLP export
 - [Communication](../user-flows/communication/overview.md) — How The Engineer notifies you, reaches out when only you can decide, and answers your queries — outbound routing, suppression, retry, and inbound classification
-- [Plugin Documentation](../plugins/) — Adapter contracts, per-plugin references, development guides
+- [Plugin Documentation](../plugins/plugin-context.md) — Adapter contracts, per-plugin references, development guides
 - [Philosophy](../philosophy.md) — Core beliefs driving every decision
-- [Build Journal — Archive](../archived/) — Phase-by-phase development history (not authoritative; read code and `docs/` for ground truth)
+- [Build Journal — Archive](https://github.com/FarzamMohammadi/the-engineer/tree/main/docs/archived) — Phase-by-phase development history (not authoritative; read code and `docs/` for ground truth)

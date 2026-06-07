@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/FarzamMohammadi/the-engineer/actions/workflows/ci.yml/badge.svg)](https://github.com/FarzamMohammadi/the-engineer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Status: Preview](https://img.shields.io/badge/status-preview-orange.svg)](#project-status)
+[![Version](https://img.shields.io/github/package-json/v/FarzamMohammadi/the-engineer)](#project-status)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.node-version)
 
 An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the **full engineering lifecycle** — from task intake to delivery — with safety rails, a full audit trail, and a swappable plugin architecture for any tool you use.
@@ -10,8 +10,8 @@ An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code
 <!-- TODO(visuals): hero dashboard screenshot here -->
 
 > [!IMPORTANT]
-> **Status: Preview — refinement toward `v1.0.0`.**
-> Every preview tag is a working checkpoint. We're now in refinement, shipping vertical slices ([see what's in flight](docs/archived/implementation-docs/9-oss-ready/active.md)). Interfaces, configuration, and behavior **will change** before `v1.0.0`. Use it, read the code, file issues — just don't depend on it for production yet. The [build journal](docs/archived/) traces the path that got us here.
+> **v1.0.0 — it works, end to end.**
+> The Engineer runs the full pipeline today: task intake → requirements → research → planning → execution → review → delivery. It's young and built by one person, so expect rough edges — use it, read the code, [file issues](https://github.com/FarzamMohammadi/the-engineer/issues), and help shape where it goes. The [build journal](docs/archived/) traces how it got here.
 
 > **AI coding agents:** if you're an AI agent working *on* this codebase — not just reading about it — [`AGENTS.md`](AGENTS.md) is your required entry point. Read and follow it before making any change.
 

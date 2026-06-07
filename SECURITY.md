@@ -1,6 +1,6 @@
 # Security Policy
 
-The Engineer handles credentials, accesses repositories, and runs coding agent CLIs that can execute code. The security surface is real, even at preview stage. If you find a vulnerability, please report it privately so we can fix it before disclosure.
+The Engineer handles credentials, accesses repositories, and runs coding agent CLIs that can execute code. The security surface is real, even this early. If you find a vulnerability, please report it privately so we can fix it before disclosure.
 
 ## Reporting a vulnerability
 
@@ -34,7 +34,7 @@ You and the maintainer can then collaborate on a fix in a private thread before 
 
 ## Response expectations
 
-This project is in **preview**, maintained by a single developer in their spare time. There is no formal SLA. In practice:
+This project is **v1.0.0**, maintained by a single developer in their spare time. There is no formal SLA. In practice:
 
 - I aim to acknowledge reports within a few days.
 - I aim to ship a fix within a few weeks of triage, prioritized by severity.

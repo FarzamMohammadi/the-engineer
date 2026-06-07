@@ -536,3 +536,17 @@ This is also a philosophical gap. The Engineer's philosophy demands that "every 
 **Key context:** Surfaced by blind cold-agent validation — two independent agents reached a green health check and declared setup done, while the owner's chat channel was silently undeliverable until the human sent the bot a one-time message. The runbook now relays the handshake explicitly, but it remains an unverifiable human step. The constraint is the lesson: any future check must read deliverability *from the adapter*, generically, never branching on a specific channel.
 
 ---
+
+## npm Publishing
+
+**Current state (v1):** The Engineer ships as a tagged GitHub release, installed from source (clone, then `pnpm run setup` and `engineer start`). It is not on the npm registry. The package is CLI-only — no importable SDK surface — though `package.json` stays publish-capable so the decision is reversible.
+
+**Why deferred:** with a CLI-only shape and an in-tree plugin model (authors clone the repo and contribute back), an npm package would serve only the narrow audience whose stack exactly matches the shipped plugins and who want zero customization — everyone else needs the source anyway. Publishing a pre-stable build would also invite the dependence the project disclaims. The repo is the product.
+
+**When it becomes relevant:** when there is a real consumption story — a stable public API worth depending on, an out-of-tree plugin SDK that third parties `import` (see [Monorepo Evolution](#monorepo-evolution), which describes the publishable `plugin-sdk` package), or enough exact-stack users that `npm i -g` clearly beats cloning.
+
+**What it enables:** `npm i -g the-engineer` for the happy-path user; registry discoverability; provenance via trusted publishing from CI.
+
+**Key context:** the name `the-engineer` is currently unclaimed on npm. The modern path is OIDC trusted publishing from GitHub Actions (no long-lived tokens, automatic provenance), plus a `files` allowlist so the tarball ships only `dist/`. None of it is built — recorded so the future builder starts from the decision.
+
+---

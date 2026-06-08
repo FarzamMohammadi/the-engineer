@@ -7,7 +7,7 @@
 
 - [vision.md](vision.md): why we're doing this, what done looks like
 - [approach.md](approach.md): strategy, lenses, co-founder rules, RRP discipline (what to hunt for, how to present findings), closing sweep principles, 16-slice roadmap, session protocol
-- Current: **Phase 9 Finale — v1.0.0 Release (docs site + release polish; npm deferred; demo + tag LAST).** Reshaped from the original Slice 14 (npm Publish Readiness) + the remaining Slice 13 polish. Requirements captured in `.claude/temp/requirements-gathering/v1-release-finale.md`. Slices 11–12 merged to `main`; durable records `slices/11-background-services.md`, `slices/12-agent-readiness.md`.
+- Current: **Phase 9 Finale — v1.0.0 Release: BUILT + committed to local `main` (unpushed, Session 67).** Remaining: the landing-page design *look* + the demo video (last). RRP/research/plan in `.claude/temp/*/v1-release-finale.md`; design + machine recon in the `project-v1-release-finale` memory.
 
 ## How This File Works
 
@@ -21,20 +21,15 @@ This file answers one question: **where are we right now?** Nothing more.
 
 ## Current
 
-**Phase 9 Finale — v1.0.0 Release. RRPIR in progress (requirements DONE this session).** The last push of Phase 9: ship a polished, working **v1.0.0 as a GitHub release** (not npm). Reshaped from the original Slice 14 (npm Publish Readiness) + the remaining Slice 13 polish through a long requirements session. Full requirements: `.claude/temp/requirements-gathering/v1-release-finale.md`.
+**Phase 9 Finale — v1.0.0 Release. BUILT + verified + committed to LOCAL `main` (Session 67); NOT pushed (owner pushes).** The docs site and v1.0.0 posture are done; what remains is the landing-page *look* and the demo video.
 
-**Scope — do everything *except* the tag + the demo video:**
-- **Docs site** — VitePress on GitHub Pages, presenting the existing `docs/` + a hero landing page; `docs/` as the VitePress root, internal planning (`docs/archived/implementation-docs/`) excluded, Build Journal linked; GitHub Action deploy; no custom domain; theme via live probes during build.
-- **Release polish** — `package.json` → `1.0.0`; README posture "preview / interfaces will change" → "v1.0.0, young/working/feedback-welcome"; reconcile version+status references repo-wide; npm-deferral entry in `docs/future-considerations.md`; CI green.
-- **Hero placeholder** — strong static hero now (never "coming soon"), structured for a later GIF swap.
+**Landed this session — 7 commits in `main` (RRP first), unpushed:** the RRPIR artifacts → the VitePress docs site (presenting `docs/`, placeholder hero, curated nav, internal planning excluded, Build Journal linked) + CI-green wiring → docs-site links resolved (clean build, no blanket `ignoreDeadLinks`) → the GitHub Pages deploy workflow (`docs.yml`, fires on the owner's push) → v1.0.0 posture (`package.json` 1.0.0, README + SECURITY, npm-deferral in `future-considerations`) → the `docs:*` scripts documented. Independently verified: lint / typecheck / 2607 tests / build / docs:build all green. `main` is at `1.0.0` locally.
 
-**Deferred to the very end (separate, when ready — this or another session):** produce the **demo video → GIF**, embed it as the hero, **then** cut the `v1.0.0` tag/GitHub release. "All actual work done first; tag + video last."
+**Still open (next sessions):**
+1. **Landing-page design probes** — the docs hero + theme *look* (color, type, hero treatment) via live probes with the owner; the current hero is a working placeholder, with the demo GIF reserved for its slot.
+2. **The demo marketing video — the deliberate very-last step,** on a FRESH `demo-*` branch off `main`. Pipeline: deterministic scenario harness (real pipeline/dashboard; real `gh`+`claude` or fake-plugins) → Playwright lossless **8K** capture (never `recordVideo`) → Remotion 8K composition → 4K master → GIF → embed → **then tag `v1.0.0`**. The 8K capture path is PROVEN on this machine. Full design + machine recon: the `project-v1-release-finale` memory.
 
-**Cut (deliberate, recorded):** npm publish (→ `future-considerations`), npm-publish mechanics, importable SDK/`exports` (CLI-only), demo-as-code (`pnpm demo` / `demo/`), design-history archive (covered by `docs/archived/`), `llms.txt`.
-
-**Working model:** R/R/P inline (owner + agent); build orchestrated via workflow subagents with the agent as orchestrator + independent verifier + gap-fixer; owner = co-owner + final call.
-
-**Just landed (Sessions 65–66):** Slices 11 (Background Services) and 12 (Agent Readiness) are both merged to `main`. Slice 12 was integrated in Session 66 — rebased onto the landed Slice 11 and the `0.7.0-preview` version bump, consolidated from eleven build commits into six cohesive freshly-timestamped commits, blind-validated, and merged by clean fast-forward with the integration verified non-overriding (main's version bump, README footer, and plugin-health-at-boot work all preserved). `main` is now at `0.8.0-preview` (later bump); the finale takes it to `1.0.0`.
+**Owner manual steps (when ready):** enable GitHub Pages (Settings → Pages → Source: GitHub Actions); push `main`; cut the `v1.0.0` tag (last).
 
 **Pre-v1 run note (still stands):** delete `~/.engineer/data/engineer.db` before running (or `rm -rf ~/.engineer` for a full reset) — recent slices changed the schema + config, so the DB wipe is the migration.
 

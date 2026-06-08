@@ -200,7 +200,7 @@ function resolveResponse(answer: string, dispatch: Dispatch): ResumeState {
 // ── Orchestrator ────────────────────────────────────────────────────────────
 
 /**
- * The brain of the system — drives a task through the sub-phase pipeline from intake to delivery.
+ * The brain of the system — drives a task through the sub-phase pipeline from intake to merged pull request.
  *
  * It sets up the session and workspace, assembles the per-dispatch {@link Ctx}, runs {@link PIPELINE}
  * through the generic runner, and maps the runner's outcome onto the daemon's {@link ExecuteTaskResult}.

@@ -5,7 +5,7 @@
 [![Version](https://img.shields.io/github/package-json/v/FarzamMohammadi/the-engineer)](#project-status)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.node-version)
 
-An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the **full engineering lifecycle** — from task intake to delivery — with safety rails, a full audit trail, and a swappable plugin architecture for any tool you use.
+An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the **full engineering lifecycle** — from task intake to merged pull request — with safety rails, a full audit trail, and a swappable plugin architecture for any tool you use.
 
 <!-- TODO(visuals): hero dashboard screenshot here -->
 
@@ -117,12 +117,12 @@ A local React dashboard starts with `engineer start` and shows the daemon's live
 
 Every plugin built against The Engineer multiplies what it can do. Core defines the protocol; plugins do the work. The same protocol governs every agent — no `CLAUDE.md`, no `GEMINI.md`, no per-tool accommodations. **One protocol, any agent.**
 
-| Adapter | Today's plugins | Your plugin |
-|---|---|---|
-| `TriggerAdapter` | `github-trigger` | GitLab, Jira, Linear, webhooks, cron — anything that emits a task |
-| `CommunicationAdapter` | `github-comm`, `telegram-comm` | Slack, Discord, email, SMS |
-| `AgentAdapter` | `claude-code-agent`, `opencode-agent`, `gemini-cli-agent` | Codex, Aider, any CLI agent that edits files from a prompt |
-| `GitHostingAdapter` | `github-hosting` | GitLab, Bitbucket, Gitea, self-hosted git |
+| Adapter                | Today's plugins                                           | Your plugin                                                       |
+| ---------------------- | --------------------------------------------------------- | ----------------------------------------------------------------- |
+| `TriggerAdapter`       | `github-trigger`                                          | GitLab, Jira, Linear, webhooks, cron — anything that emits a task |
+| `CommunicationAdapter` | `github-comm`, `telegram-comm`                            | Slack, Discord, email, SMS                                        |
+| `AgentAdapter`         | `claude-code-agent`, `opencode-agent`, `gemini-cli-agent` | Codex, Aider, any CLI agent that edits files from a prompt        |
+| `GitHostingAdapter`    | `github-hosting`                                          | GitLab, Bitbucket, Gitea, self-hosted git                         |
 
 Build a plugin once, and every existing Core capability — audit trail, retries, cost tracking, observability — applies automatically.
 

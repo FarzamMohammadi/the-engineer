@@ -1,6 +1,6 @@
 # The Pipeline
 
-The per-task pipeline is the heart of The Engineer: the path every task walks from intake to delivery. This document explains its shape and the reasoning behind it. If you read one architecture doc to understand how the system actually does engineering work, read this one.
+The per-task pipeline is the heart of The Engineer: the path every task walks from intake to merged pull request. This document explains its shape and the reasoning behind it. If you read one architecture doc to understand how the system actually does engineering work, read this one.
 
 > **Key terms:** a **phase** is a stage of work (requirements, research, …); a **sub-phase** is one step within a phase; the **runner** is the generic loop that drives a task through them. See also the [architecture overview](overview.md) and the [three-tier model](three-tier-model.md).
 
@@ -26,14 +26,14 @@ src/core/orchestrator/pipeline/
 
 ## The six phases
 
-| Phase | Default sub-phases | What makes it right |
-|---|---|---|
-| **Requirements** | `gather` | Grounds in the codebase, writes a Context Summary *first* (a wrong understanding is caught at the first artifact), assesses complexity, and batches every question for a person into one outreach. `needs_human` blocks the task. |
-| **Research** | `investigate` | Observations separated from inferences. Skips entirely on a trivial task. |
-| **Planning** | `design` | One agent session that designs *and* stress-tests its own plan, recording decisions with their rejected alternatives. Skips on a trivial task. |
-| **Execution** | `implement` → `verify` | `implement` writes the code and commits as it goes; `verify` proves it by running the project's own gates as real subprocesses. The agent cannot fake `verify`. |
-| **Review** | `self-review` (+ opt-in lenses) → `refine` | Lenses *find*; `refine` *fixes in place* and decides ship / re-check / hand back. See [post-execution review](../user-flows/post-execution-review/overview.md). |
-| **Delivery** | `pr-description` → `push` → `create-pr` → `await-review` (+ entry-only `auto-merge`) | Produces the deliverable: a merged PR, or a pushed branch. See [PR management](../user-flows/pr-management/overview.md). |
+| Phase            | Default sub-phases                                                                   | What makes it right                                                                                                                                                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Requirements** | `gather`                                                                             | Grounds in the codebase, writes a Context Summary *first* (a wrong understanding is caught at the first artifact), assesses complexity, and batches every question for a person into one outreach. `needs_human` blocks the task. |
+| **Research**     | `investigate`                                                                        | Observations separated from inferences. Skips entirely on a trivial task.                                                                                                                                                         |
+| **Planning**     | `design`                                                                             | One agent session that designs *and* stress-tests its own plan, recording decisions with their rejected alternatives. Skips on a trivial task.                                                                                    |
+| **Execution**    | `implement` → `verify`                                                               | `implement` writes the code and commits as it goes; `verify` proves it by running the project's own gates as real subprocesses. The agent cannot fake `verify`.                                                                   |
+| **Review**       | `self-review` (+ opt-in lenses) → `refine`                                           | Lenses *find*; `refine` *fixes in place* and decides ship / re-check / hand back. See [post-execution review](../user-flows/post-execution-review/overview.md).                                                                   |
+| **Delivery**     | `pr-description` → `push` → `create-pr` → `await-review` (+ entry-only `auto-merge`) | Produces the deliverable: a merged PR, or a pushed branch. See [PR management](../user-flows/pr-management/overview.md).                                                                                                          |
 
 A single sub-phase per phase is the common case, and that is fine — the architecture makes *growing* a phase cheap without forcing it. Review and Delivery genuinely need several sub-phases today; the others do not.
 
@@ -82,13 +82,13 @@ Orchestrator sub-phases (`verify`, `push`, `create-pr`, `await-review`, `auto-me
 
 `next` returns one of five routes:
 
-| Route | Meaning | Effect |
-|---|---|---|
-| `advance` | Go to the next sub-phase (or next phase if last) | Move forward |
-| `repeat` | Loop this phase from its first sub-phase | Intra-phase loop — `phase_iteration++` |
-| `jump` | Hand control back to an earlier phase | Inter-phase rework — `total_reworks++` |
-| `block` | Stop, loud and operator-recoverable | Task goes to `blocked` |
-| `done` | Terminal | Task `completed` |
+| Route     | Meaning                                          | Effect                                 |
+| --------- | ------------------------------------------------ | -------------------------------------- |
+| `advance` | Go to the next sub-phase (or next phase if last) | Move forward                           |
+| `repeat`  | Loop this phase from its first sub-phase         | Intra-phase loop — `phase_iteration++` |
+| `jump`    | Hand control back to an earlier phase            | Inter-phase rework — `total_reworks++` |
+| `block`   | Stop, loud and operator-recoverable              | Task goes to `blocked`                 |
+| `done`    | Terminal                                         | Task `completed`                       |
 
 **Two verbs, two counters.** `repeat` is an *intra-phase* loop (`verify` red → repeat to `implement`); it is counted by `phase_iteration`, which resets on every phase entry. `jump` is an *inter-phase* rework (`refine` decides the plan is wrong → jump to planning); it is counted by `total_reworks`, which does not reset within a dispatch. Both counters persist on the task row *and* on each checkpoint, so a task that is preempted and resumed mid-loop does not lose its place against the cap.
 
@@ -144,12 +144,12 @@ The structure mirrors the mental model, so changes are local:
 
 ## Key files
 
-| Concern | File |
-|---|---|
-| The generic loop, caps, observability | `src/core/orchestrator/pipeline/runner.ts` |
-| The vocabulary (`SubPhase`, `Route`, `Ctx`, block types) | `src/core/orchestrator/pipeline/types.ts` |
-| The phase order and sub-phase lists | `src/core/orchestrator/pipeline/pipeline.ts` |
-| The defended agent boundary | `src/core/orchestrator/pipeline/agent-step.ts` |
-| Core PR-event policy | `src/core/orchestrator/pipeline/pr-events.ts` |
-| Per-phase work | `src/core/orchestrator/pipeline/{requirements,research,planning,execution,review,delivery}/` |
-| Dispatch wiring (resume, re-entry, block persistence) | `src/core/orchestrator/index.ts` |
+| Concern                                                  | File                                                                                         |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| The generic loop, caps, observability                    | `src/core/orchestrator/pipeline/runner.ts`                                                   |
+| The vocabulary (`SubPhase`, `Route`, `Ctx`, block types) | `src/core/orchestrator/pipeline/types.ts`                                                    |
+| The phase order and sub-phase lists                      | `src/core/orchestrator/pipeline/pipeline.ts`                                                 |
+| The defended agent boundary                              | `src/core/orchestrator/pipeline/agent-step.ts`                                               |
+| Core PR-event policy                                     | `src/core/orchestrator/pipeline/pr-events.ts`                                                |
+| Per-phase work                                           | `src/core/orchestrator/pipeline/{requirements,research,planning,execution,review,delivery}/` |
+| Dispatch wiring (resume, re-entry, block persistence)    | `src/core/orchestrator/index.ts`                                                             |

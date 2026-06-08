@@ -3,7 +3,7 @@ layout: home
 hero:
   name: The Engineer
   text: Autonomous orchestrator for AI coding agents
-  tagline: Drives Claude Code, OpenCode, and other CLI agents through the full engineering lifecycle — task intake to delivery — with safety rails, a full audit trail, and a swappable plugin architecture.
+  tagline: Drives Claude Code, OpenCode, and other CLI agents through the full engineering lifecycle — task intake to merged pull request — with safety rails, a full audit trail, and a swappable plugin architecture.
   actions:
     - theme: brand
       text: Get Started

@@ -174,7 +174,7 @@ Some deviations are larger than a single decision — deliberate narrowings of s
 
 ### Orchestrate, Don't Build
 
-The Engineer stays lean by orchestrating, not building. coding agent CLIs like Claude Code (Anthropic), OpenCode (multi-provider), Gemini CLI (Google), and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
+The Engineer stays lean by orchestrating, not building. Coding agent CLIs like Claude Code (Anthropic), OpenCode (multi-provider), Gemini CLI (Google), and others are full autonomous agents with native capabilities — code execution, file manipulation, web search, reasoning. They improve constantly without us lifting a finger. We capture that value by design.
 
 - **Delegate the work.** The Engineer provides context, instructions, and phase sequencing. The CLI agent does the work. We never rebuild what an external tool already does better — and they will always do it better, because that's their entire focus.
 - **Master the tools.** These CLI tools are The Engineer's instruments — just as a real engineer learns the depths of their tools to extract maximum value, The Engineer must continuously evolve how it uses them. Study their flags, their output formats, their strengths and limitations. Find the absolute best ways to leverage each tool for the highest-quality outcome. The tools improve, and so must our use of them.

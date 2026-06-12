@@ -13,6 +13,3 @@ people:
         handle: "your_telegram_username"
       - channel: github
         handle: "your-github-username"
-    preferences:
-      notification_level: milestones
-      quiet_hours: null

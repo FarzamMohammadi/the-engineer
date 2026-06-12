@@ -1,5 +1,10 @@
 # Orchestrator configuration
 # All fields optional — Zod defaults apply when missing.
 
-notification:
-  milestone_based: true
+# Which review lenses run before delivery. Each is a focused agent pass that writes findings;
+# "refine" then consolidates them and fixes in place. Default: self-review only.
+review:
+  lenses: [self-review]             # add "security", "code-quality", and/or "architecture" for deeper passes
+
+observability:
+  live_activity: true               # Stream each agent run's live conversation to the dashboard (default: true)

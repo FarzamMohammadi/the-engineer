@@ -44,7 +44,7 @@ Directory structure (created automatically on first `engineer start`):
   .env                # Secrets (KEY=VALUE, 0o600 permissions)
   config/             # YAML config files
     plugins/          # Plugin-specific configs
-  data/               # SQLite database
+  data/               # SQLite database (engineer.db)
   logs/               # Daemon log files (rolling JSON)
   run/                # PID file
   traces/             # agent prompt/response blobs (content-addressable)
@@ -59,6 +59,7 @@ Source: [`src/cli/home.ts`](../src/cli/home.ts)
 | Option | Description |
 |--------|-------------|
 | `--home <path>` | Override ENGINEER_HOME |
+| `--config-dir <path>` | Override config directory (default: `$ENGINEER_HOME/config`) |
 | `--verbose` | Debug-level logging |
 | `--json` | Output in JSON format |
 | `--version` | Print version |
@@ -72,7 +73,7 @@ engineer start
 
 That's it. On first run, `start` detects there's no config and launches guided setup:
 
-1. **Environment detection** — scans PATH for coding agent CLIs (`claude`, `opencode`, `gemini`, `bash`), checks env vars
+1. **Environment detection** — scans PATH for coding agent CLIs (`claude`, `opencode`, `gemini`), checks env vars
 2. **Plugin selection** — one prompt per adapter type (agent, trigger, communication, git hosting), grouped by category, with detection status shown
 3. **Per-plugin config** — prompts for required fields (repos to watch, etc.)
 4. **People Directory** — configures the owner (the single person The Engineer reaches) and optional additional people. For each person: name, identifier, roles, and a handle for each selected communication channel (derived from plugin manifests). Generates `people.yaml` with real values instead of placeholders.
@@ -170,7 +171,7 @@ Source: [`src/cli/commands/logs.ts`](../src/cli/commands/logs.ts)
 
 ### doctor
 
-Runs independent health check categories. No daemon required — works standalone.
+Runs independent health check categories. No daemon required — works standalone. For symptom-to-fix help when a check fails, see [Troubleshooting](troubleshooting.md).
 
 ```bash
 engineer doctor
@@ -185,15 +186,18 @@ engineer doctor
 | Config Files | Every core YAML config parses and passes Zod validation |
 | Required Secrets | All `${ENV_VAR}` references in configs resolve + `.env` file permissions |
 | Database | SQLite file accessible |
-| Plugin Manifests | Plugin config files parse correctly |
+| Plugins | Plugin config files parse correctly |
 | Workspace | Git binary available, workspace dir exists |
 | External Dependencies | agent CLIs on PATH |
 | People Directory | An owner is configured, the single-user constraint is respected, and the owner's channels have an installed communication plugin (needs loaded config) |
-| Risky Config | Warnings for auto-merge enabled, missing cost limits, high concurrency (needs loaded config) |
+| Risky Config Warnings | Warnings for auto-merge enabled, missing cost limits, high concurrency (needs loaded config) |
+| Telemetry | When telemetry is enabled, probes the configured OTLP endpoint (local by default, but a remote endpoint is probed wherever it points) with a short timeout — WARN-only and informational; when telemetry is disabled it is a clean pass with no probe |
 
-The People Directory and Risky Config categories need a loaded config bundle, so they run only when
-config loads. On `engineer start`, a pre-flight subset runs automatically before the daemon boots —
-every category above except Workspace, People Directory, and Risky Config.
+The People Directory and Risky Config Warnings categories need a loaded config bundle, so they run
+only when config loads. On `engineer start`, a pre-flight subset runs automatically before the daemon
+boots — every category above except Workspace, People Directory, Risky Config Warnings, and Telemetry.
+Telemetry runs only under the full `engineer doctor` command: it makes an async network probe and is
+appended after the synchronous checks, so it is never part of the startup pre-flight subset.
 
 Source: [`src/cli/commands/doctor.ts`](../src/cli/commands/doctor.ts)
 
@@ -246,7 +250,7 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 
 **Core configs:**
 - `daemon.yaml` — tick interval, concurrency, plugin health settings
-- `orchestrator.yaml` — RRPIR phases, notifications
+- `orchestrator.yaml` — review lenses, observability (live agent activity)
 - `safety.yaml` — cost limits, autonomy level, merge policy
 - `workspace.yaml` — worktree root, branch prefix, PR defaults, branch retention
 - `people.yaml` — the owner and their contact channels for communication
@@ -270,4 +274,43 @@ Config files live in `~/.engineer/config/`. Generated on first run with conserva
 
 To reconfigure: `engineer stop`, edit YAML files, `engineer start`.
 
-To start fresh: `rm -rf ~/.engineer && engineer start`.
+## Upgrading
+
+Pull and rebuild — all state lives in `~/.engineer`, not the repo, so an upgrade never touches your config, secrets, or history:
+
+```bash
+git pull
+pnpm run setup
+```
+
+The Engineer is pre-v1 in spirit. Additive database migrations apply automatically at startup, but a breaking schema change ships without a data migration — when one lands, you reset the database (below). Config files have no migration machinery at all: when a release reshapes one, you update the YAML by hand to match the new shape. Automated config-schema migration is on the roadmap — see [Config Schema Versioning](future-considerations.md#config-schema-versioning).
+
+**Surgical reset (keep config and secrets):** drop only the database when a schema mismatch breaks startup. Your config, `.env`, and worktrees survive; the database rebuilds empty on next start, so you lose task history and the audit trail.
+
+```bash
+engineer stop
+rm -f ~/.engineer/data/engineer.db
+engineer start
+```
+
+This is the inverse of `./scripts/reset.sh --persist-data`, which keeps the database and wipes config.
+
+**Full reset (start from scratch):** destroys everything — config, `.env` secrets, database, logs, and worktrees — then runs first-run setup again.
+
+```bash
+rm -rf ~/.engineer && engineer start
+```
+
+During development, `./scripts/reset.sh` does the equivalent full wipe and also rebuilds and relinks the CLI (see [Development Resets](#development-resets)).
+
+## Uninstall
+
+Remove The Engineer and all of its state cleanly:
+
+```bash
+engineer stop                     # Stop the daemon
+pnpm rm --global the-engineer     # Unlink the global `engineer` bin
+rm -rf ~/.engineer                # Delete config, .env secrets, the SQLite database, logs, and worktrees
+```
+
+Then delete the cloned repo. Nothing is written outside the repo and `~/.engineer` — unless you pointed `workspace_root` (in `workspace.yaml`) somewhere else, in which case delete that directory too.

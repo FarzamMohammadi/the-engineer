@@ -11,12 +11,12 @@ First, get a working install the same way a user does — clone, then `pnpm run 
 For contributor iteration, the reset script gives you a fast clean rebuild on top of that install:
 
 ```bash
-./scripts/reset.sh                    # Full wipe — rebuild, relink, re-seed, start fresh
-./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — re-seed config & plugins
+./scripts/reset.sh                    # Full wipe — rebuild, relink, fresh interactive setup
+./scripts/reset.sh --persist-data     # Keep DB, workspaces, .env — clear config, then interactive setup
 ./scripts/reset.sh <seed-dir>         # Full wipe, then non-interactive setup from a seed directory
 ```
 
-The reset script builds, links the CLI globally, seeds configs/plugins from [`seed-example/`](seed-example/), and starts the daemon. Full CLI and reset reference: [docs/cli.md](docs/cli.md).
+The reset script builds, links the CLI globally, clears the data directory, and starts fresh with interactive first-run setup. Pass a seed directory to run non-interactively. Full CLI and reset reference: [docs/cli.md](docs/cli.md).
 
 **Dev mode (without global install):**
 
@@ -33,7 +33,7 @@ src/
   plugins/      # Implementations grouped by adapter type (trigger/, communication/, agent/, git-hosting/)
   schemas/      # Centralized Zod schemas
   cli/          # Commander CLI (start, stop, status, logs, doctor, why, retry, cancel)
-  config/       # Config loader + hot-reload watcher
+  config/       # Config loader + env resolution
   db/           # SQLite database layer + migrations
   dashboard/    # War room dashboard (Hono + SSE)
   utils/        # Shared utilities

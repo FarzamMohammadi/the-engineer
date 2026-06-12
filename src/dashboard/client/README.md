@@ -73,22 +73,22 @@ src/dashboard/client/
       layout/             # AppShell, SidebarNav, SystemBar
     pages/
       overview/           # Dashboard home — daemon, tasks, cost, errors
-      tasks/              # Task list + detail (placeholder)
-      activity/           # Event stream (placeholder)
-      metrics/            # Cost & token charts (placeholder)
-      errors/             # Error log (placeholder)
+      tasks/              # Task list + detail
+      activity/           # Event stream
+      metrics/            # Cost & token charts
+      errors/             # Error log
 ```
 
 ## Routes
 
-| Path              | Page     | Status      |
-| ----------------- | -------- | ----------- |
-| `/`               | Overview | Implemented |
-| `/tasks`          | Tasks    | Placeholder |
-| `/tasks/:taskId`  | Detail   | Placeholder |
-| `/activity`       | Activity | Placeholder |
-| `/metrics`        | Metrics  | Placeholder |
-| `/errors`         | Errors   | Placeholder |
+| Path              | Page     |
+| ----------------- | -------- |
+| `/`               | Overview |
+| `/tasks`          | Tasks    |
+| `/tasks/:taskId`  | Detail   |
+| `/activity`       | Activity |
+| `/metrics`        | Metrics  |
+| `/errors`         | Errors   |
 
 ## Architecture Notes
 

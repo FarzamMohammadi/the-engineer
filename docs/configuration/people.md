@@ -1,7 +1,7 @@
 # People Configuration
 
-Defines the people The Engineer works with — their roles, contact information, and notification
-preferences. This is the directory The Engineer uses to know who to reach, who can approve, and how
+Defines the people The Engineer works with — their roles and contact information. This is the
+directory The Engineer uses to know who to reach, who can approve, and how
 to contact them.
 
 **File:** `~/.engineer/config/people.yaml`

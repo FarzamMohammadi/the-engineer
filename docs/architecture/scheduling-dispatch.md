@@ -47,6 +47,21 @@ The tracker gives every dispatch three things:
   to the right recovery state. Calling terminate twice is harmless — the first reason
   wins, the second is ignored.
 
+The lifecycle, end to end — every way a dispatch can end, and where each one lands:
+
+```mermaid
+stateDiagram-v2
+    queued --> active : dispatch · mints dispatchId + AbortSignal
+    active --> completed : pipeline finishes
+    active --> blocked : pipeline blocks · loud + recoverable
+    active --> failed : pipeline fails
+    term: terminate(taskId, reason) → Outcomes.terminated
+    active --> term : preemption · cost limit · hard cap · shutdown
+    term --> queued : cooperative_preemption · preemption_timeout · graceful_shutdown
+    term --> blocked : cost_limit_reached
+    term --> failed : hard_cap_exceeded · + alert
+```
+
 The tracker also owns drain — see [Shutdown](#shutdown-drain) below.
 
 ### The reason routing table

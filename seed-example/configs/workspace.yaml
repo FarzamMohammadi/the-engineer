@@ -6,10 +6,6 @@ default_base_branch: main
 
 pr:
   default_merge_strategy: squash
-  delete_branch_after_merge: true
+  branch_retention_days: 0          # Days to keep a merged branch before the reaper deletes it: null = keep forever, 0 = next sweep, N = after N days (default: 0)
   skip_pr_creation:
     default: false
-
-cleanup:
-  preserve_branch_on_failure: true
-  preserve_branch_on_cancel: false

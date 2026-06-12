@@ -74,7 +74,7 @@ contract.
 - **Globally unique by convention.** Encode the source in the key (the `github:issue:` prefix),
   so the dedup index needs only the key itself — no separate source column.
 - **Uniqueness is active-scoped.** No two **non-terminal** tasks may share a key. A
-  `completed` or `failed` task **frees** its key, so a re-triggered source (a reopened issue
+  `completed`, `failed`, or `cancelled` task **frees** its key, so a re-triggered source (a reopened issue
   with new context) correctly spawns a fresh task. Strict where it matters — two live tasks for
   one issue are impossible — permissive exactly where a second pass is legitimate.
 

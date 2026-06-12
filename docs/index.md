@@ -22,4 +22,3 @@ features:
     details: A swappable plugin architecture behind stable adapter contracts. Swap GitHub for GitLab, Telegram for Slack, Claude Code for OpenCode — Core never changes.
 ---
 
-<!-- TODO(hero-media): the demo GIF/video drops in here once recorded (see the v1 release plan). -->

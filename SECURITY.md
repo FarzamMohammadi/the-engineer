@@ -21,7 +21,7 @@ You and the maintainer can then collaborate on a fix in a private thread before 
 - Credential leakage (tokens, API keys, session secrets) through logs, errors, PR descriptions, or any output channel
 - Workspace escape or filesystem access outside task boundaries
 - Authentication or authorization bypasses in any adapter or plugin
-- Code execution beyond what an coding agent CLI would legitimately perform
+- Code execution beyond what a coding agent CLI would legitimately perform
 - Configuration parsing that allows arbitrary file reads or command execution
 - Any path that allows a malicious task to compromise the host system or the user's other repositories
 

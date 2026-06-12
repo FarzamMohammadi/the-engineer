@@ -7,10 +7,10 @@ The Engineer uses YAML configuration files stored in `~/.engineer/config/`. All 
 | File | Purpose |
 |------|---------|
 | [daemon.yaml](daemon.md) | Daemon runtime: concurrency, tick loop, logging, polling, workspace reaper, telemetry |
-| [orchestrator.yaml](orchestrator.md) | Review lenses, notifications |
+| [orchestrator.yaml](orchestrator.md) | Review lenses, observability |
 | [safety.yaml](safety.md) | Cost limits, scope boundaries, autonomy, merge policy |
 | [workspace.yaml](workspace.md) | Git operations, branch naming, PR settings, branch retention |
-| [people.yaml](people.md) | People directory: roles, contacts, notification preferences |
+| [people.yaml](people.md) | People directory: roles and contacts |
 
 Plugin-specific configs live in `~/.engineer/config/plugins/` and are documented in [docs/plugins/](../plugins/plugin-context.md).
 

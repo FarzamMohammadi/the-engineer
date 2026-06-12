@@ -49,6 +49,17 @@ Once the PR is open, the task sits in `blocked(awaiting_pr_review)`. The daemon'
 
 Each tick, for every task waiting on review, the poller asks the git hosting plugin **what events currently hold** on the PR (`detectPrEvents`), filters them through Core policy, picks a single winner, and re-enters the task by writing the winning event's **type** onto it (`pending_pr_event`) and re-queuing it. On the next dispatch, the orchestrator reads that type, starts the pipeline at the event's entry point, and clears it.
 
+The whole loop is database-shaped — no in-memory wait state anywhere:
+
+```mermaid
+graph LR
+    blocked["task: blocked(awaiting_pr_review)"] --> poll["poller asks the plugin:<br>detectPrEvents(PR)"]
+    poll --> arb["Core policy:<br>dedup + arbitrate one winner"]
+    arb -->|"write pending_pr_event<br>+ re-queue"| q["task re-queued"]
+    q -->|"next dispatch"| entry["pipeline starts at<br>entryFor(event)"]
+    entry -->|"work done, PR still open"| blocked
+```
+
 The event vocabulary is small and typed. Only `pr_comments` carries data (the comments, so Core can dedup and find an authorized `/approve`); the rest are bare signals whose detail is re-derived live when needed:
 
 | Event | Means | Re-enters at |

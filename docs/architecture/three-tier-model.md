@@ -11,14 +11,15 @@ The companion to the [architecture overview](overview.md) and [the pipeline](pip
 ```
 ┌─────────────────────────────────────────────────────┐
 │                     PLUGINS                         │
-│  GitHubTriggerPlugin  TelegramCommPlugin            │
-│  ClaudeCodeAgentPlugin  GitHubHostingPlugin           │
-│  GitHubCommPlugin  ...                              │
+│  GitHubTriggerPlugin    TelegramCommPlugin          │
+│  GitHubCommPlugin       GitHubHostingPlugin         │
+│  ClaudeCodeAgentPlugin  OpenCodeAgentPlugin         │
+│  GeminiCliAgentPlugin   ...                         │
 │                                                     │
 │  ┌─────────────────────────────────────────────┐    │
 │  │               ADAPTERS                      │    │
 │  │  TriggerAdapter    CommunicationAdapter     │    │
-│  │  AgentAdapter        GitHostingAdapter        │    │
+│  │  AgentAdapter      GitHostingAdapter        │    │
 │  │  ...                                        │    │
 │  │                                             │    │
 │  │  ┌─────────────────────────────────────┐    │    │
@@ -45,7 +46,7 @@ The Core and Adapters are the product. The Plugins are the ecosystem.
 
 ## Core Tier
 
-Nine components that are always present, invariant across all configurations.
+The components listed below are always present, invariant across all configurations.
 
 | Component | Role |
 |-----------|------|
@@ -133,7 +134,7 @@ Plugins are concrete implementations that satisfy an adapter contract. Mix and m
 |---------|----------------|---------------|
 | TriggerAdapter | GitHubTriggerPlugin, _(future: JiraTriggerPlugin, LinearTriggerPlugin)_ | Switch from GitHub Issues to Jira for work intake |
 | CommunicationAdapter | TelegramCommPlugin, GitHubCommPlugin, _(future: SlackCommPlugin, TeamsCommPlugin)_ | Add Slack alongside Telegram, or replace both with Teams |
-| AgentAdapter | ClaudeCodeAgentPlugin, _(future: OpenRouterAgentPlugin, OllamaAgentPlugin)_ | Switch from Claude to a local Ollama model |
+| AgentAdapter | ClaudeCodeAgentPlugin, OpenCodeAgentPlugin, GeminiCliAgentPlugin, _(future: OllamaAgentPlugin)_ | Switch coding agents — e.g. from Claude Code to Gemini CLI, or to a local Ollama model |
 | GitHostingAdapter | GitHubHostingPlugin, _(future: GitLabHostingPlugin, GiteaHostingPlugin)_ | Switch from GitHub to self-hosted Gitea |
 
 **The accessibility promise:** A contributor building a new plugin (say, a Slack communication plugin) needs only the CommunicationAdapter contract from the [communication plugin docs](../plugins/communication/README.md). They don't need to understand the Orchestrator, Task Engine, Event Bus, or any Core internals. The adapter boundary is all they need.
@@ -218,10 +219,10 @@ The three-tier model is designed so that The Engineer can evolve without paintin
 
 ## Future Adapter Types
 
-Two plugin categories from [`overview.md`](overview.md) are acknowledged but do not yet have adapter contracts defined:
+Two plugin categories are acknowledged but do not yet have adapter contracts defined:
 
-- **Workflow Phases** — Reorderable, swappable phases in the Orchestrator's pipeline
-- **Observability Backends** — Logging, dashboards, monitoring webhooks
+- **Workflow Phases** — Reorderable, swappable phases in the Orchestrator's pipeline (see [the pipeline](pipeline.md))
+- **Observability Backends** — Logging, dashboards, monitoring webhooks (see [observability](observability.md))
 
 These are acknowledged but deferred — no adapter contract is defined for either yet.
 

@@ -19,12 +19,12 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 | `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ merge_sha, success, error }` |
 | `closePR` | `(repo: string, prNumber: number) => Promise<void>` | -- |
 | `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ state, checks_state, merge_state, url }` |
-| `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ state, approvals, changes_requested_count, comments }` |
+| `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
 | `getPRComments` | `(repo: string, prNumber: number) => Promise<PRComment[]>` | Array of `{ id, author, body, created_at }` |
 | `detectPrEvents` | `(repo: string, prNumber: number) => Promise<PrEvent[]>` | Typed PR events that currently hold (see below) |
 | `commentOnPR` | `(repo: string, prNumber: number, comment: string, replyTo?: string) => Promise<CommentResult>` | `{ comment_id, url }` |
 | `dismissApprovals` | `(repo: string, prNumber: number, message: string) => Promise<void>` | -- |
-| `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ required_reviews, required_status_checks, enforce_admins, restrictions }` |
+| `getBranchProtection` | `(repo: string, branch: string) => Promise<BranchProtection>` | `{ protected, required_reviews, required_checks, restrictions }` |
 | `getDefaultBranch` | `(repo: string) => Promise<string>` | Branch name (e.g. `"main"`) |
 | `getAuthenticatedRemoteUrl` | `(remoteUrl: string) => SecureValue` | Authenticated remote URL (token wrapped in a `SecureValue` so it never leaks through logs). Synchronous. |
 

@@ -26,6 +26,68 @@ src/core/orchestrator/pipeline/
 
 ## The six phases
 
+The full map — every sub-phase, every loop, every hand-back. Solid sequence inside a phase; labeled edges are the routes `next` can take (◦ marks the opt-in lenses, which skip unless enabled in `review.lenses`):
+
+```mermaid
+stateDiagram-v2
+    direction TB
+
+    state requirements {
+        direction LR
+        gather
+    }
+    state research {
+        direction LR
+        investigate
+    }
+    state planning {
+        direction LR
+        design
+    }
+    state execution {
+        direction LR
+        implement --> verify
+        verify --> implement : gates red · repeat ≤3
+    }
+    state review {
+        direction LR
+        sr: self-review
+        sec: security ◦
+        cq: code-quality ◦
+        arch: architecture ◦
+        sr --> sec
+        sec --> cq
+        cq --> arch
+        arch --> refine
+        refine --> sr : revise · ≤3
+    }
+    state delivery {
+        direction LR
+        prd: pr-description
+        cpr: create-pr
+        ar: await-review
+        am: auto-merge
+        prd --> push
+        push --> cpr
+        cpr --> ar
+        ar --> am : entry-only
+    }
+
+    [*] --> requirements
+    requirements --> research : moderate / complex
+    requirements --> execution : trivial · skip ahead
+    research --> planning
+    planning --> execution
+    execution --> review
+    review --> delivery : ship
+    review --> execution : rework
+    review --> planning : root cause upstream
+    review --> requirements : root cause upstream
+    delivery --> execution : CI failure / merge conflict
+    delivery --> requirements : PR comments
+    delivery --> [*] : merged · or pushed, in push-only mode
+```
+
 | Phase            | Default sub-phases                                                                   | What makes it right                                                                                                                                                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Requirements** | `gather`                                                                             | Grounds in the codebase, writes a Context Summary *first* (a wrong understanding is caught at the first artifact), assesses complexity, and batches every question for a person into one outreach. `needs_human` blocks the task. |

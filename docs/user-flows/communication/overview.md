@@ -53,6 +53,7 @@ to the owner; the role split is kept so a future multi-person edition fans out w
 | `blocked_reminder` | owner | A blocked task is still waiting (timeout nudge). |
 | `escalation_alert` | owner + reviewers | A block waited too long and was failed/escalated. |
 | `review_reminder` | owner | A PR has been pending review for a while. |
+| `plugin_recovered` | owner | A previously failing plugin passed its health check again (the outage is over). |
 | `question` | the named person | The task needs a human to answer something. |
 | `status_response` | the asking person | The reply to an inbound query. |
 | `milestone` | owner | A noteworthy point was reached mid-task. |
@@ -60,8 +61,11 @@ to the owner; the role split is kept so a future multi-person edition fans out w
 | `ticket_comment` | the source ticket | A note posted back on the issue/PR, not a DM. |
 
 The kinds split by where their text comes from: **template kinds** (`completion`, `task_error`, …)
-carry only a `taskId` and the router fills a fixed template; **custom kinds** (`question`,
-`milestone`, `alert`, `status_response`, `ticket_comment`) carry their own `message`.
+carry only a `taskId` and the router fills a fixed template; **custom kinds** (`plugin_recovered`,
+`question`, `milestone`, `alert`, `status_response`, `ticket_comment`) carry their own `message`.
+`plugin_recovered` is additionally keyed on its `source` (a stable `plugin:<plugin_id>` string)
+for dedup — it has no `taskId`, so without the source every plugin's recovery would collapse to
+the same suppress-window key.
 
 ### What `notify()` does
 

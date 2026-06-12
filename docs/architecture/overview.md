@@ -17,46 +17,25 @@ The codebase is organized into three tiers with strict import boundaries:
 ```mermaid
 graph TB
     subgraph Core["Core Tier"]
-        direction TB
-        D[Daemon]
-        O[Orchestrator]
-        TE[TaskEngine]
-        EB[EventBus]
-        SL[SafetyLayer]
-        AP[ActionPipeline]
-        SM[SessionMemory]
-        WM[WorkspaceManager]
-        R[Registry]
-        PD[PeopleDirectory]
-        OB[Observer]
-        DLM[DataLifecycleManager]
+        direction LR
+        Daemon ~~~ Orchestrator ~~~ TaskEngine ~~~ EventBus ~~~ SafetyLayer
+        ActionPipeline ~~~ SessionMemory ~~~ WorkspaceManager ~~~ Registry ~~~ PeopleDirectory
+        Observer ~~~ DataLifecycleManager ~~~ RetryPolicy ~~~ DispatchTracker ~~~ WorkspaceReaper
     end
 
     subgraph Adapters["Adapter Tier"]
-        direction TB
-        TA[TriggerAdapter]
-        CA[CommunicationAdapter]
-        LA[AgentAdapter]
-        GHA[GitHostingAdapter]
+        direction LR
+        TriggerAdapter ~~~ CommunicationAdapter ~~~ AgentAdapter ~~~ GitHostingAdapter
     end
 
     subgraph Plugins["Plugin Tier"]
-        direction TB
-        GHT[GitHub Trigger]
-        GHC[GitHub Comm]
-        TG[Telegram Comm]
-        CL[Claude Code Agent]
-        GHH[GitHub Hosting]
+        direction LR
+        GHT[GitHub Trigger] ~~~ GHC[GitHub Comm] ~~~ TG[Telegram Comm] ~~~ CL[Claude Code Agent]
+        OC[OpenCode Agent] ~~~ GM[Gemini CLI Agent] ~~~ GHH[GitHub Hosting]
     end
 
-    Core --> Adapters
-    Adapters --> Plugins
-
-    GHT -.->|implements| TA
-    GHC -.->|implements| CA
-    TG -.->|implements| CA
-    CL -.->|implements| LA
-    GHH -.->|implements| GHA
+    Core -->|"calls contracts"| Adapters
+    Adapters -.->|"implemented by"| Plugins
 ```
 
 **Import rules:** Core never imports from Plugins. Plugins import only from the Adapter SDK boundary (`src/adapters/index.ts`). Adapters never import from Core.
@@ -91,7 +70,7 @@ graph LR
 | **ActionPipeline** | Authorization middleware: Gate 1 (state check) + Gate 2 (policy check) + Execute + Notify |
 | **SessionMemory** | Session lifecycle, journal entries, checkpoints |
 | **WorkspaceManager** | Git worktree creation/cleanup per task |
-| **Registry** | Plugin discovery, five-phase loading, health monitoring, lifecycle management |
+| **Registry** | Plugin discovery, loading and initialization, health monitoring, lifecycle management |
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |
 | **Observer** | Structured tracing facade — spans, observations, blob storage for the dashboard |
 | **DataLifecycleManager** | Retention cleanup, blob orphan pruning, incremental vacuum |
@@ -110,7 +89,11 @@ stateDiagram-v2
     planning --> execution
     execution --> review
     review --> execution : refine reworks
+    review --> planning : root cause upstream
+    review --> requirements : root cause upstream
     review --> delivery : ship
+    delivery --> execution : CI failure / merge conflict
+    delivery --> requirements : PR comments
     delivery --> [*] : merged (or pushed, in push-only mode)
 ```
 

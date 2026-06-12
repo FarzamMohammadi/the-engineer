@@ -22,6 +22,18 @@ Observability is three distinct systems with different purposes, destinations, a
 
 They are deliberately separate because they answer different questions and have different consumers. Logging is *reasoning* — a flat, searchable narrative for a human with the code open. Tracing is *structure* — the nested shape of an operation, written for an owner who has neither the code nor the agent transcript. The Event Bus is the system's own *nervous system and ledger* — the durable record of what happened that the system can replay to rebuild its state after a crash. Conflating them would force one shape to serve three incompatible needs.
 
+The shape of the whole thing — three channels out of every component, two stores, and the consumers they feed:
+
+```mermaid
+graph LR
+    comp["every component"] -->|"IObserver · logging"| logs["pino → rolling JSON files<br>~/.engineer/logs/"]
+    comp -->|"IObserver · tracing"| obs[("observations + blobs<br>SQLite")]
+    comp -->|"EventBus.publish"| ev[("events<br>SQLite")]
+    obs --> dash["the dashboard<br>(SSE)"]
+    ev --> dash
+    obs --> otlp["OTLP export<br>Jaeger / any backend"]
+```
+
 One method bridges two systems on purpose: recording an error writes to **both** the logs (so the engineer can diagnose) and the trace (so the owner sees the failure on the timeline). It is the only deliberate dual-write; every other emission targets exactly one system.
 
 ### Logging — the engineer's narrative
@@ -84,7 +96,7 @@ Second, **sanitization at the export boundary.** A remote backend ships data *of
 
 ### Bringing a backend
 
-The Engineer does not download, install, or supervise the tracing backend — the user brings it (a local Jaeger, a `docker run`, or any OTLP endpoint). When export is enabled but nothing answers, the system still starts and prints an OS-aware install pointer; the doctor check reports whether export is enabled and whether the endpoint is reachable. When the backend answers, both the start output and the dashboard's task page link out to the flame graph. The dashboard stays the durable default; the external backend is the rich, optional upgrade. The two config keys that control this are documented in the [daemon telemetry configuration](../configuration/daemon.md#telemetry).
+The Engineer does not download, install, or supervise the tracing backend — the user brings it (a local Jaeger, a `docker run`, or any OTLP endpoint). When export is enabled but nothing answers, the system still starts and prints an OS-aware install pointer; the doctor check reports whether export is enabled and whether the endpoint is reachable. When the backend answers, both the start output and the dashboard's task page link out to the flame graph. The dashboard stays the durable default; the external backend is the rich, optional upgrade. The three config keys that control this are documented in the [daemon telemetry configuration](../configuration/daemon.md#telemetry).
 
 ## Lifecycle and threading, in brief
 
@@ -110,6 +122,6 @@ These are enforced in the [Definition of Done](../philosophy.md#radical-observab
 - [Observability how-to](../contribution-docs/how-tos/observability.md) — the API, the methods, the lifecycle, and the rules for adding an emission.
 - [Radical Observability](../philosophy.md#radical-observability--the-owner-is-never-in-the-dark) — the principle this system serves.
 - [Coding Standards §§ 12 and 14](../coding-standards.md#12-logging) — what to log, what to trace, what to record as a decision.
-- [Daemon telemetry configuration](../configuration/daemon.md#telemetry) — the two keys that turn external export on and point it at a backend.
+- [Daemon telemetry configuration](../configuration/daemon.md#telemetry) — the three keys that turn external export on (`enabled`) and point it at a backend's ingest (`endpoint`) and web UI (`ui_base`).
 - [The pipeline](pipeline.md) — the per-task structure that one-trace-per-dispatch mirrors.
 - [Architecture overview](overview.md) — the Event Bus and the components that emit.

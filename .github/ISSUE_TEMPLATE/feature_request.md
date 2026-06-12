@@ -19,7 +19,7 @@ What other approaches did you consider? Why is the proposed solution better?
 
 ## Philosophy Alignment
 
-Which principle from our [philosophy](docs/philosophy.md) does this support? (e.g., Modular Everything, Real Engineer Behavior, Open Source for All)
+Which principle from our [philosophy](https://github.com/FarzamMohammadi/the-engineer/blob/main/docs/philosophy.md) does this support? (e.g., Boundaries as Discipline, Real Engineer Behavior, Open Source for All)
 
 ## Additional Context
 

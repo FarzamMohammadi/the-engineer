@@ -5,6 +5,7 @@ How to use The Engineer effectively. Each guide is a standalone topic you can re
 ## Available
 
 - [Writing Tickets](writing-tickets.md) — How to write tickets that produce great results
+- [Dashboard](dashboard.md) — Reading the live dashboard: what each page shows and how to act on it
 
 ## Planned
 
@@ -13,5 +14,4 @@ How to use The Engineer effectively. Each guide is a standalone topic you can re
 - **Scoping Work** — When to file one ticket vs many, complexity sweet spots
 - **Cost Awareness** — Token usage patterns, config knobs, what burns tokens
 - **When to Intervene** — When to comment, when to let it finish, how to unblock
-- **Monitoring** — Using the dashboard, logs, and status commands
 - **Configuration** — Key config choices and what they affect

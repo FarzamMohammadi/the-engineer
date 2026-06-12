@@ -57,6 +57,12 @@ interface IObserver {
   // Create a child observer scoped to a component
   child(component: ComponentTag): IObserver;
 
+  // Create a child observer for a plugin (tags component: "plugin", binds plugin_id)
+  childPlugin(pluginId: string): IObserver;
+
+  // Return a child observer with trace_id bound into every pino log line
+  withTrace(traceId: string): IObserver;
+
   // Escape hatch for code that needs raw pino
   readonly pino: Logger;
 }
@@ -308,9 +314,9 @@ Jaeger runs *adjusters* over a trace at query time, and several append a **warni
 
 The throughline: **well-formed, same-host spans keep the backend quiet** — the 1µs floor and the host identity are non-negotiable. The one warning we live with is `parent not in trace`, the price of streaming a long-running root live (the row above). When adding an observation kind or changing span timing, re-check it against this table — the harness is a few synthetic spans POSTed to a local `:4318` and read back from `:16686/api/traces`, no task run needed.
 
-**Bringing a backend.** The Engineer does not download, install, or supervise the backend — you bring it. The repo ships a root [`docker-compose.yml`](../../../docker-compose.yml) for a one-command local Jaeger v2 (`docker compose up -d`, UI at http://localhost:16686); a Homebrew/binary Jaeger (`brew install jaeger && jaeger`, the [official download](https://www.jaegertracing.io/download/)) or any other OTLP endpoint works identically. When telemetry is on but nothing answers, `engineer start` still starts and prints an OS-aware install pointer (`src/cli/commands/start/telemetry.ts`); `engineer doctor` reports a telemetry category that probes reachability with a short localhost timeout. When the backend answers, both the start output and the dashboard task page link out to the flame graph.
+**Bringing a backend.** The Engineer does not download, install, or supervise the backend — you bring it. The repo ships a root [`docker-compose.yml`](../../../docker-compose.yml) for a one-command local Jaeger v2 (`docker compose up -d`, UI at http://localhost:16686); a Homebrew/binary Jaeger (`brew install jaeger && jaeger`, the [official download](https://www.jaegertracing.io/download/)) or any other OTLP endpoint works identically. When telemetry is on but nothing answers, `engineer start` still starts and prints an OS-aware install pointer (`src/cli/commands/start/telemetry.ts`); `engineer doctor` reports a telemetry category that probes the configured endpoint with a short timeout. When the backend answers, both the start output and the dashboard task page link out to the flame graph.
 
-See [Telemetry configuration](../../configuration/daemon.md#telemetry) for the two config keys.
+See [Telemetry configuration](../../configuration/daemon.md#telemetry) for the three config keys.
 
 ---
 
@@ -323,7 +329,7 @@ Every observer child is tagged with a `ComponentTag` — a TypeScript string uni
 ```
 daemon, registry, orchestrator, task-engine, safety-layer, workspace-manager,
 skills, event-bus, cli, action-pipeline, plugin, plugin-loader, data-lifecycle,
-notifications, dashboard
+workspace-reaper, notifications, dashboard, trace-export
 ```
 
 Tags appear in every log line's `component` field. Use the existing tag for your component. If adding a new component, add its tag to the `ComponentTag` union in `src/core/observer/logging.ts`.
@@ -355,9 +361,11 @@ Every component receives `observer: IObserver` as a **required, non-nullable** d
 **Core components** (via `createCoreComponents` in `system.ts`):
 ```typescript
 createCoreComponents({
-  db, observer: observer.child("event-bus"), safetyConfig, workspaceConfig,
+  db, observer, safetyConfig, workspaceConfig,
 });
-// Internally creates children: observer.child("task-engine"), observer.child("action-pipeline")
+// Internally creates children: observer.child("event-bus"), observer.child("task-engine"),
+// observer.child("safety-layer"), observer.child("action-pipeline"),
+// observer.child("workspace-manager"), observer.child("skills")
 ```
 
 **Daemon** (via context object):
@@ -541,12 +549,12 @@ handle.cleanup(); // Closes DB + removes temp dir
 | `src/core/agent-activity/` | The live-agent-activity mediator: `createActivitySink` (effectful sink) + `mapActivity` (pure event→observation mapping). Consumes `AgentActivityEvent`, writes `agent_activity` children of the `agent_call` span |
 | `src/core/observer/store.ts` | `ObserverStore` (prepared statements, SQL layer) |
 | `src/schemas/observer.ts` | Zod schemas, observation types enum, row mapper |
-| `src/db/migrations/003_observer.sql` | Database schema (table + 8 indexes) |
+| `src/db/migrations/002_observations.sql` | Database schema (table + 8 indexes) |
 | `src/core/observer/logging.ts` | `ComponentTag` type, `createLogger`, `createSilentLogger` |
 | `src/core/observer/blob-store.ts` | Content-addressable blob storage (SHA-256) |
 | `src/core/observer/trace-export.ts` | Poll-based OTLP exporter (`startTraceExport` factory + `stop()` handle) |
 | `src/core/observer/otlp/` | Pure OTLP/JSON mapper (`deriveTraceId`/`deriveSpanId`, span + resource builders, attribute sanitization) |
 | `src/cli/commands/start/telemetry.ts` | Start-output telemetry helpers (reachability probe, OS-aware install pointer) |
-| `src/cli/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
+| `src/cli/commands/start/bootstrap.ts` | Observer creation, upgrade, and threading to all components |
 | `tests/helpers/test-observer-facade.ts` | Test helper: silent observer (no tracing) |
 | `tests/helpers/test-observer.ts` | Test helper: full observer with in-memory DB |

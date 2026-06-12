@@ -45,7 +45,7 @@ pnpm run setup    # install dependencies, build, link the `engineer` CLI
 engineer start    # first-run setup, then start the daemon
 ```
 
-`pnpm run setup` confirms before it acts and is safe to re-run any time. If pnpm's global bin directory isn't configured yet, it offers to set that up and tells you what to do next. `engineer start` walks you through first-run configuration, then runs the daemon in the foreground — `Ctrl+C` to stop. When `engineer start` reports the daemon is ready, the dashboard is at [http://localhost:3847](http://localhost:3847).
+`pnpm run setup` confirms before it acts and is safe to re-run any time. If pnpm's global bin directory isn't configured yet, it offers to set that up and tells you what to do next. `engineer start` walks you through first-run configuration, then runs the daemon in the foreground — `Ctrl+C` to stop. When `engineer start` reports the daemon is ready, the dashboard is at [http://localhost:3847](http://localhost:3847). If anything misbehaves, [docs/troubleshooting.md](docs/troubleshooting.md) walks symptom → fix.
 
 > **Dev mode (without a global install):** use `pnpm dev <command>` in place of `engineer`.
 
@@ -73,7 +73,26 @@ Full command reference, options, and configuration details: **[docs/cli.md](docs
 
 ## How it works
 
-<!-- TODO(visuals): architecture diagram here (three-tier model: Core → Adapters → Plugins) -->
+```mermaid
+graph TB
+    subgraph Core["Core — the conductor"]
+        direction LR
+        Daemon ~~~ Orchestrator ~~~ TaskEngine ~~~ EventBus ~~~ SafetyLayer
+    end
+
+    subgraph Adapters["Adapters — the score"]
+        direction LR
+        TriggerAdapter ~~~ CommunicationAdapter ~~~ AgentAdapter ~~~ GitHostingAdapter
+    end
+
+    subgraph Plugins["Plugins — the instruments"]
+        direction LR
+        github-trigger ~~~ telegram-comm ~~~ claude-code-agent ~~~ github-hosting
+    end
+
+    Core -->|"calls contracts"| Adapters
+    Adapters -.->|"implemented by"| Plugins
+```
 
 **Three tiers, one invariant — Plugin Opacity:**
 
@@ -157,6 +176,8 @@ User-facing documentation lives in [`docs/`](docs/) — the system blueprint. An
 - [Constraints](docs/constraints.md) — deliberate v1 scope decisions (single-user)
 - [Architecture](docs/architecture/overview.md) — system design and data flow
 - [CLI Reference](docs/cli.md) — full command documentation
+- [Usage Guides](docs/usage-guide/) — writing tickets, reading the dashboard
+- [Troubleshooting](docs/troubleshooting.md) — symptom → fix for common failures
 - [Coding Standards](docs/coding-standards.md) — the law for all code
 - [Configuration](docs/configuration/) — daemon, orchestrator, safety, workspaces
 - [Plugins](docs/plugins/) — adapter contracts and per-plugin references
@@ -207,6 +228,10 @@ A seed directory holds saved configuration (`configs/` and `plugins/` YAML) so s
 - **Want to contribute code?** Read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/philosophy.md](docs/philosophy.md) — the philosophy governs how every decision gets made.
 - **Want to report a security issue?** See [SECURITY.md](SECURITY.md). Do not file public issues for security concerns.
 - **Want to understand the journey?** The full build history is preserved in [`docs/archived/`](docs/archived/) — or [reach out to me](https://github.com/FarzamMohammadi)!
+
+## Versioning
+
+v1.0.0 is the first release that runs the lifecycle end to end — not a stability guarantee. The project is young and still moving fast, so a minor release can reshape configuration or internals. Additive database migrations apply automatically at startup, but breaking schema or config changes do not migrate your existing state — when one lands, a [reset](docs/cli.md#upgrading) is the upgrade path. Releases ship as [GitHub releases](https://github.com/FarzamMohammadi/the-engineer/releases) (npm publish is deferred); if something breaks across a release, [open an issue](https://github.com/FarzamMohammadi/the-engineer/issues).
 
 ## License
 

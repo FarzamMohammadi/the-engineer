@@ -91,7 +91,11 @@ Core verifies each adapter has a plugin registered — nothing more. The specifi
 4. **Iterate until ready.** Work can be handed back to an earlier phase when review finds the root cause lives upstream — the agent reports an outcome and the orchestrator decides the route (it never picks a phase itself). After the pull request opens, review comments, CI failures, and merge conflicts re-enter the pipeline as typed events. Each new push dismisses stale approvals. Rework is bounded — past the ceiling, the task escalates to you.
 5. **Merge after sign-off.** Humans stay in the loop on requirements, key decisions, and the final approval. When a pull request is approved with CI green, The Engineer can merge it automatically — auto-merge is off by default, so by default the approval completes the task and you merge — and an external merge is detected and finalized too.
 
-Architecture guide: **[docs/architecture/overview.md](docs/architecture/overview.md)** · Three-tier model: **[docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)** · Scheduling: **[docs/architecture/scheduling-dispatch.md](docs/architecture/scheduling-dispatch.md)**
+Architecture guide: **[docs/architecture/overview.md](docs/architecture/overview.md)**
+
+Three-tier model: **[docs/architecture/three-tier-model.md](docs/architecture/three-tier-model.md)**
+
+Scheduling: **[docs/architecture/scheduling-dispatch.md](docs/architecture/scheduling-dispatch.md)**
 
 ## Safety
 

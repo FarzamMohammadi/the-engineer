@@ -7,7 +7,13 @@
 
 An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the **full engineering lifecycle** — from task intake to merged pull request — with safety rails, a full audit trail, and a swappable plugin architecture for any tool you use.
 
-<!-- TODO(visuals): hero dashboard screenshot here -->
+<p align="center">
+  <img src="docs/assets/engineer-demo.gif" alt="The Engineer taking a one-line GitHub issue to a merged pull request, autonomously" width="820" />
+</p>
+
+<p align="center"><sub>One issue, one label — then it grounds itself, asks when it's unsure, ships a pull request, and merges on your approval. Intake to delivery.</sub></p>
+
+<p align="center"><a href="https://youtu.be/48t6g_co9j4"><strong>▶ Watch the full walkthrough</strong></a></p>
 
 > [!IMPORTANT]
 > **v1.0.0 — it works, end to end.**

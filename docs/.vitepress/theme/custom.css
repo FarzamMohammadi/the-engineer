@@ -1,10 +1,18 @@
 /**
- * Brand tokens — PLACEHOLDER. The real palette and typography are tuned with the owner via live
- * design probes during the build. Keep this minimal until then.
+ * Brand tokens. Light mode keeps the indigo brand; dark mode lightens the same ramp so links,
+ * active UI, and inline code (VitePress sets `--vp-code-color` to brand-1) stay legible on the
+ * dark background — the same lighter-in-dark convention the default VitePress theme uses.
  */
 :root {
   --vp-c-brand-1: #4f46e5;
   --vp-c-brand-2: #6366f1;
   --vp-c-brand-3: #818cf8;
   --vp-c-brand-soft: rgba(99, 102, 241, 0.14);
+}
+
+.dark {
+  --vp-c-brand-1: #a5b4fc;
+  --vp-c-brand-2: #818cf8;
+  --vp-c-brand-3: #6366f1;
+  --vp-c-brand-soft: rgba(129, 140, 248, 0.16);
 }

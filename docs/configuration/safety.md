@@ -104,6 +104,9 @@ execution, review, or delivery delivers its question the same way. When you answ
 **where it asked**, with your reply carried into the agent's context as authoritative — so it acts on
 your decision rather than re-deriving it.
 
+If several decisions need confirming at once, they are asked **together** in one reach-out — answer
+them all in a single reply rather than one per round.
+
 A paused discretionary decision is a distinct kind of block (`awaiting_human_decision`) from a hard
 block (`awaiting_human`). The difference matters for one behavior: the daemon's [self-unblock
 check](#response-timeouts) never auto-resolves a discretionary decision, because only you can make that

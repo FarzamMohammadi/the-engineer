@@ -150,10 +150,11 @@ safety policy per decision:
 sub-phase result
   └─ for each surfaced decision:
        consult should_i_ask (the autonomy policy)
-         ├─ proceed     → the agent's call stands; continue
-         ├─ ask + owner → block awaiting_human_decision, question = the synthesized ask
+         ├─ proceed       → the agent's call stands
+         ├─ ask + owner   → collect it
          └─ ask, no owner → proceed anyway, and record a loud sub-confidence decision
                             naming exactly what was decided without you
+  └─ any collected?       → block awaiting_human_decision, asking them all in one reach-out
 ```
 
 The policy itself — the categories, their levels (`always_decide` / `always_ask` / `threshold`),

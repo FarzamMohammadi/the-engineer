@@ -299,15 +299,46 @@ describe("runPipeline", () => {
       expect(consultJudgment).not.toHaveBeenCalled();
     });
 
-    it("asks on the first escalated decision and stops consulting the rest", async () => {
+    it("asks all escalated decisions together in one block", async () => {
       const sub = mockSubPhase("implement", {
         run: () =>
           Promise.resolve<SubPhaseResult>({
             outcome: "ok",
-            summary: "two calls",
+            summary: "two forks",
             data: {
               decisions: [
-                { category: "code_style", summary: "a", chosen: "x", reasoning: "y" },
+                { category: "architecture", summary: "split the module", chosen: "two files", reasoning: "cohesion" },
+                { category: "dependencies", summary: "add a parser", chosen: "zod", reasoning: "already used" },
+              ],
+            },
+          }),
+      });
+      const { ctx, consultJudgment } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "always asks" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      // Every decision is consulted (no early return), and both land in ONE block — asked together.
+      expect(consultJudgment).toHaveBeenCalledTimes(2);
+      expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).toContain("two files");
+        expect(outcome.detail.needed).toContain("zod");
+        expect(outcome.detail.needed).toContain("2 decisions");
+      }
+    });
+
+    it("batches only the escalated decisions, proceeding on the rest", async () => {
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "one proceeds, one asks",
+            data: {
+              decisions: [
+                { category: "code_style", summary: "naming", chosen: "camelCase", reasoning: "convention" },
                 { category: "security", summary: "touched auth", chosen: "jwt", reasoning: "simplest" },
               ],
             },
@@ -327,6 +358,10 @@ describe("runPipeline", () => {
 
       expect(consultJudgment).toHaveBeenCalledTimes(2);
       expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).toContain("jwt"); // the escalated fork
+        expect(outcome.detail.needed).not.toContain("camelCase"); // the proceeded one is not asked
+      }
     });
   });
 

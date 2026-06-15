@@ -387,11 +387,10 @@ function persistTaskPosition(
 
 /**
  * Consult the owner's autonomy policy for every discretionary decision the sub-phase surfaced in
- * `result.data.decisions`. The safety layer records each verdict as an `autonomy_policy` decision
- * nested in the dispatch trace (via the threaded scope). On the FIRST escalated verdict, returns the
- * block detail that turns the agent's quiet decision into a stop-and-ask (the orchestrator delivers
- * the synthesized question and the owner's reply re-enters the asking sub-phase on resume); returns
- * null when there are no decisions or the policy lets the agent decide every one.
+ * `result.data.decisions`, and collect the ones the owner must confirm into ONE block — asked together,
+ * so the owner answers them in a single reply rather than one per resume. The safety layer records each
+ * verdict as an `autonomy_policy` decision nested in the dispatch trace. Returns null when there are no
+ * decisions or the policy lets the agent decide every one.
  *
  * No-owner edge: if the policy escalates but no owner is configured, blocking would strand the task
  * forever with no one to answer. So the runner proceeds autonomously instead and records a loud,
@@ -405,6 +404,8 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
   }
   const repo = ctx.task.repo ?? "";
   const hasOwner = ctx.peopleDirectory.getOwner() !== null;
+
+  const toAsk: SurfacedDecision[] = [];
   for (const decision of decisions) {
     const verdict = ctx.safetyLayer.consultJudgment({
       type: "should_i_ask",
@@ -417,8 +418,7 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
       trace: traceScope(ctx, phase),
     });
     // `proceed` is the only verdict that lets the agent decide alone. Anything else — ask_human from the
-    // policy, or a deny from a malformed consult — would normally fail safe to asking the owner rather
-    // than slipping a discretionary decision through unseen.
+    // policy, or a deny from a malformed consult — fails safe to asking the owner.
     if (verdict.action === "proceed") {
       continue;
     }
@@ -428,16 +428,20 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
       recordOwnerlessProceed(ctx, phase, decision, verdict.reason);
       continue;
     }
-    // The category is `awaiting_human_decision`, distinct from a sub-phase's `awaiting_human` (stuck,
-    // needs info): only the OWNER can resolve a discretionary call they asked to confirm, so the daemon
-    // must NOT later self-unblock it (see health-monitor's exemption).
-    return {
-      category: BlockCategories.awaiting_human_decision,
-      sub_phase: subPhase,
-      needed: synthesizeQuestion(decision),
-    };
+    toAsk.push(decision);
   }
-  return null;
+
+  if (toAsk.length === 0) {
+    return null;
+  }
+  // The category is `awaiting_human_decision`, distinct from a sub-phase's `awaiting_human` (stuck, needs
+  // info): only the OWNER can resolve a discretionary call they asked to confirm, so the daemon must NOT
+  // later self-unblock it (see health-monitor's exemption).
+  return {
+    category: BlockCategories.awaiting_human_decision,
+    sub_phase: subPhase,
+    needed: synthesizeBatchedQuestion(toAsk),
+  };
 }
 
 /**
@@ -481,9 +485,21 @@ function readSurfacedDecisions(result: SubPhaseResult): readonly SurfacedDecisio
   return parsed.success ? parsed.data : [];
 }
 
-/** Turn a surfaced decision into the question the owner is asked when the policy escalates it. */
-function synthesizeQuestion(decision: SurfacedDecision): string {
-  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm — proceed with this choice, or tell me what to do instead?`;
+/** One surfaced decision, framed for the owner: what was chosen, why, and which policy category it is. */
+function synthesizeDecision(decision: SurfacedDecision): string {
+  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm.`;
+}
+
+/** Frame the escalated decisions as a single confirmation — numbered when there are several, so the owner answers them all in one reply. */
+function synthesizeBatchedQuestion(decisions: readonly SurfacedDecision[]): string {
+  const [first] = decisions;
+  if (decisions.length === 1 && first) {
+    return `${synthesizeDecision(first)} Proceed with this, or tell me what to do instead?`;
+  }
+  const numbered = decisions
+    .map((decision, index) => `${String(index + 1)}. ${synthesizeDecision(decision)}`)
+    .join("\n\n");
+  return `I have ${String(decisions.length)} decisions that need your confirmation — please answer them all in one reply:\n\n${numbered}\n\nProceed with these, or tell me what to change?`;
 }
 
 // ── Effects: observability ───────────────────────────────────────────────────

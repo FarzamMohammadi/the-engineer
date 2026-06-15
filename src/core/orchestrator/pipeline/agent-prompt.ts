@@ -64,7 +64,7 @@ The known categories:
 - scope_expansion, refactoring_broad — calls whose blast radius depends on size (carry a count in \`details\`, e.g. files touched).
 - architecture, dependencies, public_api, destructive, security — high-stakes or hard-to-reverse calls.
 
-Use the category that fits; an unfamiliar one is treated as needing the owner's confirmation. Only surface a genuine fork — a real choice between defensible options — not every routine line you write.`;
+Use the category that fits; an unfamiliar one is treated as needing the owner's confirmation. Only surface a genuine choice — a point where two or more defensible options existed and you picked one — not every routine line you write. A choice the owner has ALREADY made for you — in the task, in the requirements, or in an answer carried into this run — is settled: honor it and proceed, do not raise it again. When you do have several genuine choices, surface them all in this one result so the owner can confirm them together, rather than dripping them out one run at a time.`;
 
 /** Build the system prompt for an agent sub-phase: shared identity and standards plus this step's role line. */
 export function buildSystemPrompt(roleLine: string): string {

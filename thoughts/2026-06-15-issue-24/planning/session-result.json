@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "summary": "Owner confirmed both surfaced decisions (diff-digest detection + diff-derived title); amended the plan with one critical correction — the digest must exclude thoughts/ or it self-triggers a spurious push every round.",
+  "details": {
+    "run": "planning pass 2 (post owner-answer)",
+    "decisions_confirmed_by_owner": [
+      "D1: change-detection via sha256 of diff-against-base (not string-compare of LLM prose, not host live-read)",
+      "D2: PR title becomes a diff-derived deliverable (pr-title.md), sourced identically at creation and rework, falling back to task title when absent, core title then decorated via composePrTitle"
+    ],
+    "critical_correction": "Prior plan's digest hashed the whole tree including thoughts/. Since push commits the regenerated pr-title.md/pr-description.md into HEAD before create-pr runs, that digest would change every round and fire a spurious updatePR every time. Corrected to git diff origin/<base>...HEAD -- . ':(exclude)thoughts/', mirroring exclude_thoughts_on_merge; the thoughts/ exclusion transitively covers both deliverables. Added an exclusion regression test.",
+    "no_op_change_set": "Only the diffDigestAgainstBase git command and its step-2 test change vs. planning pass 1; all other steps re-verified to hold.",
+    "open_decisions": "none — both surfaced decisions confirmed; remaining calls are owner-delegated mechanism/local choices recorded in the plan."
+  }
+}

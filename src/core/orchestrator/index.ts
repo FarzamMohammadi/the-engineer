@@ -183,6 +183,16 @@ export function responseCarry(answer: string): Carry {
 }
 
 /**
+ * The owner-facing pickup messages for a dispatch: "Starting" on a task's first run, "Continuing" on any
+ * resume (an answered block, a PR rework, a crash-resume — every re-dispatch carries a `resume_from`
+ * checkpoint). Exported for direct unit testing, like {@link responseCarry}.
+ */
+export function pickupMessages(title: string, isResume: boolean): { milestone: string; ticket: string } {
+  const verb = isResume ? "Continuing" : "Starting";
+  return { milestone: `${verb} work on: ${title}`, ticket: `${verb} work on this ticket.` };
+}
+
+/**
  * Resolve a pending human answer into a starting ResumeState. The answer rides the runner's carry into
  * the sub-phase that asked (the resume checkpoint — requirements/gather), so the re-run addresses the
  * answer instead of re-deriving scope from scratch. With no checkpoint (or a pipeline reshape), fall
@@ -266,13 +276,14 @@ export class Orchestrator {
       session_id: sessionId,
       parent_observation_id: rootSpan.id,
     };
+    const isResume = !!dispatch.resume_from;
     tracedObserver.observe(
       ObservationTypes.lifecycle,
       "task_picked_up",
-      { title: dispatch.task.title, isResume: !!dispatch.resume_from },
+      { title: dispatch.task.title, isResume },
       pickupScope,
     );
-    this.notifyPickup(taskId, dispatch.task.title);
+    this.notifyPickup(taskId, dispatch.task.title, isResume);
 
     const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId, rootSpan.id);
     const resume = this.resolveDispatchStart(dispatch, tracedObserver);
@@ -403,17 +414,18 @@ export class Orchestrator {
     return reentry;
   }
 
-  /** Tell the owner work has started, on their channels and on the source ticket. */
-  private notifyPickup(taskId: string, title: string): void {
+  /** Tell the owner work has started — or resumed — on their channels and on the source ticket. */
+  private notifyPickup(taskId: string, title: string, isResume: boolean): void {
+    const messages = pickupMessages(title, isResume);
     this.ctx.notifications.notify({
       kind: NotificationKinds.milestone,
       taskId,
-      message: `Starting work on: ${title}`,
+      message: messages.milestone,
     });
     this.ctx.notifications.notify({
       kind: NotificationKinds.ticket_comment,
       taskId,
-      message: "Starting work on this ticket.",
+      message: messages.ticket,
     });
   }
 

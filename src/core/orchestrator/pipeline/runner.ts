@@ -157,9 +157,16 @@ export async function runPipeline(
     // An effect (it records the verdict observation), so it lives here in the loop rather than in the
     // pure next(): a sub-phase cannot forget to be consulted. An ask_human verdict turns the agent's
     // quiet "I decided X" into a stop-and-ask before the work proceeds; otherwise routing continues.
-    const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
-    if (ask) {
-      return emitBlock(ctx, phaseDef.phase, ask);
+    // Intent-forming phases (consultsDecisions === false) do not gate: a decision raised while the agent
+    // is still understanding the task is premature, so it is recorded for the trail, not asked — this is
+    // what stops requirements' ask-biased intake from re-surfacing a settled choice each resume.
+    if (phaseDef.consultsDecisions === false) {
+      noteUnconsultedDecisions(ctx, phaseDef.phase, subPhase.name, result);
+    } else {
+      const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
+      if (ask) {
+        return emitBlock(ctx, phaseDef.phase, ask);
+      }
     }
 
     // ── route (ok | needs_human): plan purely, then apply and emit ──
@@ -387,11 +394,10 @@ function persistTaskPosition(
 
 /**
  * Consult the owner's autonomy policy for every discretionary decision the sub-phase surfaced in
- * `result.data.decisions`. The safety layer records each verdict as an `autonomy_policy` decision
- * nested in the dispatch trace (via the threaded scope). On the FIRST escalated verdict, returns the
- * block detail that turns the agent's quiet decision into a stop-and-ask (the orchestrator delivers
- * the synthesized question and the owner's reply re-enters the asking sub-phase on resume); returns
- * null when there are no decisions or the policy lets the agent decide every one.
+ * `result.data.decisions`, and collect the ones the owner must confirm into ONE block — asked together,
+ * so the owner answers them in a single reply rather than one per resume. The safety layer records each
+ * verdict as an `autonomy_policy` decision nested in the dispatch trace. Returns null when there are no
+ * decisions or the policy lets the agent decide every one.
  *
  * No-owner edge: if the policy escalates but no owner is configured, blocking would strand the task
  * forever with no one to answer. So the runner proceeds autonomously instead and records a loud,
@@ -405,6 +411,8 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
   }
   const repo = ctx.task.repo ?? "";
   const hasOwner = ctx.peopleDirectory.getOwner() !== null;
+
+  const toAsk: SurfacedDecision[] = [];
   for (const decision of decisions) {
     const verdict = ctx.safetyLayer.consultJudgment({
       type: "should_i_ask",
@@ -417,8 +425,7 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
       trace: traceScope(ctx, phase),
     });
     // `proceed` is the only verdict that lets the agent decide alone. Anything else — ask_human from the
-    // policy, or a deny from a malformed consult — would normally fail safe to asking the owner rather
-    // than slipping a discretionary decision through unseen.
+    // policy, or a deny from a malformed consult — fails safe to asking the owner.
     if (verdict.action === "proceed") {
       continue;
     }
@@ -428,16 +435,60 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
       recordOwnerlessProceed(ctx, phase, decision, verdict.reason);
       continue;
     }
-    // The category is `awaiting_human_decision`, distinct from a sub-phase's `awaiting_human` (stuck,
-    // needs info): only the OWNER can resolve a discretionary call they asked to confirm, so the daemon
-    // must NOT later self-unblock it (see health-monitor's exemption).
-    return {
-      category: BlockCategories.awaiting_human_decision,
-      sub_phase: subPhase,
-      needed: synthesizeQuestion(decision),
-    };
+    toAsk.push(decision);
   }
-  return null;
+
+  if (toAsk.length === 0) {
+    return null;
+  }
+  // The category is `awaiting_human_decision`, distinct from a sub-phase's `awaiting_human` (stuck, needs
+  // info): only the OWNER can resolve a discretionary call they asked to confirm, so the daemon must NOT
+  // later self-unblock it (see health-monitor's exemption).
+  return {
+    category: BlockCategories.awaiting_human_decision,
+    sub_phase: subPhase,
+    needed: synthesizeBatchedQuestion(toAsk),
+  };
+}
+
+/**
+ * Record — without gating — the decisions a sub-phase surfaced in an intent-forming phase (one whose
+ * `consultsDecisions` is false). The dashboard observer sees only what is emitted, so a choice noted but
+ * not asked must still leave a trail: one info line plus a full-confidence decision per choice, naming
+ * what was recorded and why it was not put to the owner here (the call is consulted in the phase that
+ * makes it). Silent when the sub-phase surfaced none.
+ */
+function noteUnconsultedDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): void {
+  const decisions = readSurfacedDecisions(result);
+  if (decisions.length === 0) {
+    return;
+  }
+  ctx.observer.info("Decisions surfaced while forming intent — recorded, not gated", {
+    taskId: ctx.task.id,
+    phase,
+    subPhase,
+    count: decisions.length,
+  });
+  for (const decision of decisions) {
+    ctx.observer.recordDecision(
+      "autonomy_not_gated",
+      `${phase}/${subPhase} surfaced a "${decision.category}" choice while forming intent`,
+      [
+        {
+          id: "record_only",
+          description: "Record the choice for the trail — an intent-forming phase does not gate on it",
+        },
+        {
+          id: "consult_policy",
+          description: "Consult the owner's autonomy policy (done only in the phase that makes the call)",
+        },
+      ],
+      "record_only",
+      `${decision.summary} Chose "${decision.chosen}" (${decision.reasoning}). Recorded only — this phase forms intent; the call is consulted where it is made.`,
+      1,
+      traceScope(ctx, phase),
+    );
+  }
 }
 
 /**
@@ -481,9 +532,21 @@ function readSurfacedDecisions(result: SubPhaseResult): readonly SurfacedDecisio
   return parsed.success ? parsed.data : [];
 }
 
-/** Turn a surfaced decision into the question the owner is asked when the policy escalates it. */
-function synthesizeQuestion(decision: SurfacedDecision): string {
-  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm — proceed with this choice, or tell me what to do instead?`;
+/** One surfaced decision, framed for the owner: what was chosen, why, and which policy category it is. */
+function synthesizeDecision(decision: SurfacedDecision): string {
+  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm.`;
+}
+
+/** Frame the escalated decisions as a single confirmation — numbered when there are several, so the owner answers them all in one reply. */
+function synthesizeBatchedQuestion(decisions: readonly SurfacedDecision[]): string {
+  const [first] = decisions;
+  if (decisions.length === 1 && first) {
+    return `${synthesizeDecision(first)} Proceed with this, or tell me what to do instead?`;
+  }
+  const numbered = decisions
+    .map((decision, index) => `${String(index + 1)}. ${synthesizeDecision(decision)}`)
+    .join("\n\n");
+  return `I have ${String(decisions.length)} decisions that need your confirmation — please answer them all in one reply:\n\n${numbered}\n\nProceed with these, or tell me what to change?`;
 }
 
 // ── Effects: observability ───────────────────────────────────────────────────

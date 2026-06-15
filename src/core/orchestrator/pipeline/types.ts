@@ -174,6 +174,16 @@ export interface PhaseDefinition {
   readonly subPhases: readonly SubPhase[];
   /** Maximum `repeat` iterations for this phase before an over-cap repeat becomes a block. */
   readonly maxIterations: number;
+  /**
+   * Whether the runner consults the owner's autonomy policy on the discretionary decisions this
+   * phase's sub-phases surface. Absent means yes — gating is the conservative default. Intent-forming
+   * phases (requirements, research) set this `false`: there the agent is still understanding the task,
+   * not making the implementation call the policy governs, so a decision it surfaces is premature — it
+   * is recorded for the trail but never gated. The real call is consulted later, in the phase that
+   * actually makes it. This is what stops requirements' deliberately ask-biased intake from re-surfacing
+   * a settled choice on every resume and looping the owner.
+   */
+  readonly consultsDecisions?: boolean;
 }
 
 /**

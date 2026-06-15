@@ -1,6 +1,6 @@
 {
   "name": "the-engineer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "An autonomous orchestrator for AI coding agents. The Engineer drives Claude Code, OpenCode, and other CLI agents through the full engineering lifecycle — from task intake to merged pull request — with safety rails, a full audit trail, and a swappable plugin architecture for any tool you use.",
   "type": "module",
   "license": "MIT",

@@ -142,25 +142,29 @@ reaches out in **two** distinct situations, and the difference is worth keeping 
 ### The autonomy consult
 
 This is the mechanism behind the discretionary ask. While running, the agent makes calls it could
-make alone and **surfaces** them in its result (a category, what it chose, why). After **every**
-sub-phase result, the runner's `consultDecisions` reads those surfaced decisions and consults the
-safety policy per decision:
+make alone and **surfaces** them in its result (a category, what it chose, why). After a sub-phase
+result in a phase that *makes* such calls, the runner's `consultDecisions` reads those surfaced
+decisions and consults the safety policy per decision:
 
 ```
 sub-phase result
   └─ for each surfaced decision:
        consult should_i_ask (the autonomy policy)
-         ├─ proceed     → the agent's call stands; continue
-         ├─ ask + owner → block awaiting_human_decision, question = the synthesized ask
+         ├─ proceed       → the agent's call stands
+         ├─ ask + owner   → collect it
          └─ ask, no owner → proceed anyway, and record a loud sub-confidence decision
                             naming exactly what was decided without you
+  └─ any collected?       → block awaiting_human_decision, asking them all in one reach-out
 ```
 
 The policy itself — the categories, their levels (`always_decide` / `always_ask` / `threshold`),
 and the no-owner degrade — is configuration, documented in
 [safety § Autonomy](../../configuration/safety.md#autonomy). The point here is *where it runs*: it is
-a runner hook on the result of every step, so a discretionary decision is caught no matter which
-phase raised it.
+a runner hook on the result of every step in the phases that make discretionary calls, so a decision
+is caught no matter which of them raised it. The **intent-forming** phases — requirements and research
+— are deliberately exempt: there the agent is still understanding the task, so a decision it surfaces
+is premature. It is recorded for the trail (an `autonomy_not_gated` decision), not asked — which is what
+stops requirements' ask-biased intake from re-surfacing a settled choice on every resume and looping you.
 
 ### Delivery, and the answer returning
 

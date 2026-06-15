@@ -51,8 +51,13 @@ const SINGLE_PASS = 1;
  * it runs only when an external `pr_ready_to_merge` event re-enters the task there.
  */
 export const PIPELINE: readonly PhaseDefinition[] = [
-  { phase: Phases.requirements, subPhases: [gather], maxIterations: SINGLE_PASS },
-  { phase: Phases.research, subPhases: [investigate], maxIterations: SINGLE_PASS },
+  // Requirements and research form intent — they understand the task rather than make the discretionary
+  // implementation calls the autonomy policy governs. So they do NOT gate on surfaced decisions: a
+  // decision raised here is premature (the work it concerns has not happened yet) and is recorded for
+  // the trail, not asked. The call is consulted later, in the phase that actually makes it. Without this,
+  // requirements' deliberately ask-biased intake re-surfaces a settled choice every resume and loops the owner.
+  { phase: Phases.requirements, subPhases: [gather], maxIterations: SINGLE_PASS, consultsDecisions: false },
+  { phase: Phases.research, subPhases: [investigate], maxIterations: SINGLE_PASS, consultsDecisions: false },
   { phase: Phases.planning, subPhases: [design], maxIterations: SINGLE_PASS },
   { phase: Phases.execution, subPhases: [implement, verify], maxIterations: EXECUTION_MAX_ITERATIONS },
   {

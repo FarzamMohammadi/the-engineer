@@ -290,6 +290,26 @@ describe("runPipeline", () => {
       );
     });
 
+    it("does not gate on decisions in an intent-forming phase — records them instead", async () => {
+      // requirements/research set consultsDecisions: false. A decision surfaced there is premature, so the
+      // runner records it for the trail and advances, never asking the owner — even when the policy WOULD
+      // escalate it. This is the fix for the gather loop: an ask-biased intake cannot re-block on a decision.
+      const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+      const sub = { ...surfacing("scope_expansion", { files: 12 }), next };
+      const { ctx, consultJudgment, observer } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "would escalate if consulted" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("requirements", [sub], 1, { consultsDecisions: false })], ctx);
+
+      expect(consultJudgment).not.toHaveBeenCalled();
+      expect(outcome).toEqual({ kind: "completed" });
+      const noted = observer.decisions.find((d) => d.name === "autonomy_not_gated");
+      expect(noted?.chosen).toBe("record_only");
+      expect(noted?.reasoning).toContain("fetchUser");
+    });
+
     it("does not consult the policy when no decisions are surfaced", async () => {
       const order: string[] = [];
       const { ctx, consultJudgment } = createMockPipeline();
@@ -299,15 +319,46 @@ describe("runPipeline", () => {
       expect(consultJudgment).not.toHaveBeenCalled();
     });
 
-    it("asks on the first escalated decision and stops consulting the rest", async () => {
+    it("asks all escalated decisions together in one block", async () => {
       const sub = mockSubPhase("implement", {
         run: () =>
           Promise.resolve<SubPhaseResult>({
             outcome: "ok",
-            summary: "two calls",
+            summary: "two forks",
             data: {
               decisions: [
-                { category: "code_style", summary: "a", chosen: "x", reasoning: "y" },
+                { category: "architecture", summary: "split the module", chosen: "two files", reasoning: "cohesion" },
+                { category: "dependencies", summary: "add a parser", chosen: "zod", reasoning: "already used" },
+              ],
+            },
+          }),
+      });
+      const { ctx, consultJudgment } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "always asks" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      // Every decision is consulted (no early return), and both land in ONE block — asked together.
+      expect(consultJudgment).toHaveBeenCalledTimes(2);
+      expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).toContain("two files");
+        expect(outcome.detail.needed).toContain("zod");
+        expect(outcome.detail.needed).toContain("2 decisions");
+      }
+    });
+
+    it("batches only the escalated decisions, proceeding on the rest", async () => {
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "one proceeds, one asks",
+            data: {
+              decisions: [
+                { category: "code_style", summary: "naming", chosen: "camelCase", reasoning: "convention" },
                 { category: "security", summary: "touched auth", chosen: "jwt", reasoning: "simplest" },
               ],
             },
@@ -327,6 +378,10 @@ describe("runPipeline", () => {
 
       expect(consultJudgment).toHaveBeenCalledTimes(2);
       expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).toContain("jwt"); // the escalated fork
+        expect(outcome.detail.needed).not.toContain("camelCase"); // the proceeded one is not asked
+      }
     });
   });
 

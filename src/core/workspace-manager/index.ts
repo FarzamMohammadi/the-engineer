@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
 import path from "node:path";
 
@@ -14,6 +15,7 @@ import {
 import { ObservationTypes } from "../../schemas/observer.js";
 import { PHASE_DIRECTORIES } from "../../schemas/orchestrator.js";
 import type { Task } from "../../schemas/task.js";
+import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
 import type { ITaskEngine } from "../interfaces/task-engine.interface.js";
@@ -658,6 +660,39 @@ export class WorkspaceManager implements IWorkspaceManager {
   /** Get the full workspace record for a task, or null if no workspace is persisted. */
   getWorkspaceRecord(taskId: string): WorkspaceRecord | null {
     return this.readRecord(taskId);
+  }
+
+  /**
+   * sha256 hex of the PR's diff against its base branch — delivery's substance signal for "did this
+   * re-push change what the PR represents." The diff is scoped to the merged code by excluding the
+   * engine's own regenerated `thoughts/` deliverables (`pr-title.md`, `pr-description.md`, and the
+   * rest): those are rewritten every round, so including them would change the digest on every
+   * re-push and re-trigger the very spurious description update the digest exists to suppress. The
+   * `thoughts/` exclusion mirrors `exclude_thoughts_on_merge` / `removeThoughtsAndPush`. A three-dot
+   * range (`base...HEAD`) reads the diff since the merge-base, so resolving a conflict by merging
+   * base into the branch — new HEAD sha, same diff — correctly reads as no substance change.
+   *
+   * Returns null when no workspace is persisted or git fails; this is a best-effort gate, never a
+   * throw — a null digest tells the caller "cannot verify" and it skips the update rather than blocks.
+   */
+  diffDigestAgainstBase(taskId: string): string | null {
+    const record = this.readRecord(taskId);
+    if (!record) {
+      return null;
+    }
+    try {
+      const diff = this.gitExec(
+        ["diff", `origin/${record.baseBranch}...HEAD`, "--", ".", ":(exclude)thoughts/"],
+        record.worktreePath,
+      );
+      return createHash("sha256").update(diff, "utf-8").digest("hex");
+    } catch (error) {
+      this.observer.warn("Failed to compute diff digest against base — treating as unavailable", {
+        taskId,
+        error: sanitizeErrorMessage(error),
+      });
+      return null;
+    }
   }
 
   // ── Private Helpers ────────────────────────────────────────────────────────

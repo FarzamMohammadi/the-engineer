@@ -66,19 +66,26 @@ describe("create-pr composition", () => {
 interface MockCtxOptions {
   readonly review?: ReviewState | null;
   readonly hosting?: boolean;
+  /** What `workspaceManager.diffDigestAgainstBase` returns — the PR's current substance signal. */
+  readonly diffDigest?: string | null;
 }
 
 function mockCtx(options: MockCtxOptions = {}) {
   const createPR = vi.fn().mockResolvedValue({ pr_number: 42, url: "https://x/42" });
   const dismissApprovals = vi.fn().mockResolvedValue(undefined);
+  const updatePR = vi.fn().mockResolvedValue(undefined);
   const updateTaskField = vi.fn();
   const notify = vi.fn();
   const observer = createRecordingObserver();
-  const hosting = options.hosting === false ? null : { createPR, dismissApprovals };
+  const diffDigestAgainstBase = vi
+    .fn()
+    .mockReturnValue(options.diffDigest === undefined ? "digest-default" : options.diffDigest);
+  const hosting = options.hosting === false ? null : { createPR, dismissApprovals, updatePR };
   const ctx = {
     registry: { getPrimaryPlugin: (type: string) => (type === "git_hosting" ? hosting : null) },
     workspaceManager: {
       getWorkspaceRecord: () => ({ repo: "acme/app", branch: "feat/x", baseBranch: "main", thoughtsDir: "thoughts/x" }),
+      diffDigestAgainstBase,
     },
     worktreePath: "/tmp/the-engineer-test-no-such-worktree",
     thoughtsDir: "thoughts/x",
@@ -92,7 +99,20 @@ function mockCtx(options: MockCtxOptions = {}) {
       review: options.review ?? null,
     },
   } as unknown as Ctx;
-  return { ctx, createPR, dismissApprovals, updateTaskField, notify, observer };
+  return { ctx, createPR, dismissApprovals, updatePR, updateTaskField, notify, observer, diffDigestAgainstBase };
+}
+
+/** A ReviewState for an open PR awaiting rework, with an overridable last-presented digest. */
+function reworkReview(over: Partial<ReviewState> = {}): ReviewState {
+  return {
+    pr_number: 7,
+    merged_at: null,
+    feedback_rounds: [{ applied: false, comments: ["fix it"] }],
+    accommodated_comment_ids: [],
+    accommodated_review_state: null,
+    consecutive_blocker_reentries: 0,
+    ...over,
+  };
 }
 
 describe("create-pr run", () => {
@@ -108,7 +128,7 @@ describe("create-pr run", () => {
     expect(updateTaskField).toHaveBeenCalledWith(
       "t1",
       "review",
-      expect.objectContaining({ pr_number: 42, feedback_rounds: [] }),
+      expect.objectContaining({ pr_number: 42, feedback_rounds: [], presented_diff_digest: "digest-default" }),
     );
     expect(notify).toHaveBeenCalled();
   });
@@ -184,5 +204,95 @@ describe("create-pr run", () => {
     expect(span?.output).toMatchObject({ dismissed: true });
     expect(result.outcome).toBe("ok");
     expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ approval_dismissed: true });
+  });
+
+  it("on rework with changed substance refreshes the PR title and body and stores the new digest", async () => {
+    const { ctx, updatePR, updateTaskField } = mockCtx({
+      review: reworkReview({ presented_diff_digest: "old-digest" }),
+      diffDigest: "new-digest",
+    });
+
+    const result = await createPr.run(ctx);
+
+    expect(result.outcome).toBe("ok");
+    expect(updatePR).toHaveBeenCalledTimes(1);
+    expect(updatePR).toHaveBeenCalledWith(
+      "acme/app",
+      7,
+      expect.objectContaining({
+        title: "Add feature",
+        body: expect.stringContaining("Crafted by The Engineer"),
+        draft: null,
+      }),
+    );
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ presented_diff_digest: "new-digest" }),
+    );
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: true });
+  });
+
+  it("on rework with unchanged substance leaves the host untouched and preserves the digest", async () => {
+    const { ctx, updatePR, dismissApprovals, updateTaskField } = mockCtx({
+      review: reworkReview({ presented_diff_digest: "same-digest" }),
+      diffDigest: "same-digest",
+    });
+
+    const result = await createPr.run(ctx);
+
+    expect(result.outcome).toBe("ok");
+    expect(updatePR).not.toHaveBeenCalled();
+    // The no-op falls out of the digest gate — approval dismissal and feedback-applied still happen.
+    expect(dismissApprovals).toHaveBeenCalled();
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({
+        presented_diff_digest: "same-digest",
+        feedback_rounds: [expect.objectContaining({ applied: true })],
+      }),
+    );
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: false });
+  });
+
+  it("on rework skips the refresh when the diff digest cannot be computed", async () => {
+    const { ctx, updatePR, updateTaskField } = mockCtx({
+      review: reworkReview({ presented_diff_digest: "old-digest" }),
+      diffDigest: null,
+    });
+
+    const result = await createPr.run(ctx);
+
+    expect(result.outcome).toBe("ok");
+    expect(updatePR).not.toHaveBeenCalled();
+    // The stored digest is preserved (not advanced to null) so a later round can still detect change.
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ presented_diff_digest: "old-digest" }),
+    );
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: false });
+  });
+
+  it("on rework keeps delivery green and does not advance the digest when updatePR fails", async () => {
+    const { ctx, updatePR, updateTaskField, observer } = mockCtx({
+      review: reworkReview({ presented_diff_digest: "old-digest" }),
+      diffDigest: "new-digest",
+    });
+    updatePR.mockRejectedValueOnce(new Error("host down"));
+
+    const result = await createPr.run(ctx);
+
+    expect(result.outcome).toBe("ok");
+    const span = observer.spans.find((s) => s.name === "update_pr_presentation");
+    expect(span?.type).toBe(ObservationTypes.tool_execution);
+    expect(span?.errored).toBe(true);
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ presented_diff_digest: "old-digest" }),
+    );
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: false });
   });
 });

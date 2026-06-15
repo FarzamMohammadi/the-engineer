@@ -191,6 +191,14 @@ export const ReviewStateSchema = z.object({
    * clears, and escalates to the owner once it exceeds the configured cap.
    */
   consecutive_blocker_reentries: z.number().int().default(0),
+  /**
+   * sha256 of the diff-against-base (excluding the engine's own `thoughts/` deliverables) that the
+   * PR's currently-shown title/body were generated from — the change-detection baseline so a re-push
+   * regenerates the host presentation only when the PR's substance actually changed. `.optional()`
+   * (not `.default`) keeps the parse output unchanged for existing literals; read it as
+   * `review.presented_diff_digest ?? null`.
+   */
+  presented_diff_digest: z.string().nullable().optional(),
 });
 export type ReviewState = z.infer<typeof ReviewStateSchema>;
 

@@ -76,4 +76,12 @@ export interface IWorkspaceManager {
 
   /** Get the full workspace record for a task, or null if unknown. */
   getWorkspaceRecord(taskId: string): WorkspaceRecord | null;
+
+  /**
+   * sha256 hex of the PR's diff against its base branch, scoped to the code that actually merges by
+   * excluding the engine's own regenerated `thoughts/` deliverables. The substance signal delivery
+   * uses to decide whether a re-push changed what the PR represents. Returns null when no workspace
+   * is persisted or git fails — a best-effort read, never a throw.
+   */
+  diffDigestAgainstBase(taskId: string): string | null;
 }

@@ -97,7 +97,9 @@ async function reworkExistingPr(
   ctx.notifications.notify({
     kind: NotificationKinds.ticket_comment,
     taskId: ctx.task.id,
-    message: "Pushed rework addressing review feedback.",
+    // Cause-neutral: reworkExistingPr is also reached by CI-fix and merge-conflict re-pushes, where
+    // "addressing review feedback" would be wrong.
+    message: "Pushed rework to the PR.",
   });
   ctx.observer.info("Rework pushed to existing PR", {
     taskId: ctx.task.id,
@@ -153,10 +155,13 @@ async function refreshPrPresentation(
   }
 
   const title = composePrTitle(readPrTitle(ctx) ?? ctx.task.title, ctx.task.external_ref);
-  const body = composePrBody(
-    sanitizeSecrets(readPrDescription(ctx) ?? `PR for: ${ctx.task.title}`),
-    ctx.task.external_ref,
-  );
+  // A rework must not degrade a good published body: when the description deliverable is absent or
+  // empty, send body: null ("leave the host body unchanged") rather than overwriting the live body
+  // (which may be the rich body written at creation) with the `PR for: <title>` stub. The title still
+  // refreshes — its fallback reproduces the live title when the deliverable is absent, so it is never
+  // degraded. Creation keeps the stub fallback: there is nothing live to degrade when first opening.
+  const description = readPrDescription(ctx);
+  const body = description ? composePrBody(sanitizeSecrets(description), ctx.task.external_ref) : null;
 
   const span = ctx.observer.startSpan(
     ObservationTypes.tool_execution,

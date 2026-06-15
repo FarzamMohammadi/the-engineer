@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   composePrBody,
@@ -68,6 +72,37 @@ interface MockCtxOptions {
   readonly hosting?: boolean;
   /** What `workspaceManager.diffDigestAgainstBase` returns — the PR's current substance signal. */
   readonly diffDigest?: string | null;
+  /** Override the worktree root — point it at a real temp dir to exercise the deliverable reads. */
+  readonly worktreePath?: string;
+}
+
+// Real temp worktrees created by `worktreeWithDeliverables`, removed after each test.
+const tempWorktrees: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempWorktrees.splice(0)) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Stand up a real temp worktree holding the diff-derived deliverables the pr-description sub-phase
+ * writes (`thoughts/x/delivery/pr-title.md` + `pr-description.md`), so a test exercises the real
+ * readPrTitle/readPrDescription path instead of the absent-file fallback. The thoughtsDir matches
+ * mockCtx's `thoughts/x`.
+ */
+function worktreeWithDeliverables(deliverables: { title?: string; description?: string }): string {
+  const dir = mkdtempSync(join(tmpdir(), "create-pr-"));
+  tempWorktrees.push(dir);
+  const deliveryDir = join(dir, "thoughts/x/delivery");
+  mkdirSync(deliveryDir, { recursive: true });
+  if (deliverables.title !== undefined) {
+    writeFileSync(join(deliveryDir, "pr-title.md"), deliverables.title);
+  }
+  if (deliverables.description !== undefined) {
+    writeFileSync(join(deliveryDir, "pr-description.md"), deliverables.description);
+  }
+  return dir;
 }
 
 function mockCtx(options: MockCtxOptions = {}) {
@@ -87,7 +122,7 @@ function mockCtx(options: MockCtxOptions = {}) {
       getWorkspaceRecord: () => ({ repo: "acme/app", branch: "feat/x", baseBranch: "main", thoughtsDir: "thoughts/x" }),
       diffDigestAgainstBase,
     },
-    worktreePath: "/tmp/the-engineer-test-no-such-worktree",
+    worktreePath: options.worktreePath ?? "/tmp/the-engineer-test-no-such-worktree",
     thoughtsDir: "thoughts/x",
     taskEngine: { updateTaskField },
     notifications: { notify },
@@ -131,6 +166,26 @@ describe("create-pr run", () => {
       expect.objectContaining({ pr_number: 42, feedback_rounds: [], presented_diff_digest: "digest-default" }),
     );
     expect(notify).toHaveBeenCalled();
+  });
+
+  it("opens the PR with the diff-derived title and narrative body from the deliverables", async () => {
+    // Real deliverables in a real worktree so readPrTitle/readPrDescription return their content,
+    // not the fallback. The title is distinct from ctx.task.title ("Add feature") and the body
+    // carries a unique narrative sentinel (not the shared footer), so this fails if the reads are gone.
+    const worktreePath = worktreeWithDeliverables({
+      title: "Refresh PR presentation on rework",
+      description: "Regenerated from the full diff.",
+    });
+    const { ctx, createPR } = mockCtx({ review: null, worktreePath });
+
+    await createPr.run(ctx);
+
+    expect(createPR).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Refresh PR presentation on rework",
+        body: expect.stringContaining("Regenerated from the full diff."),
+      }),
+    );
   });
 
   it("on rework dismisses the stale approval, marks feedback applied, and opens no new PR", async () => {
@@ -206,8 +261,45 @@ describe("create-pr run", () => {
     expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ approval_dismissed: true });
   });
 
-  it("on rework with changed substance refreshes the PR title and body and stores the new digest", async () => {
+  it("on rework with changed substance pushes the diff-derived title and narrative body", async () => {
+    // Real deliverables: updatePR must carry the diff-derived title (distinct from ctx.task.title)
+    // and the composed narrative — this fails if readPrTitle/readPrDescription are removed.
+    const worktreePath = worktreeWithDeliverables({
+      title: "Refresh PR presentation on rework",
+      description: "Regenerated from the full diff.",
+    });
     const { ctx, updatePR, updateTaskField } = mockCtx({
+      review: reworkReview({ presented_diff_digest: "old-digest" }),
+      diffDigest: "new-digest",
+      worktreePath,
+    });
+
+    const result = await createPr.run(ctx);
+
+    expect(result.outcome).toBe("ok");
+    expect(updatePR).toHaveBeenCalledTimes(1);
+    expect(updatePR).toHaveBeenCalledWith(
+      "acme/app",
+      7,
+      expect.objectContaining({
+        title: "Refresh PR presentation on rework",
+        body: expect.stringContaining("Regenerated from the full diff."),
+        draft: null,
+      }),
+    );
+    expect(updateTaskField).toHaveBeenCalledWith(
+      "t1",
+      "review",
+      expect.objectContaining({ presented_diff_digest: "new-digest" }),
+    );
+    expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: true });
+  });
+
+  it("on rework with changed substance but no deliverable leaves the live body in place", async () => {
+    // No deliverable on disk: the body must be null ("leave the host body unchanged") rather than the
+    // `PR for: <title>` stub, so a rework never degrades a rich body written at creation. The title
+    // still refreshes (its fallback reproduces the live title) and the digest still advances.
+    const { ctx, updatePR, updateTaskField, notify } = mockCtx({
       review: reworkReview({ presented_diff_digest: "old-digest" }),
       diffDigest: "new-digest",
     });
@@ -219,11 +311,7 @@ describe("create-pr run", () => {
     expect(updatePR).toHaveBeenCalledWith(
       "acme/app",
       7,
-      expect.objectContaining({
-        title: "Add feature",
-        body: expect.stringContaining("Crafted by The Engineer"),
-        draft: null,
-      }),
+      expect.objectContaining({ title: "Add feature", body: null, draft: null }),
     );
     expect(updateTaskField).toHaveBeenCalledWith(
       "t1",
@@ -231,6 +319,8 @@ describe("create-pr run", () => {
       expect.objectContaining({ presented_diff_digest: "new-digest" }),
     );
     expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: true });
+    // The rework notification is cause-neutral — it no longer claims "addressing review feedback".
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ message: "Pushed rework to the PR." }));
   });
 
   it("on rework with unchanged substance leaves the host untouched and preserves the digest", async () => {

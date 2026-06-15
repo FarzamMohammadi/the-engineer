@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "summary": "Merged origin/main into the branch (clean, zero conflicts) so the PR is mergeable again; typecheck, lint, unit (2622) and integration (64) tests all pass.",
+  "details": {
+    "mergeCommit": "526804f",
+    "mergeParents": ["ec9e791 (branch tip)", "2d799fd (origin/main)"],
+    "strategy": "merge (not rebase) — delivery pushes non-force, so the branch must fast-forward; rebase would require a force push delivery never does",
+    "conflicts": "none — branch and main changed disjoint file sets",
+    "gates": {
+      "typecheck": "pass",
+      "lint": "pass",
+      "test:unit": "2622 passed / 139 files",
+      "test:integration": "64 passed / 8 files"
+    }
+  }
+}

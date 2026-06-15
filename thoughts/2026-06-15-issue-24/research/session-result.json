@@ -1,25 +1,20 @@
 {
   "status": "ok",
-  "summary": "Verified the requirements' end-to-end trace against source and mapped the full blast radius; root cause confirmed (reworkExistingPr never calls updatePR). Surfaced a key new finding: the body/title are LLM-generated, so 'regenerate from diff -> no-op when unchanged' is not deterministic, which breaks naive change-detection.",
+  "summary": "Verified all 3 owner review asks against the current shipped code; all confirmed pending, mechanism + blast radius mapped, nothing blocking.",
   "details": {
-    "root_cause": "src/core/orchestrator/pipeline/delivery/create-pr.ts:69-95 (reworkExistingPr) dismisses approval + marks feedback applied but never reads pr-description.md and never calls hosting.updatePR; only openNewPr (:131-182) pushes the description.",
-    "key_findings": [
-      "pr-description.ts regenerates the BODY narrative from the full diff against base on every non-push-only re-entry (no trivial-skip); deliverable is body-only (pr-description.md).",
-      "PR title today is the static task title via composePrTitle(ctx.task.title,...) (create-pr.ts:149) -- NOT diff-derived; no mechanism produces a title from the work. schemas/task.ts:106 comment calling it 'AI-generated' is stale.",
-      "updatePR + PRUpdates(title,body,draft,labels) exist and the GitHub plugin applies them (null=no-change); ZERO callers in src/core/orchestrator. composePrBody/composePrTitle are pure, exported, unit-tested -- reusable.",
-      "No host read of current title/body exists (PRStatus lacks both); pr-description.md is overwritten each round -- so 'push only when changed' has no off-the-shelf baseline to compare against.",
-      "CRITICAL: body (and any LLM-derived title) are agent-generated, so regenerating the same diff can reword the prose -> exact-match change-detection will produce spurious updates on no-op rounds, contradicting the owner's deterministic 'natural no-op' assumption."
-    ],
-    "files_must_change": [
-      "src/core/orchestrator/pipeline/delivery/create-pr.ts",
-      "src/core/orchestrator/pipeline/delivery/pr-description.ts"
-    ],
-    "files_likely_change_depending_on_design": [
-      "src/schemas/task.ts (ReviewState field to store last-pushed presentation, if store-and-compare chosen)",
-      "src/schemas/adapters.ts + src/adapters/git-hosting.ts + github-hosting plugin + git-hosting contract suite (only if 'read live body' baseline chosen -- higher cost)"
-    ],
-    "tests": "Primary unit surface: tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts (mockCtx hosting needs updatePR added; add changed/unchanged cases). fake-git-hosting stores title/body on pr.options. No integration test currently covers the reworkExistingPr (pr_number set) path.",
-    "human_questions": "none -- owner settled all product decisions; remaining forks (change-detection baseline, LLM-nondeterminism handling, title generation, best-effort-vs-blocking) are planning-phase design decisions the owner explicitly delegated.",
-    "verification_commands": ["pnpm run typecheck", "pnpm run lint", "pnpm test"]
+    "pass": "3 (review-rework: tighten the shipped feature per 3 owner asks)",
+    "asks_verified_pending": {
+      "ask_1_tests_prove_fallback": "create-pr.test.ts:90 uses a non-existent worktreePath, so readPrTitle/readPrDescription always return null; rework test asserts title='Add feature' (task-title fallback) and only the stub footer. Tests pin the fallback, not the feature.",
+      "ask_2_stub_overwrites_live_body": "refreshPrPresentation (create-pr.ts:156-159) composes 'PR for: <title>' stub when pr-description.md is absent/empty and always pushes via updatePR, overwriting a live rich body. Fix mechanism (body:null = leave unchanged) already exists in PRUpdatesSchema + github-hosting plugin.",
+      "ask_3_inaccurate_notification": "create-pr.ts:100 unconditionally posts 'Pushed rework addressing review feedback.'; reworkExistingPr is also reached by CI-fix and merge-conflict re-pushes (verified via pr-events.ts entryFor + pipeline.ts sub-phase order). String occurs once; no test asserts it."
+    },
+    "blast_radius": {
+      "behavior": "src/core/orchestrator/pipeline/delivery/create-pr.ts (only)",
+      "tests": "tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts (add real-worktree fixtures; reconcile rework body assertion under ask #2)",
+      "docs": "docs/user-flows/pr-management/overview.md:126 (notification row); :29/:98-105 already omit the shipped title/body refresh",
+      "not_in_scope_verified": "no schema/adapter/plugin change (body:null already supported); pr-description.ts/digest/pr-events.ts/pipeline.ts unchanged; integration test skips create-pr (no reconciliation needed)"
+    },
+    "open_questions": "none blocking — all 3 asks are explicit owner instructions; remaining choices are mechanical and owner-delegated",
+    "deliverable": "thoughts/2026-06-15-issue-24/research/research.md (Pass 3 section appended)"
   }
 }

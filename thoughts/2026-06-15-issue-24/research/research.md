@@ -258,3 +258,161 @@ explicitly delegated the mechanism ("It's judgment, not mechanical"). The forks 
 baseline; how to handle LLM-nondeterminism; best-effort-vs-blocking on update failure; how/where the
 title gets generated) are **design decisions for the planning phase**, not intent questions — the
 owner's words already bound them. Surfacing them here so planning grapples with them with eyes open.
+
+---
+
+# Research — Pass 3: the three review-rework asks (against current shipped code)
+
+_Run: 2026-06-15 (third pass — review-feedback rework on the open PR)_
+
+The feature shipped (`c1f1b95` + `9ca225b fix: address review feedback`). The owner then left **three
+concrete, scoped asks** on the PR (see requirements update dated 2026-06-15, "review rework pass").
+This pass verifies each ask against the **current** code — not the pre-feature code the first research
+pass read (that pass cited the notification at `:87`; in today's file it is `:100`, because the shipped
+feature grew `create-pr.ts`). Everything below was re-read line-by-line in this worktree.
+
+**All three asks are confirmed still-pending in the current tree.** None is partially done.
+
+## A. Ask #3 — the rework notification is cause-inaccurate (Observations)
+
+- **O1.** `reworkExistingPr` notifies unconditionally: `create-pr.ts:97-101` →
+  `notify({ kind: NotificationKinds.ticket_comment, taskId, message: "Pushed rework addressing review feedback." })`.
+  The string is **still the old text** in the current tree.
+- **O2.** `reworkExistingPr` is entered whenever `ctx.task.review?.pr_number != null`
+  (`create-pr.ts:63-65`) — it does **not** inspect the re-entry cause.
+- **O3.** CI-failure and merge-conflict events re-enter the pipeline at `execution/implement`
+  (`pr-events.ts:30-33`, `entryFor`), then flow forward through the phases (requirements → research →
+  planning → execution → **review → delivery**) and hit delivery's sub-phases in order
+  `[prDescription, push, createPr, awaitReview, autoMerge]` (`pipeline.ts:65`). At `create-pr` the task
+  already has `review.pr_number`, so both causes route to `reworkExistingPr` and fire the
+  "addressing review feedback" message. **→ The message mislabels CI-fix and conflict re-pushes.**
+  (`pr_comments` re-enters at `requirements`, `pr-events.ts:28-29`, but reaches the same path.)
+- **O4.** The string occurs **exactly once** in `src/` and **no test asserts on it**
+  (`grep -rn "Pushed rework\|addressing review feedback" src/ tests/` → only `create-pr.ts:100`).
+  The sibling signals are already cause-neutral: result `summary` (`:109` "Pushed rework to PR #N"),
+  `observer.info("Rework pushed to existing PR", …)` (`:102`), and result `data` (`:110-115`).
+- **O5 (docs).** `docs/user-flows/pr-management/overview.md:126` lists this exact string in the
+  notifications table — that row must be updated to match the new neutral text. (AGENTS.md §"Tests,
+  Docs… Are Not Afterthoughts" makes the doc part of the same unit of work.)
+
+**Inference (I-A).** #3 is a one-literal change (e.g. `"Pushed rework to the PR."`) plus the doc row;
+zero test reconciliation is forced. Adding a test that asserts the neutral message would lock it
+(currently nothing pins it). Smallest, lowest-risk of the three.
+
+## B. Ask #2 — a rework must not degrade a live body with the stub (Observations)
+
+- **O6.** Inside the changed-substance branch, `refreshPrPresentation` builds the body as
+  `composePrBody(sanitizeSecrets(readPrDescription(ctx) ?? \`PR for: ${ctx.task.title}\`), ctx.task.external_ref)`
+  (`create-pr.ts:156-159`) and **always** passes it to `updatePR` (`:168-174`).
+- **O7.** `readPrDescription` returns `null` when the deliverable is absent **or empty**
+  (`create-pr.ts:282-291`: `existsSync`/`isFile` guard, then `.trim() || null`). So when
+  `pr-description.md` is absent/empty on a rework, the live PR body (which may be the rich body written
+  at creation) is **overwritten by the `PR for: <task title>` stub**. Real regression on an external
+  surface.
+- **O8 (the fix mechanism already exists).** `updatePR` treats `body: null` as "leave the host body
+  unchanged": schema `PRUpdatesSchema.body = z.string().nullable()` (`adapters.ts:362-364`); the GitHub
+  plugin applies `body` **only when non-null** (`github-hosting.ts:108-109`) and skips the
+  `pulls.update` call entirely if title+body+draft are all null (`:115`). So "skip the body update" =
+  pass `body: null`. No schema/adapter/plugin change is needed.
+- **O9 (title has no symmetric problem; #2 is body-only).** At creation the title is
+  `composePrTitle(readPrTitle(ctx) ?? ctx.task.title, …)` (`create-pr.ts:243`); on rework the fallback
+  is the same `readPrTitle(ctx) ?? ctx.task.title` (`:155`). So when the **title** deliverable is
+  absent, the rework fallback reproduces the live title value — no degradation. The owner scoped #2 to
+  the **body**; the title path stays as-is. (`pr-title.md` is read only by `create-pr.ts` and written
+  only by `pr-description.ts`; the one other reference, `workspace-manager/index.test.ts:351`, just
+  writes it to prove the digest excludes `thoughts/`.)
+
+**Inference (I-B).** Minimal change: read the description once (`const desc = readPrDescription(ctx)`),
+and set `body = desc ? composePrBody(sanitizeSecrets(desc), ref) : null`; keep the title path. Two
+downstream micro-choices (both satisfy the owner's "leave the existing body"):
+  - whether to still call `updatePR` when only the title would change (with an absent title deliverable
+    the title fallback == live title, so it is an effective no-op the plugin still issues as a
+    `pulls.update`), or short-circuit; and
+  - whether to advance `presented_diff_digest` on a body-skipped round (the title may have legitimately
+    changed, so advancing is defensible).
+  These are mechanical; the owner delegated them ("Do your own research and planning as usual").
+- The skip lives **inside** the changed-substance branch; the digest gate (`:140-153`,
+  `digest_unavailable` / `unchanged`) is untouched, so the no-op and cannot-verify paths are unaffected.
+
+## C. Ask #1 — the tests prove the fallback, not the feature (Observations)
+
+- **O10.** `mockCtx` sets `worktreePath: "/tmp/the-engineer-test-no-such-worktree"` (`create-pr.test.ts:90`),
+  a path that does not exist. `readPrTitle`/`readPrDescription` `existsSync`-guard it
+  (`create-pr.ts:287, 303`) → both return `null` in **every** test.
+- **O11.** Therefore the rework test (`create-pr.test.ts:209-234`) asserts `title: "Add feature"` —
+  which is `ctx.task.title`, the **fallback** at `create-pr.ts:155`, not a diff-derived `pr-title.md`;
+  and its body assertion is only `expect.stringContaining("Crafted by The Engineer")` — the **branding
+  footer of the `PR for:` stub** (`composePrBody`, `create-pr.ts:333`), not a composed narrative. The
+  creation test (`:119-134`) likewise never asserts a diff-derived title/body. Deleting
+  `readPrTitle`/`readPrDescription` and hard-coding the fallbacks would leave the suite green → these
+  tests pin the fallback, not the feature. (This is exactly the owner's bar.)
+- **O12 (the deliverables are real artifacts).** The `pr-description` sub-phase writes
+  `pr-description.md` (body narrative) and `pr-title.md` (a single imperative line, `~50–70` chars, no
+  prefixes/trailing period) — `pr-description.ts:10-11, 73-90`. `readPrTitle` takes the first non-empty
+  line and strips a leading `# ` (`create-pr.ts:298-311`).
+- **O13 (test mechanics already in the repo).** Real temp dirs via `mkdtempSync(join(tmpdir(), …))`
+  are common (`tests/helpers/test-workspace-manager.ts:73`; `delivery.test.ts:114-134` stands up a real
+  worktree and `writeFileSync`s into it; `workspace-manager/index.test.ts:351` writes
+  `thoughts/delivery/pr-title.md`). For #1 the **light** path suffices: `mkdtempSync` a dir, write
+  `<dir>/<thoughtsDir>/delivery/pr-title.md` + `pr-description.md`, point `worktreePath` + `thoughtsDir`
+  at it, and mock `diffDigestAgainstBase` (already mocked). `readPrTitle`/`readPrDescription` only
+  `existsSync`/`readFileSync` — **no git scaffolding needed**; add an `afterEach` `rmSync` cleanup.
+
+**Inference (I-C).** New coverage must assert, with **real** deliverables present:
+  - creation: `createPR` receives a title **distinct from `ctx.task.title`** (the `pr-title.md` line)
+    and a body **containing the `pr-description.md` narrative**; and
+  - rework (changed substance): `updatePR` receives that diff-derived title and the composed narrative
+    body.
+  Each new assertion would **fail** if `readPrTitle`/`readPrDescription` were deleted.
+- **Reconciliation with #2 (mandatory).** Today's rework test (`:209-234`) runs with an **absent**
+  deliverable; under #2 its body would no longer be pushed as a stub. So that test must split into
+  (a) a **real-deliverable** rework asserting the composed body + diff-derived title, and
+  (b) an **absent-deliverable** rework asserting the body is **not** overwritten (`updatePR` called with
+  `body: null` / no stub). Both fallback and feature paths stay covered.
+
+## Inventory / blast radius (this pass)
+
+**Behavioral change — one file:** `src/core/orchestrator/pipeline/delivery/create-pr.ts`
+  - #2: the body-compose + `updatePR` call in `refreshPrPresentation` (~`:155-174`).
+  - #3: the notification string (`:100`).
+**Tests — one file:** `tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts`
+  - #1: add a real-worktree fixture (mkdtemp + write deliverables + afterEach cleanup); reconcile the
+    existing rework body assertion under #2; (optionally) assert the neutral #3 message.
+**Docs — one file (in scope):** `docs/user-flows/pr-management/overview.md`
+  - #3: notification row `:126`. Also note `:29` and `:98-105` ("The rework loop") still describe rework
+    as only "dismiss approval + mark applied" and **omit the already-shipped title/body refresh** — a
+    pre-existing doc gap on the surface being touched; planning can decide how much of it to bring
+    current alongside #2/#3.
+**Confirmed NOT in scope (verified, not assumed):**
+  - No schema/adapter/plugin change — `updatePR`/`PRUpdates`/`github-hosting` already support
+    `body: null` (O8).
+  - `pr-description.ts` already emits title + body — unchanged.
+  - The diff digest (`workspace-manager/index.ts:678`) and change-detection gate — unchanged.
+  - `pr-events.ts` / `pipeline.ts` ordering — unchanged.
+  - The integration test `tests/integration/pipeline-review-delivery.integration.test.ts` **skips**
+    `create-pr` (`skip:create-pr`, `:71`), so it neither exercises nor asserts the rework body/message
+    — **no reconciliation needed there.** `create-pr` behavior is covered only by the unit test above.
+
+## Challenge / simplest-approach review (this pass)
+
+- **Genuinely simplest path?** Yes, and it is small: #3 is a one-literal swap + one doc row; #2 is a
+  single conditional on an already-read value using the existing `body: null` contract — **no new
+  mechanism, no live host read.** Note `getPRStatus`/`PRStatus` (`adapters.ts:378-389`) returns
+  `{number, state, draft, merge_state, checks_state, url}` — **no title/body** — so there is no
+  off-the-shelf way to read the live body; #2 deliberately doesn't need one (`body: null` = leave it).
+- **Are the patterns good, or legacy to avoid?** The best-effort/spanned shape of `refreshPrPresentation`
+  (mirrors `dismissStaleApproval`) is sound and should be preserved (AC#4/#7). Don't widen #2 to gate
+  the title — the owner scoped it to the body, and the title has no degradation (O9).
+- **Unverified assumptions?** That CI-fix/conflict reworks reach `reworkExistingPr` — **verified**
+  (O2-O3, not inferred). That nothing else asserts the notification string — **verified** (O4). That
+  the integration test won't break — **verified** (it skips create-pr).
+- **Existing mechanism already solving part of this?** Yes — `body: null` (O8) is the whole of #2's
+  host contract; the temp-worktree test helpers (O13) are the whole of #1's mechanics. Build neither
+  from scratch.
+
+## Open questions for a human (this pass)
+
+**None blocking.** All three asks are the owner's own explicit instructions on his own PR (highest
+intent authority), each grounded in a verified code fact above; the only open choices are mechanical
+(thread `body: null`; restructure the test fixtures; how far to refresh the user-flow doc) and were
+explicitly delegated to The Engineer's judgment. → `ok`.

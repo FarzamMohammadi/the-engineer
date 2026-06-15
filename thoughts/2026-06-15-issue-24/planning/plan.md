@@ -437,3 +437,223 @@ confirmed both. The remaining choices (D3 best-effort `updatePR`, D4 `.optional(
 workspace-manager method over raw git, three-dot diff range) are local/delegated mechanism calls
 recorded in §10 for execution to inherit — none is a still-open choice the owner would gate on, so
 none is surfaced. → **`ok`**.
+
+---
+
+# Planning run 3 — 2026-06-15 (review-rework: three scoped owner asks on the open PR)
+
+The feature shipped (`c1f1b95` + `9ca225b fix: address review feedback`). The owner — the task owner
+himself — then left **three concrete, prescriptive asks** on his own PR (the strongest intent signal
+there is). This run plans exactly those three, re-verified line-by-line against the **current** tree
+in this worktree. Nothing here reopens the settled product scope (unified rewrite of title+body,
+regenerate-from-diff, push-only-when-changed via the digest gate). These asks refine *how that
+shipped*, not *what to build*.
+
+## R3.1 — The three asks, re-verified against the current code (file:line)
+
+**Ask #3 — the rework notification is cause-inaccurate.**
+- `create-pr.ts:97-101` posts `ticket_comment: "Pushed rework addressing review feedback."`
+  unconditionally inside `reworkExistingPr`.
+- `reworkExistingPr` is entered whenever `ctx.task.review?.pr_number != null` (`create-pr.ts:63-65`)
+  — it never inspects the re-entry cause. CI-failure and merge-conflict re-pushes re-enter at
+  `execution/implement` (`pr-events.ts`), flow forward through delivery, and hit this same path → the
+  message **mislabels** non-feedback reworks. **Verified, not inferred.**
+- The string occurs once in `src/` and is **asserted by no test** (`grep` → only `create-pr.ts:100`,
+  plus `docs/user-flows/pr-management/overview.md:126` and two **archived** docs we do not touch).
+
+**Ask #2 — a rework must not degrade a live body with the stub.**
+- `refreshPrPresentation` (`create-pr.ts:155-159`) builds
+  `body = composePrBody(sanitizeSecrets(readPrDescription(ctx) ?? \`PR for: ${ctx.task.title}\`), ref)`
+  and **always** passes it to `updatePR` (`:168-174`) once the digest gate says substance changed.
+- `readPrDescription` returns `null` when the deliverable is absent **or empty** (`:282-291`,
+  `.trim() || null`). So on a rework where `pr-description.md` is absent/empty, the live (possibly
+  rich, from creation) PR body is **overwritten by the `PR for: <task title>` stub** — a real
+  regression on an external surface.
+- The fix mechanism already exists: `PRUpdatesSchema.body = z.string().nullable()`; the GitHub plugin
+  applies `body` only when non-null (`github-hosting.ts:108-110`) and skips `pulls.update` entirely
+  when title+body+draft are all null (`:115`). So **"skip the body update" = pass `body: null`** — no
+  schema/adapter/plugin change. **Verified.**
+- The **title** has no symmetric problem: creation uses `readPrTitle(ctx) ?? ctx.task.title`
+  (`:243`); rework's fallback is the same `readPrTitle(ctx) ?? ctx.task.title` (`:155`). When the
+  title deliverable is absent the rework fallback reproduces the live title — no degradation. Owner
+  scoped #2 to the **body**; the title path stays as-is.
+
+**Ask #1 — the tests prove the fallback, not the feature.**
+- `mockCtx` sets `worktreePath: "/tmp/the-engineer-test-no-such-worktree"` (`create-pr.test.ts:90`).
+  `readPrTitle`/`readPrDescription` `existsSync`-guard it (`create-pr.ts:287,303`) → both return
+  `null` in **every** test.
+- So the rework test (`:209-234`) asserts `title: "Add feature"` (= `ctx.task.title`, the fallback at
+  `:155`) and `body: expect.stringContaining("Crafted by The Engineer")` (the footer of the `PR for:`
+  stub, `:333`). The creation test (`:119-134`) likewise asserts no diff-derived title/body. Deleting
+  `readPrTitle`/`readPrDescription` and hard-coding the fallbacks leaves the suite green → **the tests
+  pin the fallback, not the feature.** Exactly the owner's bar.
+- The deliverables are real artifacts the `pr-description` sub-phase writes: `pr-title.md` (single
+  line, leading `# ` stripped) + `pr-description.md` (body narrative) — `pr-description.ts:10-11,73-90`.
+- Test mechanics already in the repo: real temp dirs via `mkdtempSync(join(tmpdir(),…))`
+  (`tests/helpers/test-workspace-manager.ts:73`), and `delivery.test.ts:105-134` stands up a real
+  worktree + `writeFileSync` with `afterEach` cleanup. `readPrTitle`/`readPrDescription` only do
+  `existsSync`/`readFileSync` — **no git scaffolding needed**, just a temp dir with the two files.
+
+## R3.2 — Two approaches evaluated (this pass)
+
+**Approach A — minimal targeted edits using the existing `body: null` contract and existing test
+helpers (CHOSEN).** #2 = compute the body once and carry `null` when the deliverable is absent; #3 =
+swap the one literal + bring the touched doc current; #1 = add a real-temp-worktree fixture and
+reconcile the one test that #2 breaks. No new mechanism, no live host read, no schema/adapter change.
+
+**Approach B — richer mechanisms (REJECTED).** For #2: extend the adapter to *read the live PR body*
+(`PRStatus` has none, `adapters.ts`) and compare, instead of `body: null`. For #1: build a full
+integration test that opens a real PR. Both add real blast radius — B's #2 touches the adapter
+contract + **every** hosting plugin + the contract suite to buy nothing the `body: null` ("leave
+unchanged") contract already gives; B's #1 needs git+host scaffolding the unit tier doesn't need.
+The research §3 already weighed the live-read path and the shipped feature deliberately avoided it.
+**Complexity does not earn its place here → take A.**
+
+**Why A is correct, not just smaller:** the owner's three asks are each satisfiable with an existing
+contract or helper. `body: null` *is* "leave the live body in place"; the temp-worktree helper *is*
+the whole of #1's mechanics. Building a parallel mechanism would violate AC#4 ("reuse the existing
+path, no parallel mechanism").
+
+## R3.3 — Chosen design, component by component
+
+**#2 (body skip) — `refreshPrPresentation`, `create-pr.ts:155-159`.** Read the description once and
+let absence carry through as `null`:
+- `const description = readPrDescription(ctx);`
+- `const body = description ? composePrBody(sanitizeSecrets(description), ctx.task.external_ref) : null;`
+- Leave the title line exactly as-is: `composePrTitle(readPrTitle(ctx) ?? ctx.task.title, …)`.
+- Leave the `updatePR` call, the span, the digest-advance, and the `{updated, digest, reason}` return
+  **unchanged**. When `body` is `null` the plugin still issues `pulls.update` for the (possibly
+  refreshed) title and **leaves the body untouched**; when both deliverables are absent the title is
+  the live task-title value, so it is an idempotent no-op the plugin harmlessly issues.
+- **Decision (mechanical, delegated): do NOT short-circuit the whole `updatePR` call when `body` is
+  null.** Passing `body: null` and keeping the title path is simpler, preserves the title-refresh on a
+  substance change, and relies on the plugin's existing all-null no-op guard. Advancing the digest on
+  this round is correct: the substance changed and the title may legitimately have moved.
+- `openNewPr` (creation, `:224,243`) keeps its `?? \`PR for: ${ctx.task.title}\`` body fallback —
+  **there is nothing live to degrade at creation.** #2 is rework-only, body-only.
+
+**#3 (neutral notification) — `create-pr.ts:100` + the touched doc.**
+- Replace the literal with the owner's suggested text: `"Pushed rework to the PR."`
+- Update `docs/user-flows/pr-management/overview.md:126` (the "Rework pushed" notification row) to the
+  new text. AGENTS.md:198 makes the touched doc part of the same unit of work; `docs/user-flows/` is
+  the surface for user-facing behavior (AGENTS.md:92). The **archived** docs
+  (`docs/archived/...`) are historical records — **not touched**.
+- Also bring the now-stale rework-loop **prose** (`overview.md:98-107`) current: it still says rework
+  only "dismisses the stale approval and marks the addressed feedback applied," omitting the
+  already-shipped title/body refresh. Since I am editing this exact section and AGENTS.md:198 says
+  "stale docs are worse than no docs," add one clause noting the title/body refresh. (Recorded as a
+  `doc_wording` decision below — small, local, on the touched surface.)
+
+**#1 (tests exercise the feature) — `create-pr.test.ts`.** Add a real-temp-worktree path and pin the
+diff-derived presentation, then reconcile the one test #2 breaks:
+- **Fixture:** a helper that `mkdtempSync(join(tmpdir(), "create-pr-"))`, writes
+  `<tmp>/<thoughtsDir>/delivery/pr-title.md` and `pr-description.md`, points `ctx.worktreePath` at
+  `<tmp>` and `ctx.thoughtsDir` at the same `thoughtsDir` the read uses (`"thoughts/x"`), and tracks
+  the dir for an `afterEach` `rmSync(dir, { recursive: true, force: true })` (mirror
+  `delivery.test.ts`'s `handle`-cleanup pattern). Title content must be **distinct from
+  `ctx.task.title` ("Add feature")** — e.g. `"Refresh PR presentation on rework"`; body must contain a
+  **unique narrative sentinel** — e.g. `"Regenerated from the full diff."` — not just the footer.
+- **New creation test** (real deliverables): `createPR` receives `title` = the `pr-title.md` line
+  (distinct from `"Add feature"`) and `body` containing the narrative sentinel. Would **fail** if
+  `readPrTitle`/`readPrDescription` were deleted.
+- **New rework test, changed substance, real deliverables:** `updatePR` receives the diff-derived
+  title (distinct from `"Add feature"`) and `body` containing the narrative sentinel. Would **fail**
+  if the reads were deleted.
+- **Reconcile the existing `:209-234` test → absent-deliverable rework (ask #2 path):** keep the
+  no-deliverable fixture (current `mockCtx`), assert `updatePR` is called with **`body: null`** and
+  `title: "Add feature"` (composed task title), and that the digest still advances
+  (`presented_diff_digest: "new-digest"`, `description_updated: true`). This proves #2: the stub body
+  is **not** pushed. (The footer-`stringContaining` assertion is removed — it asserted the bug.)
+- **Optional pin for #3:** add an assertion in one rework test that `notify` was called with
+  `message: "Pushed rework to the PR."` (nothing pins it today).
+- The other rework tests (`:136-158`, `:187-207`, `:236-257`, `:259-276`, `:278-297`) run with the
+  absent-deliverable fixture and **do not assert on the body** → they stay green under #2 (verified by
+  inspection: they assert dismissal / no-op / digest / span-errored, never the body content).
+
+## R3.4 — Stress test (self-review of this pass)
+
+- **Plugin opacity — Core compiles with every plugin deleted?** Yes. All edits are in Core
+  (`create-pr.ts`), Core tests, and a Core-facing doc. `body: null` is the published `PRUpdates`
+  adapter contract; Core depends only on the `GitHostingAdapter` interface, never on
+  `github-hosting`. No new plugin coupling introduced. ✓
+- **Isolation — shared mutable state / cross-task bleed?** None. Behavior is per-task `ctx`; the test
+  temp dir is per-test with `afterEach` cleanup. ✓
+- **Boundaries — through contracts, not internals?** Yes. #2 uses `hosting.updatePR` + the existing
+  `readPrDescription` helper; nothing reaches into plugin internals. ✓
+- **Reversibility — what's hard to undo?** Nothing. No new interface, **no schema change**
+  (`presented_diff_digest` already exists, `task.ts:201`), no migration. The notification literal and
+  the one-line body-skip conditional are trivially reversible. **Low risk.** ✓
+
+## R3.5 — Pre-mortem (assume it ships with a subtle flaw)
+
+1. **The new #1 tests re-pin the fallback (re-introduce the bug they were meant to kill).** Most
+   likely failure mode. *Mitigation:* the title assertion must use a `pr-title.md` value **distinct
+   from `"Add feature"`**, and the body assertion must check a **unique narrative sentinel** from
+   `pr-description.md`, not the shared footer. *Verification:* mentally (and, if cheap, by temporarily
+   stubbing) confirm that removing `readPrTitle`/`readPrDescription` flips both assertions to the
+   fallback and **fails** the new tests.
+2. **#2 still degrades the body via a path I didn't reconcile.** *Mitigation:* the body is composed in
+   exactly **one** place (`refreshPrPresentation`); `openNewPr` is creation-only (nothing live to
+   degrade) and stays as-is. *Verification:* after the change, `grep` confirms the `PR for:` stub
+   appears only on the **creation** path; the absent-deliverable rework test asserts `body: null`.
+3. **Temp-dir leakage / cross-test collision flakiness.** *Mitigation:* `mkdtempSync` (unique dir per
+   test) + `afterEach` `rmSync(... force, recursive)`, mirroring `delivery.test.ts`. *Verification:*
+   `pnpm test` green on repeat runs; no leftover `create-pr-*` dirs under tmp.
+4. **Stale doc left behind (notification row OR the rework-loop prose).** *Mitigation:* update both the
+   `:126` row and the `:98-107` prose in the same change. *Verification:* `grep -rn "addressing review
+   feedback" src/ docs/` (excluding `docs/archived/`) returns nothing.
+
+## R3.6 — Ordered implementation steps (checkboxes; verification per part)
+
+- [ ] **Step 1 — #3 notification literal.** In `src/core/orchestrator/pipeline/delivery/create-pr.ts`
+      replace `"Pushed rework addressing review feedback."` (`:100`) with `"Pushed rework to the PR."`.
+      *Verify:* `grep -rn "addressing review feedback" src/` → no hits.
+- [ ] **Step 2 — #3 docs.** In `docs/user-flows/pr-management/overview.md`: update the "Rework pushed"
+      row (`:126`) to the new text, and add a clause to the rework-loop prose (`:98-107`) noting that
+      `create-pr` also **refreshes the PR title and body** on rework (gated on the diff digest). Leave
+      `docs/archived/**` untouched. *Verify:* `grep -rn "addressing review feedback" docs/ | grep -v
+      archived` → no hits; `pnpm run docs:build` (if cheap) or visual read confirms the row reads
+      "Pushed rework to the PR."
+- [ ] **Step 3 — #2 body skip.** In `refreshPrPresentation` (`create-pr.ts:155-159`): read the
+      description once; set `body = description ? composePrBody(sanitizeSecrets(description), ref) :
+      null`. Leave the title line, the `updatePR` call, span, digest-advance, and return shape
+      unchanged. *Verify:* `pnpm run typecheck`; `grep` confirms the `PR for: ${ctx.task.title}` stub
+      now appears only in `openNewPr`.
+- [ ] **Step 4 — #1 test fixture.** In `create-pr.test.ts` add a real-temp-worktree helper
+      (`mkdtempSync` + write `pr-title.md`/`pr-description.md` under `<dir>/<thoughtsDir>/delivery/` +
+      `afterEach` `rmSync`). Title sentinel distinct from `"Add feature"`; body sentinel unique (not
+      the footer). *Verify:* helper compiles; `pnpm test create-pr` runs the file.
+- [ ] **Step 5 — #1 feature-pinning tests.** Add (a) a **creation** test asserting `createPR` gets the
+      diff-derived title + narrative body, and (b) a **rework changed-substance** test asserting
+      `updatePR` gets the diff-derived title + narrative body. *Verify:* both fail if
+      `readPrTitle`/`readPrDescription` are removed (spot-check by temporary deletion), pass with them.
+- [ ] **Step 6 — #2 reconcile existing test + pin #3.** Convert `create-pr.test.ts:209-234` into the
+      **absent-deliverable** rework case: assert `updatePR` called with `body: null` and `title: "Add
+      feature"`, digest advances, `description_updated: true`. Add (optionally in a rework test) an
+      assertion that `notify` received `"Pushed rework to the PR."`. *Verify:* `pnpm test create-pr`
+      green; the converted test fails if #2's `body: null` change is reverted.
+- [ ] **Step 7 — full gates.** *Verify:* `pnpm run typecheck` && `pnpm run lint` (biome + tsc + knip +
+      madge) && `pnpm test` all green. (knip no longer flags `updatePR` — it has a caller since the
+      shipped feature.)
+
+## R3.7 — Decisions recorded (this pass)
+
+- **D6 (`code_style`/mechanical): on a body-skipped rework, pass `body: null` and keep the title +
+  `updatePR` call rather than short-circuiting.** Rejected: branching to skip the whole host call when
+  both deliverables are absent. Chosen because the plugin already no-ops all-null updates and the
+  title may legitimately refresh; simplest path that satisfies "leave the existing body." Owner
+  delegated this ("Do your own research and planning as usual").
+- **D7 (`doc_wording`): also bring the rework-loop prose (`overview.md:98-107`) current** — not just
+  the notification row — because the shipped feature left it stale and I am editing that exact section
+  (AGENTS.md:198). Minimal: one clause noting the title/body refresh. Surfaced for owner visibility;
+  proceeding.
+- **D8 (`test_coverage`): pin the neutral #3 message with an assertion** (nothing pins it today), and
+  keep **both** the feature path (real deliverables) and the fallback/absent path (`body: null`)
+  covered. Owner's bar ("a test that passes with the feature deleted isn't testing it") is the driver.
+
+## R3.8 — Decision status (this pass)
+
+No blocking question for the owner: all three asks are his own explicit instructions on his own PR,
+each grounded in a verified code fact above. The only open choices (D6–D8) are local/delegated
+mechanism and coverage calls; D7 (extra doc prose) and D8 (test shape) are surfaced as discretionary
+`doc_wording`/`test_coverage` decisions for autonomy-policy review, not gates. → **`ok`**.

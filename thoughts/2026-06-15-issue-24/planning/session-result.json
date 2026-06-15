@@ -1,14 +1,33 @@
 {
   "status": "ok",
-  "summary": "Owner confirmed both surfaced decisions (diff-digest detection + diff-derived title); amended the plan with one critical correction — the digest must exclude thoughts/ or it self-triggers a spurious push every round.",
+  "summary": "Planned the three review-rework asks (neutral notification, body-not-degraded via body:null, feature-pinning tests) as minimal targeted edits to create-pr.ts + tests + the touched user-flow doc; no schema/adapter/plugin change. Verified line-by-line against the current tree.",
   "details": {
-    "run": "planning pass 2 (post owner-answer)",
-    "decisions_confirmed_by_owner": [
-      "D1: change-detection via sha256 of diff-against-base (not string-compare of LLM prose, not host live-read)",
-      "D2: PR title becomes a diff-derived deliverable (pr-title.md), sourced identically at creation and rework, falling back to task title when absent, core title then decorated via composePrTitle"
+    "pass": "run 3 — review rework (owner's three asks on the open PR)",
+    "files_to_change": [
+      "src/core/orchestrator/pipeline/delivery/create-pr.ts (notification literal :100; body-skip in refreshPrPresentation :155-159)",
+      "tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts (real-temp-worktree fixture; feature-pinning creation + rework tests; reconcile :209-234 to absent-deliverable body:null; pin #3 message)",
+      "docs/user-flows/pr-management/overview.md (notification row :126; rework-loop prose :98-107)"
     ],
-    "critical_correction": "Prior plan's digest hashed the whole tree including thoughts/. Since push commits the regenerated pr-title.md/pr-description.md into HEAD before create-pr runs, that digest would change every round and fire a spurious updatePR every time. Corrected to git diff origin/<base>...HEAD -- . ':(exclude)thoughts/', mirroring exclude_thoughts_on_merge; the thoughts/ exclusion transitively covers both deliverables. Added an exclusion regression test.",
-    "no_op_change_set": "Only the diffDigestAgainstBase git command and its step-2 test change vs. planning pass 1; all other steps re-verified to hold.",
-    "open_decisions": "none — both surfaced decisions confirmed; remaining calls are owner-delegated mechanism/local choices recorded in the plan."
+    "confirmed_no_change": [
+      "src/schemas/task.ts (presented_diff_digest already exists)",
+      "src/schemas/adapters.ts / src/adapters/git-hosting.ts / github-hosting plugin (body:null = leave-unchanged already supported)",
+      "tests/integration/pipeline-review-delivery.integration.test.ts (skips create-pr)"
+    ],
+    "decisions": [
+      {
+        "category": "doc_wording",
+        "summary": "Bring the now-stale rework-loop prose current alongside the required notification-row edit, not just the row.",
+        "chosen": "Add one clause to docs/user-flows/pr-management/overview.md:98-107 noting create-pr also refreshes the PR title/body on rework (digest-gated).",
+        "reasoning": "The shipped feature left this prose stale (it still says rework only dismisses approval + marks feedback applied). I am editing this exact section for ask #3, and AGENTS.md:198 says stale docs are worse than none. Minimal one-clause update on the touched surface.",
+        "details": { "files": 1 }
+      },
+      {
+        "category": "test_coverage",
+        "summary": "Cover both the diff-derived feature path (real deliverables) and the absent-deliverable fallback (body:null), and add an assertion pinning the neutral #3 notification.",
+        "chosen": "Add a real-temp-worktree fixture + a creation and a rework test asserting diff-derived title (distinct from task title) and narrative body; convert the existing :209-234 test to the absent-deliverable body:null case; assert notify receives 'Pushed rework to the PR.'",
+        "reasoning": "Owner's bar: a test that still passes with the feature deleted isn't testing the feature. The current suite pins the fallback because the fixture worktree path doesn't exist. Pinning the neutral message locks ask #3, which nothing asserts today.",
+        "details": {}
+      }
+    ]
   }
 }

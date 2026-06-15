@@ -1,18 +1,38 @@
 {
   "status": "ok",
-  "summary": "Reproduced all three CI jobs locally (build, lint, test) plus the docs:bundle sync check — all green; the earlier lint failure was already fixed and pushed (knip/lefthook, commit e203901). No code change needed.",
+  "summary": "Implemented the three review-rework asks: rework now keeps the live PR body when the deliverable is absent (body: null), uses a cause-neutral notification, and is covered by tests that exercise the diff-derived presentation, not the fallback; docs updated, all gates green.",
   "details": {
-    "carry_over_instruction": "Open PR's CI checks are failing — reproduce, fix root cause, let delivery re-push.",
-    "actual_state": "CI is green. Live PR #28 statusCheckRollup shows lint/test/build all SUCCESS at headRefOid b79b137 (== local HEAD == origin/<branch>). The stale 'failing' note predated run 2's knip/lefthook fix being pushed.",
-    "gates_reproduced": {
-      "build": "CI=true pnpm build — exit 0 (lib bundle + dashboard bundle)",
-      "docs_bundle_sync": "CI=true pnpm run docs:bundle then git diff --exit-code src/cli/bundled/plugin-docs.ts — no diff (in sync)",
-      "lint_CI_true": "CI=true pnpm lint — exit 0 (biome 500 files, tsc x2, knip, madge all clean)",
-      "test_CI_true": "CI=true pnpm test — 2618 tests / 139 files pass, exit 0"
+    "commit": "c165ba0",
+    "changed": [
+      "src/core/orchestrator/pipeline/delivery/create-pr.ts",
+      "tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts",
+      "docs/user-flows/pr-management/overview.md"
+    ],
+    "gates": {
+      "typecheck": "pass",
+      "lint": "pass (3 pre-existing knip lefthook hints; no new findings)",
+      "test": "pass (2620 tests, 139 files; create-pr 19/19)"
     },
-    "root_cause_already_fixed": "knip flagged lefthook as unused outside CI; fixed in run 2 by adding 'lefthook' to knip.json ignoreDependencies (present at HEAD knip.json:13). Makes lint deterministic with and without CI.",
-    "knip_hint_note": "Under CI=true knip emits a non-fatal config hint to remove the lefthook ignore entry (exit 0, lint still passes). Removing it would re-break non-CI lint, so the entry is correctly retained — no change.",
-    "changes_this_run": "Deliverables only: implementation.md (run 3 accumulation), session-result.json (this file), and the harness .bak backup of run 2's result (committed to match the tracked-.bak convention). No source/test/config change.",
-    "feature_change_status": "Issue #24 feature (rework PR title+body refresh on diff change) implemented in c1f1b95; lint fix in e203901. Both committed and pushed."
+    "feature_pinning_verified": "Stubbing readPrTitle/readPrDescription to null made both new feature tests fail, confirming they pin the feature, not the fallback (source restored).",
+    "decisions": [
+      {
+        "category": "code_style",
+        "summary": "On a body-skipped rework, pass body: null and keep the title + updatePR call rather than short-circuiting the whole host call.",
+        "chosen": "body: null with title refresh retained",
+        "reasoning": "The git-hosting plugin already no-ops all-null updates and the title may legitimately refresh; this is the simplest path satisfying the owner's 'leave the existing body' ask. Plan D6, owner-delegated."
+      },
+      {
+        "category": "doc_wording",
+        "summary": "Brought the rework-loop prose current (sub-phase bullet + rework-loop paragraph), not just the notification row.",
+        "chosen": "Update both prose spots and the notification row",
+        "reasoning": "The shipped feature left those spots omitting the title/body refresh; I was editing that exact section, so leaving them stale would be worse than no docs. Plan D7."
+      },
+      {
+        "category": "test_coverage",
+        "summary": "Pinned the neutral notification and kept both the feature path (real deliverables) and the absent/fallback path (body: null) covered.",
+        "chosen": "Cover feature + fallback + notification",
+        "reasoning": "Owner's bar: a test that passes with the feature deleted isn't testing it. Verified empirically. Plan D8."
+      }
+    ]
   }
 }

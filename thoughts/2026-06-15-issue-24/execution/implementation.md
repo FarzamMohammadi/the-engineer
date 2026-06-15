@@ -243,3 +243,87 @@ HEAD). After committing, `git status` is clean.
 
 `ok` — CI is verified green by both local reproduction (all three jobs + docs-sync) and the live PR
 status; the root cause of the earlier failure was already resolved and pushed. No open questions.
+
+---
+
+# Execution — Run 3: the three review-rework asks (2026-06-15)
+
+_Implements Planning Run 3 (`plan.md` §§R3.x). The feature shipped (`c1f1b95` + `9ca225b`); the
+owner then left three concrete asks on his own PR. This run addresses exactly those three, nothing
+more — the settled scope (unified rewrite of title+body, regenerate-from-diff, push-only-when-changed
+via the digest gate) is untouched._
+
+## What changed and why
+
+**Ask #3 — cause-neutral rework notification.** `reworkExistingPr` is reached by CI-fix and
+merge-conflict re-pushes too, not just review feedback, so the fixed string "Pushed rework addressing
+review feedback." mislabeled those causes. Changed the `ticket_comment` to the owner's suggested
+neutral text **"Pushed rework to the PR."** (`create-pr.ts`). One literal; no test asserted the old
+string, so nothing else broke.
+
+**Ask #2 — a rework must not degrade a good published body.** In `refreshPrPresentation`, when the
+diff digest changed but the `pr-description.md` deliverable is absent/empty, the code used to compose
+the `PR for: <task title>` stub and push it via `updatePR`, overwriting whatever rich body was already
+live on the PR. Fixed by reading the description once and carrying **`body: null`** when it is absent —
+the published `PRUpdates` contract treats `null` as "leave the host body unchanged" (the GitHub plugin
+applies `body` only when non-null). The title path is unchanged: its fallback (`readPrTitle(ctx) ??
+ctx.task.title`) reproduces the live title when the deliverable is absent, so the title is never
+degraded. The digest still advances and `updatePR` is still called (the title may legitimately have
+moved) — per plan decision D6, no short-circuit. Creation (`openNewPr`) keeps its stub fallback:
+there is nothing live to degrade when first opening a PR.
+
+  - No schema/adapter/plugin change was needed — `body: null` is the existing mechanism. Confirmed
+    `PR for:` now appears only on the creation path (grep: `create-pr.ts:229` only).
+
+**Ask #1 — the tests must exercise the feature, not its fallback.** The old `mockCtx` pointed
+`worktreePath` at a non-existent dir, so `readPrTitle`/`readPrDescription` always returned `null` and
+every assertion checked the task-title / stub fallback. Added a real-temp-worktree fixture
+(`worktreeWithDeliverables`: `mkdtempSync` + writes `pr-title.md`/`pr-description.md` under
+`<dir>/thoughts/x/delivery/`, with `afterEach` `rmSync` cleanup) and a `worktreePath` override on
+`mockCtx`. New/changed tests:
+  - **Creation, real deliverables:** `createPR` receives the diff-derived title
+    ("Refresh PR presentation on rework", distinct from `ctx.task.title` "Add feature") and a body
+    containing the unique narrative sentinel "Regenerated from the full diff." (not the shared footer).
+  - **Rework changed-substance, real deliverables:** `updatePR` receives that diff-derived title and
+    narrative body; digest advances; `description_updated: true`.
+  - **Rework changed-substance, absent deliverable (#2 path):** the old `:209` test was converted —
+    `updatePR` is called with `body: null` and `title: "Add feature"`, the digest advances, and the
+    `notify` message is pinned to "Pushed rework to the PR." (#3). Proves the stub is no longer pushed.
+
+  - **Owner's bar verified empirically:** temporarily stubbing `readPrTitle`/`readPrDescription` to
+    return `null` (simulating the feature deleted) makes both new feature-pinning tests **fail** — they
+    pin the feature, not the fallback. Source restored afterward; `git diff --stat src/` shows only the
+    intended 10/5 line change to `create-pr.ts`.
+
+## Docs (same unit of work)
+
+`docs/user-flows/pr-management/overview.md`: updated the "Rework pushed" notification row to the new
+text, and brought the two stale prose spots current — the `create-pr` sub-phase bullet and the
+"rework loop" paragraph now note that `create-pr` also **refreshes the PR title and body** on rework
+(regenerated from the full diff, pushed only when the diff changed; best-effort, non-blocking). The
+shipped feature had left these omitting the refresh. `docs/archived/**` left untouched (historical).
+
+## Verification
+
+- `pnpm run typecheck` — clean.
+- `pnpm run lint` (biome + tsc + knip + madge) — clean (the 3 knip warnings are the pre-existing
+  lefthook hint documented in the prior run; no new findings; no circular deps).
+- `pnpm test` — **2620 passed (139 files)**; `create-pr.test.ts` 19/19.
+- Feature-pinning bar confirmed by the stub-and-fail experiment above.
+- `grep "addressing review feedback"` → no hits in `src/` (except the new explanatory comment) or
+  non-archived `docs/`.
+
+## Decisions recorded (carried from plan, surfaced for autonomy-policy review)
+
+- **D6 (`code_style`):** on a body-skipped rework, pass `body: null` and keep the title + `updatePR`
+  call rather than short-circuiting the whole host call. The plugin already no-ops all-null updates and
+  the title may legitimately refresh; simplest path satisfying "leave the existing body."
+- **D7 (`doc_wording`):** also brought the rework-loop prose current (not just the notification row),
+  because the shipped feature left it stale and I was editing that exact section.
+- **D8 (`test_coverage`):** pinned the neutral #3 message and kept both the feature path (real
+  deliverables) and the absent/fallback path (`body: null`) covered.
+
+## Outcome
+
+`ok` — all three asks implemented, docs updated in the same unit, gates green, the owner's
+feature-pinning bar verified. Committed; no open questions.

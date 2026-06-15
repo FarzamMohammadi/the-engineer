@@ -174,3 +174,123 @@ skill is mandatory; invoking it is discretionary and disproportionate here.
 Correct, complete, minimal, idiomatic; root cause fixed; all acceptance criteria met; all gates green
 on independent re-run. O1/O2 are confirmed non-issues; O3 is an optional guard not worth a
 public-surface change. Nothing material remains. Deliver it.
+
+---
+
+# Refine — pass 3 (review of the review-rework round · 2026-06-15)
+
+_Refiner pass 3 · verdict: **ship**_
+
+## Why this pass ran
+
+A rework round landed on the open PR after passes 1–2 shipped. The owner left three scoped asks on his
+own PR; the rework (commits `9ca225b` + `c165ba0`, recorded in `c13119a`) implemented them. **The diff
+under review is now larger than passes 1–2 saw** — it includes those three asks. The self-review lens
+re-ran (its pass 3) and again returned **ship**. I treated the grown diff as a fresh change: re-derived
+every claim against the actual code, re-ran every gate, and checked the three asks against the owner's
+own words in `requirements.md`. I did not trust the prior verdicts.
+
+## The three owner asks ↔ code (all met, verified independently)
+
+| Ask | What the owner wanted | Independent verification |
+|-----|------------------------|--------------------------|
+| #1 | Tests must pin the **feature**, not the fallback (a test that passes with the feature deleted isn't testing it) | ✓ New `worktreeWithDeliverables` helper (`create-pr.test.ts:94`) writes real `pr-title.md`/`pr-description.md` into a temp worktree (`afterEach` cleanup). Creation test (`:173`) and rework-changed test (`:265`) assert a title **distinct from `ctx.task.title`** ("Refresh PR presentation on rework" vs "Add feature") and a **unique body sentinel** ("Regenerated from the full diff.", not the shared footer). Both would fail if `readPrTitle`/`readPrDescription` were deleted. The old fallback-only assertion was correctly removed. |
+| #2 | A rework must not degrade a good live body | ✓ `refreshPrPresentation` (`create-pr.ts:155-159`) reads the description once and sends `body: null` when the deliverable is absent/empty, instead of the `PR for: <title>` stub. **I confirmed `body: null` truly means "leave unchanged"** by reading the GitHub plugin: `doUpdatePR` (`github-hosting.ts:108-117`) omits any null field from the update params and skips the whole `pulls.update` call when title/body/draft are all null. Test `:314` pins `updatePR` receiving `body: null`. **This resolves prior pass's O2.** |
+| #3 | Cause-neutral rework notification | ✓ The `ticket_comment` literal changed from "Pushed rework addressing review feedback." to "Pushed rework to the PR." (`create-pr.ts:96-99`), with a code comment explaining the path is shared by CI-fix / merge-conflict re-pushes. Docs row (`overview.md:126`) + the two rework-loop prose spots updated to match. Test `:323` pins the message. |
+
+## Original feature re-confirmed unchanged
+
+The digest gate (`diffDigestAgainstBase`, `:(exclude)thoughts/`, three-dot `origin/base...HEAD` range
+via the private `gitExec(args, cwd)`), the title+body unified rewrite, push-only-when-changed,
+best-effort/non-blocking `update_pr_presentation` span, creation/rework title parity, and the additive
+`presented_diff_digest` schema field all still hold exactly as recorded in passes 1–2. The `body: null`
+change is the only behavioral edit to the rework path and it sits **inside** the changed-substance
+branch, so "unchanged digest ⇒ no-op" and "digest-null ⇒ skip" are untouched (their tests stay green).
+
+## Security re-checked (title is now agent-generated)
+
+The title now flows from `pr-title.md` (LLM-written) rather than the task title, so I verified the
+secret-sanitization path closes: `composePrTitle` (`create-pr.ts`) sanitizes its argument internally
+via `sanitizeSecrets(title)`, and `readPrTitle` does **not** pre-sanitize — exactly one pass, no leak,
+no double-sanitize. Body is sanitized once at the `refreshPrPresentation`/`openNewPr` call site
+(`sanitizeSecrets(description)`), with `composePrBody` not re-sanitizing. ✓
+
+## Consolidated findings across all lenses/passes
+
+| # | Finding | My independent verdict |
+|---|---------|------------------------|
+| O1 | `knip.json` adds `"lefthook"` to `ignoreDependencies` — pre-existing, feature-unrelated | **Keep.** Required for the lint gate to pass without `CI` set (verified empirically in pass 1); follows the file's 21-entry convention; one line; reversible. Lint green with it. |
+| O2 | Rework body could overwrite a rich live body with the `PR for: <title>` stub | **RESOLVED by ask #2** (`body: null`). No longer outstanding. |
+| O3 | The `pr-description.ts` prompt instruction that makes the agent emit `pr-title.md` has no test guarding it | **Optional; not adding.** Confirmed in pass 2: `buildInstructions`/`buildPrompt` are module-private, there is no `pr-description.test.ts`, and **zero** prompt-content assertions exist anywhere under `tests/`. Adding the guard means exporting a private fn purely to assert a prompt string — a brittle anti-pattern the suite avoids — to protect a path that already degrades gracefully via the *tested* `readPrTitle` fallback. Net-negative; recorded as a `test_coverage` decision. |
+| O4 | Title degradation in the absent-`pr-title.md` rework edge: the body's fix (ask #2) has no title twin | **Surface only — no fix; owner explicitly scoped this out.** See below. |
+
+## O4 in depth — why I am shipping without the title twin
+
+The self-review surfaced O4: on a substance-changed rework where `pr-title.md` is *absent at this
+rework but was present (diff-derived) at creation*, `refreshPrPresentation` would overwrite the live
+diff-derived title with the plain task title — the same class of degradation ask #2 fixes for the body.
+I confirmed the mechanism is real (`create-pr.ts:155`, `readPrTitle(ctx) ?? ctx.task.title`). I am
+**not** fixing it, for three converging reasons:
+
+1. **The owner explicitly decided it.** `requirements.md:372-375` states verbatim: *"Owner scoped #2 to
+   the body only; I am not expanding it to gate the title."* This is a settled owner choice carried into
+   this run, not an open call for me to make. Adding a title guard would override an explicit decision —
+   scope expansion against stated intent, which is exactly what the engineer must not do.
+2. **The trigger is degenerate.** `pr-title.md` and `pr-description.md` are written by the **same**
+   `pr-description` sub-phase pass on **every** PR-mode rework. `pr-description.md` is the
+   contractually-enforced deliverable (absent ⇒ sub-phase blocks before `create-pr`); `pr-title.md` is
+   requested in the *same* prompt. For O4 to fire, the agent must produce the enforced body file but not
+   the title file, in a pass where it did produce the title file at creation. Rare and self-correcting
+   (the next round with the file present restores the diff-derived title).
+3. **The degradation is mild.** Title falls back to the real task title — a plausible, accurate title —
+   not to an obvious `PR for: <title>` stub like the body's was. The owner's stated rationale ("the
+   title fallback reproduces the live title") holds in the common case (title also fell back at
+   creation); O4 is the narrow gap in that reasoning, recorded for the owner's awareness.
+
+If the owner ever wants symmetry, the body's mechanism mirrors in one line:
+`const t = readPrTitle(ctx); const title = t ? composePrTitle(t, ref) : null;` (pass `title: null` to
+leave the live title unchanged). Recorded, not applied.
+
+## Independent verification performed this pass
+
+**Code, read line-by-line (assume-issues-exist stance):**
+- `doUpdatePR` (`github-hosting.ts:89-131`) confirms `null` ⇒ field omitted; all-null ⇒ no `pulls.update`
+  call at all. Ask #2's `body: null` semantics are real, not assumed. ✓
+- `PRUpdatesSchema` payload `{title, body, draft, labels_add, labels_remove}` (all nullable) matches the
+  `updatePR` call in `refreshPrPresentation`. ✓
+- Crash-safety ordering correct: `updatePR` runs before the `presented_diff_digest` persist (folded into
+  the single `review` write at `create-pr.ts:88-93`), so a crash between them costs at most one
+  idempotent redundant re-push next round — never a missed update. ✓
+- `refreshPrPresentation` advances the stored digest **only** when the host update lands (returns
+  `digest: current` on success, `digest: last` on failure/skip), so a failed refresh retries next round
+  rather than silently marking the PR fresh. ✓
+- Creation path sanitization intact (`openNewPr:229`, not regressed by this round). ✓
+
+**Gates re-run independently (not trusting any report):**
+- `pnpm run typecheck` → clean (tsconfig + tsconfig.test).
+- `env -u CI pnpm run lint` → green (biome 500 files, tsc×2, knip 229 files / 3 warnings, madge no cycles).
+- `vitest run` on delivery + workspace-manager + schemas/task → **157 passed**, including
+  `diffDigestAgainstBase > digests merged code but excludes the engine's own thoughts/ deliverables`,
+  the four rework cases (changed / unchanged / digest-null / updatePR-rejects), the creation baseline,
+  the absent-deliverable `body: null` case, and the cause-neutral message.
+
+## Fixes applied this pass
+
+None. The three owner asks are implemented faithfully and minimally; the original feature is intact;
+security, schema, crash-safety, and observability all hold; every gate is green. No security issue,
+requirement gap, or clarity/simplicity problem survived scrutiny — nothing to fix, nothing to commit.
+
+## Process note
+
+I did not run the full 3-agent expert-panel-review skill. Same judgment as passes 1–2: a small,
+localized, fully-tested delivery wiring change that has now passed three self-review passes and every
+gate, and whose grown diff I re-derived line-by-line, does not warrant a three-perspective panel — it
+would be disproportionate and would not move the verdict. Reading the skill is mandatory; invoking it
+is discretionary and not warranted here.
+
+## Verdict (pass 3): **ship**
+
+The rework lands the three owner asks correctly and minimally and resolves prior pass's O2. The original
+feature is intact, the title-sanitization path is closed, and all gates are green on independent re-run.
+O1 is a verified-necessary one-liner; O3 is an optional guard not worth a public-surface change; O4 is
+an owner-scoped-out, degenerate, mild edge surfaced for awareness. Nothing material remains. Deliver it.

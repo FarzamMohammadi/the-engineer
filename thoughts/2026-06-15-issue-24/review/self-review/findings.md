@@ -143,3 +143,96 @@ mentions `pr-title.md` and the "whole PR" framing; that assertion was not added.
 No change to the verdict. The implementation is sound, every part earns its keep, and all gates are
 green on independent re-run. O1/O2 are documented non-issues; O3 is an optional test-hardening nicety.
 Ship it.
+
+---
+
+# Self-Review — pass 3 (review of the review-rework round · 2026-06-15)
+
+_Re-invoked as the self-review lens after a rework round landed on the open PR. The owner left three
+scoped asks on his own PR; the rework (commits `9ca225b` + `c165ba0`) implemented them. The diff under
+review (`git diff origin/main...HEAD`) is now **larger than passes 1–2 saw** — it includes those three
+asks. This pass reviews the new state, re-confirms the original feature still holds, and checks the
+three asks against the owner's words. Scope: code/docs only; `thoughts/` is the engine's own audit
+trail (stripped at merge), not part of the shipped change._
+
+## Verdict: **ship / `ok`** — clean, and the rework directly closes prior pass's O2.
+
+The three review-rework asks are implemented faithfully and minimally, every new line earns its place,
+and the touched suite (`create-pr` 19, `workspace-manager` 47, `schemas/task` 58 = 124) is green on
+independent re-run. One new low-severity, owner-scoped observation (O4) and the standing O1/O3; no
+correctness findings.
+
+## The three owner asks ↔ diff (all met)
+
+- **Ask #1 — tests exercise the feature, not the fallback.** ✓ New `worktreeWithDeliverables` helper
+  (`create-pr.test.ts:88`) writes real `pr-title.md` / `pr-description.md` into a temp worktree with
+  `afterEach` cleanup. The new creation test and the rework-changed-substance test assert a title
+  **distinct from `ctx.task.title`** ("Refresh PR presentation on rework") and a body carrying a
+  **unique narrative sentinel** ("Regenerated from the full diff.", not the shared footer) — so both
+  would fail if `readPrTitle`/`readPrDescription` were deleted. This meets the owner's exact bar ("a
+  test that passes with the feature deleted isn't testing it"). The old footer-only assertion that
+  pinned the *fallback* was correctly removed.
+- **Ask #2 — a rework must not degrade a good live body.** ✓ `refreshPrPresentation`
+  (`create-pr.ts:155-159`) now reads the description once and sends `body: null` ("leave the host body
+  unchanged" per `PRUpdatesSchema`) when the deliverable is absent/empty, instead of overwriting with
+  the `PR for: <title>` stub. **This is the fix for prior pass's O2** — that observation is now
+  resolved, not outstanding. Creation (`openNewPr:229`) keeps its stub fallback (nothing live to
+  degrade). A test pins the absent-deliverable path to `body: null`.
+- **Ask #3 — cause-neutral rework notification.** ✓ The `ticket_comment` literal changed from
+  "Pushed rework addressing review feedback." to "Pushed rework to the PR." (`create-pr.ts:96-99`),
+  with a comment explaining the path is shared by CI-fix/merge-conflict re-pushes. Docs row + the two
+  rework-loop prose spots in `overview.md` updated to match; archived docs untouched. A test now pins
+  the message (`create-pr.test.ts`).
+
+## Original feature re-confirmed unchanged
+The digest gate (`diffDigestAgainstBase`, `:(exclude)thoughts/`, three-dot range), the title+body
+unified rewrite, push-only-when-changed, best-effort/non-blocking `updatePR` span, and creation/rework
+title parity all still hold exactly as recorded in passes 1–2. The `body: null` change is the only
+behavioral edit to the rework path and it is correctly *inside* the changed-substance branch, so the
+"unchanged digest ⇒ no-op" and "digest-null ⇒ skip" paths are untouched (their tests stay green).
+
+## New observation (non-blocking)
+
+### O4 — Title degradation in the absent-deliverable rework edge case (the body's fix has no title twin)
+With ask #2, the **body** is now protected when the `pr-description.md` deliverable is absent on a
+substance-changed rework (`body: null` leaves the live body in place). The **title** is not given the
+same protection: `refreshPrPresentation` (`create-pr.ts:155`) still sends
+`composePrTitle(readPrTitle(ctx) ?? ctx.task.title, …)`, so if `pr-title.md` is absent at this rework
+*but was present (diff-derived) at creation*, the rework overwrites the live diff-derived title with
+the plain task title — the same class of degradation ask #2 fixes for the body.
+- **Why it's low / likely fine as-is:** (a) the owner **explicitly scoped ask #2 to the body** and left
+  the title path as-is; (b) `pr-title.md` and `pr-description.md` are written by the *same*
+  `pr-description` sub-phase pass, which runs on every PR-mode rework, so "title absent at rework but
+  present at creation" requires the agent to have produced the file once and then not again — a rare,
+  degenerate case; (c) when both are genuinely absent at creation *and* rework (the common fallback
+  case), the rework title equals the live task-title and it's an idempotent no-op.
+- **Disposition:** surface only — consistent with the owner's body-only scoping; no fix requested. If
+  the owner later wants symmetry, the body's mechanism mirrors directly:
+  `const t = readPrTitle(ctx); const title = t ? composePrTitle(t, ref) : null;` (pass `title: null`
+  to leave the live title unchanged). Note the requirements doc's stated rationale ("the title fallback
+  reproduces the live title") holds only when the title was *also* the fallback at creation; this edge
+  is the gap in that reasoning, recorded for awareness.
+
+## Standing observations from prior passes
+- **O1 (knip `lefthook`)** — still ships; still a documented, necessary, convention-following one-liner
+  to keep the non-CI `lint` gate green. Non-blocking. Worth a line in the regenerated PR body's
+  risks/follow-ups so a reviewer isn't surprised to see `knip.json` here.
+- **O2 (body degradation)** — **RESOLVED by this rework** (ask #2). No longer outstanding.
+- **O3 (no test guards the `pr-title.md` prompt instruction)** — still true; the rework added
+  feature-pinning tests for the *read* side but not for the prompt content that makes the agent emit
+  the file. Low/optional, as before (prompt-string assertions aren't a convention in this suite, and
+  `readPrTitle` degrades gracefully via its tested fallback).
+
+## Independent verification this pass
+- `vitest run` on `create-pr.test.ts` (19) + `workspace-manager/index.test.ts` (47) +
+  `schemas/task.test.ts` (58) → **124 passed**.
+- Read the full `create-pr.ts` rework/creation paths and `composePrTitle`/`composePrBody`: title is
+  sanitized once (inside `composePrTitle`), body once (at read) — no double-sanitization; the `body`
+  ternary is the only change to the compose step.
+- Confirmed the `PR for: <title>` stub now appears **only** on the creation path (`openNewPr:229`); the
+  rework path no longer composes it. Matches ask #2.
+
+## Bottom line (pass 3)
+The rework lands the three owner asks correctly and minimally, and resolves the one prior body-fallback
+observation. Verdict unchanged: **ship / `ok`**. O4 is a low-severity, owner-scoped edge surfaced for
+awareness; O1 and O3 remain optional/non-blocking.

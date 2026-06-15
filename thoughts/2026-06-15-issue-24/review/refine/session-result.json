@@ -1,15 +1,14 @@
 {
   "status": "ok",
-  "summary": "Re-verified the PR-presentation-refresh change independently: root cause fixed, all gates green (typecheck/lint/172 unit tests), O1/O2 confirmed non-issues, O3 optional. No code fixes needed; nothing to commit.",
+  "summary": "Reviewed the grown diff (three owner asks) independently; all asks met, original feature intact, all gates green — no fixes needed, ship.",
   "details": {
     "verdict": "ship",
     "decisions": [
       {
         "category": "test_coverage",
-        "summary": "Ship without a regression test asserting the pr-description prompt still instructs the agent to write pr-title.md (review observation O3).",
+        "summary": "Ship without a test guarding the pr-description prompt instruction that emits pr-title.md (self-review O3).",
         "chosen": "Do not add the guard.",
-        "reasoning": "The only way to add it is to export a module-private function (buildInstructions/buildPrompt) purely to assert a prompt string — a public-surface widening that introduces a brittle prompt-content-assertion pattern that exists nowhere in the suite. The runtime degrades gracefully if the instruction is ever dropped (readPrTitle returns null -> title falls back to ctx.task.title), and that fallback path is already tested in create-pr.test.ts. The sole review lens rated O3 low/optional and explicitly non-blocking.",
-        "details": { "tests": 0 }
+        "reasoning": "buildInstructions/buildPrompt are module-private, there is no pr-description.test.ts, and zero prompt-content assertions exist anywhere under tests/. Adding the guard requires exporting a private function purely to assert a prompt string — a brittle anti-pattern the suite deliberately avoids — to protect a path that already degrades gracefully via the tested readPrTitle fallback. Net-negative."
       }
     ]
   }

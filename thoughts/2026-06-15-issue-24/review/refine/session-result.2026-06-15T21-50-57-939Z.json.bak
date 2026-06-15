@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "summary": "Re-verified the PR-presentation-refresh change independently: root cause fixed, all gates green (typecheck/lint/172 unit tests), O1/O2 confirmed non-issues, O3 optional. No code fixes needed; nothing to commit.",
+  "details": {
+    "verdict": "ship",
+    "decisions": [
+      {
+        "category": "test_coverage",
+        "summary": "Ship without a regression test asserting the pr-description prompt still instructs the agent to write pr-title.md (review observation O3).",
+        "chosen": "Do not add the guard.",
+        "reasoning": "The only way to add it is to export a module-private function (buildInstructions/buildPrompt) purely to assert a prompt string — a public-surface widening that introduces a brittle prompt-content-assertion pattern that exists nowhere in the suite. The runtime degrades gracefully if the instruction is ever dropped (readPrTitle returns null -> title falls back to ctx.task.title), and that fallback path is already tested in create-pr.test.ts. The sole review lens rated O3 low/optional and explicitly non-blocking.",
+        "details": { "tests": 0 }
+      }
+    ]
+  }
+}

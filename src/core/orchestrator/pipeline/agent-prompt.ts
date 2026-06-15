@@ -121,7 +121,7 @@ export function buildResultContract(options: ResultContractOptions): string {
     "Where To Put Your Work",
     [
       `Write your deliverable to \`${path.join(options.directory, options.deliverable)}\` — accumulate across re-runs, do not overwrite prior context.`,
-      `Then write \`${path.join(options.directory, "session-result.json")}\`:`,
+      `Then write \`${path.join(options.directory, "session-result.json")}\` with this shape:`,
       "",
       "```json",
       "{",
@@ -130,6 +130,8 @@ export function buildResultContract(options: ResultContractOptions): string {
       detailsLine,
       "}",
       "```",
+      "",
+      "Use both paths exactly as written, including the full `thoughts/<id>/<phase>/` prefix — do not shorten, relativize, or relocate them. A result written anywhere else is invisible to The Engineer, so the step fails even when your work was sound.",
       "",
       "- `ok` — you did the job; The Engineer proceeds.",
       "- `needs_human` — a person must answer before work can continue; put the question(s) in your deliverable. The Engineer reaches out and resumes when they reply.",

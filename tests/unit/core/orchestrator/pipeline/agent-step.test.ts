@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -67,6 +67,49 @@ describe("agentStep", () => {
     const result = await step()(ctx);
 
     expect(result).toMatchObject({ outcome: "failed", category: "no_result" });
+  });
+
+  it("names where a valid result landed when the agent wrote to the wrong directory", async () => {
+    // Canonical path the orchestrator reads; the agent will write a real result one dir up instead.
+    const stepDir = path.join(dir, "thoughts", "issue-1", "research");
+    const strayDir = path.join(dir, "research");
+    const agent = fakeAgent(() => {
+      mkdirSync(strayDir, { recursive: true });
+      writeFileSync(
+        path.join(strayDir, "session-result.json"),
+        JSON.stringify({ status: "ok", summary: "did the work, wrong place" }),
+        "utf-8",
+      );
+      return Promise.resolve(AGENT_RESULT);
+    });
+    const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+    const run = agentStep({ stepName: "investigate", directory: () => stepDir, prompt: () => "do the work" });
+
+    const result = await run(ctx);
+
+    expect(result).toMatchObject({ outcome: "failed", category: "no_result" });
+    expect(result).toHaveProperty("detail", expect.stringContaining(path.join("research", "session-result.json")));
+    expect((result as { detail: string }).detail).toContain("wrong directory");
+  });
+
+  it("does not flag a prior step's result as a stray (only results written this run count)", async () => {
+    // A real result from an earlier phase predates this step's reset; it must not be reported as a stray.
+    const stepDir = path.join(dir, "thoughts", "issue-1", "research");
+    const earlierDir = path.join(dir, "thoughts", "issue-1", "requirements");
+    mkdirSync(earlierDir, { recursive: true });
+    writeFileSync(
+      path.join(earlierDir, "session-result.json"),
+      JSON.stringify({ status: "ok", summary: "earlier phase, already done" }),
+      "utf-8",
+    );
+    const agent = fakeAgent(() => Promise.resolve(AGENT_RESULT));
+    const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+    const run = agentStep({ stepName: "investigate", directory: () => stepDir, prompt: () => "do the work" });
+
+    const result = await run(ctx);
+
+    expect(result).toMatchObject({ outcome: "failed", category: "no_result" });
+    expect((result as { detail: string }).detail).not.toContain("wrong directory");
   });
 
   it("recovers the result the agent wrote before dying (partial write)", async () => {

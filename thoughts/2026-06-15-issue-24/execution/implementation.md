@@ -79,3 +79,84 @@ because they live in separate modules and all gates pass.
   cleanup before final merge; the digest that drives PR-body refresh already
   excludes `thoughts/`, so committing this deliverable does not trigger a
   spurious description update.
+
+## This pass: fix the failing CI lint gate
+
+Delivery reported the open PR's CI checks failing and asked this phase to
+reproduce them with the project's own gates, fix the root cause, and let
+delivery re-push.
+
+### What was actually failing
+
+`gh pr checks` on PR #28 showed `build` and `test` green but **`lint` failing**
+(run `27581178419`). The CI `lint` job runs `pnpm lint`
+(`biome check . && tsc … && knip && madge`) plus a `docs:bundle` sync check.
+The failing step was `biome check .`, with one error:
+
+```
+./thoughts/2026-06-15-issue-24/delivery/session-result.json format
+  × Formatter would have printed the following content:
+    - the "based_on" array was written multi-line; biome wants it on one line
+Found 1 error.
+```
+
+Reproduced locally with `node_modules/.bin/biome check .` — identical single
+error. So the gate fails because **`biome check .` lints the committed
+`thoughts/` deliverables**, and an agent-authored JSON file there
+(`delivery/session-result.json`) isn't formatted to biome's house style.
+
+### Root cause, not the symptom
+
+`thoughts/` holds agent-generated *process* artifacts — research, plan,
+execution and review deliverables — committed during the PR's life and stripped
+before merge. They are not project source, yet biome was checking them:
+`biome.json` `files.ignore` already excludes `.claude` (the same class of
+agent/tooling artifacts) but not `thoughts`, and `thoughts/` is intentionally
+not gitignored (the orchestrator commits it and the PR-body digest excludes it),
+so biome's `useIgnoreFile` doesn't cover it either.
+
+Reformatting the one offending file is a band-aid: every future phase that
+writes a JSON deliverable — including the `session-result.json` this very pass
+must write — can re-trip biome and break CI again. The durable fix is to stop
+linting the directory, exactly as `.claude` already is.
+
+**Fix (`biome.json`):** add `"thoughts"` to `files.ignore`:
+
+```
+"ignore": ["dist", "coverage", "node_modules", "~", ".claude", "thoughts"]
+```
+
+One line, reversible, and consistent with the existing `.claude` precedent. It
+has no effect on the merged `main` (thoughts/ is stripped before merge) and
+touches no source code, tests, or behavior — it only narrows the formatter's
+scope to actual project files.
+
+### Why only biome — the other gates don't touch `thoughts/`
+
+- `tsc --noEmit` (src) and `tsc --noEmit -p tsconfig.test.json` compile only
+  `src/` and the test configs.
+- `knip` `project` is `src/**/*.ts`.
+- `madge --circular` runs over `src/` only.
+- `build` (tsdown + vite) and `test` (vitest) never read `thoughts/`.
+
+So biome was the sole gate reaching into `thoughts/`, and the ignore fully
+closes the failure.
+
+### Verification (all green after the fix)
+
+- `pnpm lint` — **pass** (biome now checks 493 files, down from 497; tsc src +
+  test clean; knip 3 pre-existing warnings, no errors; madge no circular deps).
+- `docs:bundle` sync check (the CI lint job's second step) —
+  `git diff --exit-code src/cli/bundled/plugin-docs.ts` clean (in sync).
+- `pnpm test` (`vitest run`, the CI `test` job) — **2622 passed / 139 files**.
+- `build` was already green on CI and is provably unaffected by a formatter
+  ignore-list edit (tsdown/vite never read `biome.json`).
+
+### Housekeeping
+
+- Removed a stray untracked backup file
+  `execution/session-result.<ts>.json.bak` (an orchestrator backup of the prior
+  pass's result; its content is preserved in this narrative). Keeps the tree
+  clean and avoids committing backup noise.
+- No source code changed beyond the one-line `biome.json` ignore; the prior
+  phases' feature implementation stands untouched.

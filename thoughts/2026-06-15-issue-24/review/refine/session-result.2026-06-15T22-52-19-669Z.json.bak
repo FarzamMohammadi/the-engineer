@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Fixed the one review finding (title reverting to the original task on rework) by mirroring the body guard; all gates pass; shipping.",
-  "details": { "verdict": "ship" }
-}

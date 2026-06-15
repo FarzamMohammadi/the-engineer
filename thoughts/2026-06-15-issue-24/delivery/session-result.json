@@ -1,13 +1,18 @@
 {
   "status": "ok",
-  "summary": "Wrote the PR description for issue #24 — what/why, how, verification, and honest risks — grounded in the diff, refinements, and execution notes.",
+  "summary": "Wrote the PR description from git log/diff and pipeline deliverables; folded in the later biome.json gate fix the prior draft missed so the body describes the whole PR.",
   "details": {
     "deliverable": "thoughts/2026-06-15-issue-24/delivery/pr-description.md",
-    "based_on": [
-      "git diff origin/main...HEAD",
-      "review/refine/refinements.md",
-      "execution/implementation.md"
-    ],
-    "notes": "No prior pr-description.md existed (only a placeholder session-result.json), so this is the first real write; nothing to accumulate over."
+    "diff_files_covered": [
+      "src/core/orchestrator/pipeline/delivery/pr-description.ts",
+      "src/core/orchestrator/pipeline/delivery/create-pr.ts",
+      "src/core/workspace-manager/index.ts",
+      "src/core/interfaces/workspace-manager.interface.ts",
+      "src/schemas/task.ts",
+      "docs/user-flows/pr-management/overview.md",
+      "knip.json",
+      "biome.json",
+      "tests"
+    ]
   }
 }

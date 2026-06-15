@@ -103,3 +103,74 @@ comment so it no longer claims "never degraded."
 - **`LEADING_HEADING` (`/^#\s+/`) only strips `# ` not `##`/`#x`:** the prompt asks for a plain
   single-line title, so deeper-heading input is not expected; harmless fallthrough. Not worth a
   change.
+
+---
+
+## Pass 2 — 2026-06-15 (re-review after refine fixed pass-1 finding)
+
+### What I checked
+
+Re-ran the holistic last look against the current tree (`git diff 2d799fd...HEAD`, the issue #24
+work). The pass-1 finding ("title can be degraded on rework") was fixed by refine in commit
+`a86a36e`; I confirmed the fix is present in the current code:
+`refreshPrPresentation` now sources the title as
+`const title = titleDeliverable ? composePrTitle(...) : null` (create-pr.ts ~144), mirroring the
+body guard, and the inline comment is truthful. The "no deliverable on rework" test asserts both
+`title: null` and `body: null`.
+
+Independently verified, all clean:
+
+- **Requirements met.** The rework path (`reworkExistingPr`, reached by review-feedback *and*
+  CI-fix *and* merge-conflict re-pushes) now refreshes both title and body so they describe the
+  whole PR. The `pr-description` prompt is rewritten to draw both from the full diff against base,
+  "as if every change landed at once — never round-by-round." Regenerating from the full diff is a
+  stronger design than accumulating per-round notes and exactly satisfies the issue's "complete,
+  accurate picture of the full PR."
+- **Change-detection is correct.** Host update is gated on `diffDigestAgainstBase`
+  (`origin/<base>...HEAD`, excluding `thoughts/`), not on the LLM prose — so a no-op re-push that
+  only regenerated prose does not push a spurious update. Three-dot range makes a base-merge
+  conflict-resolution (new HEAD sha, same net diff) read as no change. Digest tested with a real
+  temp git repo (code change moves it; a `thoughts/` commit does not).
+- **Best-effort, never blocks.** digest-unavailable and update-failed paths both preserve the
+  prior digest (so a later round retries) and return `description_updated: false`; mirrors
+  `dismissStaleApproval`. The code is already pushed before either runs.
+- **Backward compatible.** `presented_diff_digest` is `.optional()` (old persisted review literals
+  parse unchanged, tested); an in-flight PR with no stored digest reads `last = null`, so its first
+  rework correctly refreshes.
+- **Secret hygiene.** Title and body pass through `sanitizeSecrets` at both creation and refresh;
+  error text through `sanitizeErrorMessage`.
+- **Dispatch is sound.** `reworkExistingPr` only runs when `review.pr_number != null`, so the
+  `if (ctx.task.review)` digest-persist guard is TypeScript narrowing (the type stays nullable
+  through `?.`), not dead defensive code — the digest is always persisted on this path.
+- **Notification correctness/completeness.** Message made cause-neutral ("Pushed rework to the
+  PR."); the docs table is updated to match; the only remaining "addressing review feedback"
+  strings are the explanatory code/test comments and frozen `docs/archived/` history — no stale
+  live reference.
+- **What ships.** `knip.json` `lefthook` ignore and `biome.json` `thoughts` ignore are justified
+  one-line gate fixes (confirmed by prior passes and consistent with the file conventions). No
+  stray files, debug logging, TODOs, or leftover scaffolding in the source diff.
+
+### Gates (current tree)
+
+- `pnpm typecheck` — pass.
+- `pnpm vitest run` on the three affected suites — **124 passed** (create-pr 19, workspace-manager
+  47, task schema 58).
+
+### New findings
+
+None. The pass-1 finding is fixed and verified in place. The two edges I re-examined were already
+considered and correctly dismissed by the prior passes, and I agree:
+
+- **`description_updated: true` when *both* deliverables are absent on a substance-changing round**
+  — `updatePR` is still called with all-null fields (a host no-op for a compliant plugin) and the
+  digest advances, so the data flag slightly overstates. This is an agent-failure edge only
+  (`pr-description` writes both files every normal round); harmless observability inaccuracy, not
+  worth gold-plating.
+- **Merge-base drift moving the digest** if `origin/<base>` is re-fetched between rounds — the
+  effective PR diff genuinely changed, so a refresh is arguably correct; documented best-effort.
+
+### Verdict: ship
+
+The change correctly and completely solves the issue, the single prior finding is fixed and the
+fix mirrors already-vetted behavior, tests are real-substance and comprehensive, and every gate is
+green. Nothing material remains.

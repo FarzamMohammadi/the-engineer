@@ -12,6 +12,7 @@ This change keeps the PR's title **and** body describing the *whole* PR as it cu
 - **The shown digest is persisted on review state** (`presented_diff_digest`, optional on `ReviewStateSchema`): set as a baseline at PR creation, and advanced only when a host update actually lands.
 - **Refresh never degrades a good published presentation.** When a deliverable is absent or empty, the corresponding field is sent as `null` ("leave the host value unchanged") rather than overwritten with a fallback — for the body that fallback is the `PR for: <title>` stub, and for the title it is the *original task* title, the exact drift this feature exists to prevent. Creation keeps the task-title fallback because there is nothing live to degrade when first opening the PR.
 - **The "rework pushed" notification is now cause-neutral** ("Pushed rework to the PR.") since that path is also reached by CI-fix and merge-conflict re-pushes, where "addressing review feedback" would be wrong.
+- **Docs updated to match** (`docs/user-flows/pr-management/overview.md`): the `create-pr` and rework-loop sections now describe the title/body refresh and its best-effort, diff-gated semantics.
 
 ## Verification
 
@@ -24,7 +25,9 @@ This change keeps the PR's title **and** body describing the *whole* PR as it cu
 
 ## Risks & follow-ups
 
-- **`knip.json` adds `lefthook` to `ignoreDependencies`** — an unrelated gate fix, not part of the feature. `lefthook` is a real devDependency with a tracked `lefthook.yml`, but knip's plugin only counts it used when `CI` is set, so `pnpm lint` fails locally without the ignore. One line, reversible.
+- **Two unrelated gate fixes ride along, both one-line and reversible.** They are not part of the feature but were needed to keep the project's own checks green:
+  - `knip.json` adds `lefthook` to `ignoreDependencies` — a real devDependency with a tracked `lefthook.yml`, but knip's plugin only counts it used when `CI` is set, so `pnpm lint` fails locally without the ignore.
+  - `biome.json` adds `"thoughts"` to `files.ignore` — `thoughts/` holds agent-authored process deliverables (markdown/JSON, no source), committed during the PR and stripped before merge; without the ignore `biome check .` lints those files and CI's `lint` job fails when one isn't in biome's house style. Mirrors the existing `.claude` ignore; narrows the formatter's scope to actual project files only.
 - **The `pr-description` LLM pass still runs on no-op rework rounds.** The digest gate suppresses the *host update*, not the separate agent regeneration, which always ran. No regression, but the redundant pass is out of scope here.
 - **Degenerate edge:** if both deliverables are absent on a substance-changing round, `updatePR` is still called with all-null fields (a host no-op), yet the digest advances and `description_updated: true` is returned — a harmless observability inaccuracy in an agent-failure edge, not gold-plated.
 - A review pass surfaced one Low finding — the title could be reset to the original task title on a rework where the deliverable was absent, the same drift this feature prevents, leaking through the title. It was fixed in this PR by mirroring the body's leave-unchanged guard onto the title and correcting the inline comment.

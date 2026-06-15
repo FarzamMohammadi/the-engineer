@@ -94,3 +94,84 @@ drift the issue describes, leaking through the title — and the fix mirrors alr
 behavior, is covered by an updated test, and passes every gate. Nothing material remains. A
 re-review pass would not converge on anything new for a two-line guard that the lens itself
 proposed.
+
+## Pass 2 — 2026-06-15 (re-review after CI-fix rework round)
+
+### Why this pass ran
+
+Since Pass 1 the branch took further rework rounds (visible in the log): a merge-conflict
+resolution (`526804f` merge of `origin/main`, `d2d104c`), the Pass-1 title guard
+(`a86a36e`), another review-feedback round (`3ccac13`), and a **CI-fix round** that excluded
+`thoughts/` from Biome so the committed engine deliverables stop failing CI lint
+(`2aa4d88`, recorded in `f434692`). The self-review lens re-ran (its "Pass 2") against the
+current tree and returned **ship with no new findings**. This refine pass independently
+re-verifies the whole current change rather than trusting that verdict.
+
+### Consolidated findings from the lenses (this pass)
+
+Only the self-review lens ran. Its Pass 2 reports **zero** new findings: the Pass-1 title
+degradation is fixed and verified present, and the two edges it re-examined (both-deliverables-
+absent observability inaccuracy; merge-base drift) were already considered and correctly
+dismissed in Pass 1. I agree with all of it.
+
+### Independent verification (not taken on the lens's word)
+
+I re-read the full source diff (`git diff origin/main...HEAD -- src/ docs/ knip.json biome.json`)
+and confirmed against the actual code:
+
+- **Pass-1 fix is present and correct.** `refreshPrPresentation` sources the title as
+  `const title = titleDeliverable ? composePrTitle(titleDeliverable, ctx.task.external_ref) : null`
+  and the body symmetrically (`description ? composePrBody(sanitizeSecrets(description), …) : null`).
+  A missing deliverable on rework now leaves the host value unchanged (`null` = leave-unchanged,
+  honoured by the GitHub plugin) instead of resetting to the original task title — the exact drift
+  the issue is about. The inline comment matches the behavior.
+- **Secret hygiene on both paths, verified at the source.** I did not take the lens's word that
+  "both run sanitizeSecrets." Checked the definitions: `composePrTitle` calls `sanitizeSecrets(title)`
+  internally (covers title on both creation and rework); `composePrBody` does *not* sanitize
+  internally, and its callers pass already-sanitized text — creation:
+  `sanitizeSecrets(readPrDescription(ctx) ?? …)`; rework: `composePrBody(sanitizeSecrets(description), …)`.
+  No double-sanitization, no unsanitized agent text reaching the host. Error text goes through
+  `sanitizeErrorMessage`.
+- **Digest design is sound.** `diffDigestAgainstBase` runs `git diff origin/<base>...HEAD -- . :(exclude)thoughts/`
+  via `execFileSync` (args array — no shell injection), sha256 of the trimmed output. Three-dot
+  range = diff since merge-base, so a base-merge conflict resolution (new HEAD sha, same net diff)
+  reads as no change. `thoughts/` excluded so the engine's own per-round deliverable regeneration
+  does not move the digest. Best-effort: returns null (never throws) on missing record or git
+  failure; the caller treats null as "cannot verify" and skips the refresh, preserving the prior
+  stored digest so a later round retries. The rework persist sits inside `if (ctx.task.review)`,
+  which is always true on this path (`reworkExistingPr` only runs when `review.pr_number != null`).
+- **Gate fixes are justified, not scope creep.** `biome.json` adds `"thoughts"` to `files.ignore`
+  — the `thoughts/` tree is committed engine deliverables (markdown/json), no `.ts` source, so
+  excluding it from Biome costs zero real-code coverage and stops CI lint failing on agent-authored
+  files; consistent with the existing ignores (`.claude`, `~`, `coverage`). `knip.json` adds
+  `lefthook` to `ignoreDependencies` (real devDependency, `lefthook.yml` tracked; knip's plugin only
+  counts it used when `CI` is set, so local `pnpm lint` fails without the ignore). Both one-line,
+  reversible, file-convention-consistent.
+- **Docs match behavior.** `docs/user-flows/pr-management/overview.md` describes the refresh
+  (whole-PR, regenerated from full diff, pushed only when the diff changed, best-effort) and the
+  cause-neutral "Pushed rework to the PR." notification — no stale "addressing review feedback"
+  string remains in live text.
+- **No stray artifacts.** Grep of the source diff for `console.log/debug`, `TODO/FIXME/XXX`,
+  `debugger` — none. Working tree has no uncommitted source changes (only this phase's deliverables
+  and harness `.bak` files).
+
+### Gates (current tree, this pass)
+
+- `pnpm typecheck` (`tsc --noEmit` + test project) — **pass**.
+- `pnpm lint` (biome check + tsc + tsc test + knip + madge) — **pass** (knip: 3 pre-existing
+  warnings, no errors; no circular deps).
+- `pnpm test:unit` — **2622 passed** across 139 files. Affected suites: create-pr 19,
+  workspace-manager 47, task schema 58 — all green.
+
+### Fixes applied this pass
+
+None. The single Pass-1 finding was already fixed and verified; this pass found nothing new to
+fix. No commit was needed — the source is correct, complete, and already committed.
+
+### Verdict: ship
+
+The change correctly and completely solves the issue and survives independent re-verification
+after the later rework rounds. Secret hygiene, the digest change-detection, backward
+compatibility (`presented_diff_digest` is `.optional()`), best-effort non-blocking semantics,
+and the two config gate-fixes all hold up against the actual code. Every gate is green. Nothing
+material remains.

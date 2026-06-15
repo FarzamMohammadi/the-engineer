@@ -1,5 +1,5 @@
 {
   "status": "ok",
-  "summary": "Fixed the one review finding (title reverting to the original task on rework) by mirroring the body guard; all gates pass; shipping.",
+  "summary": "Re-verified the whole change after later rework rounds; Pass-1 title guard is present, secret hygiene and digest change-detection hold, all gates green (typecheck, lint, 2622 unit tests). No new findings, no fixes needed.",
   "details": { "verdict": "ship" }
 }

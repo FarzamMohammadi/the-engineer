@@ -1,11 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { outreachDirForSubPhase } from "../../../../src/core/orchestrator/index.js";
 import { responseCarry } from "../../../../src/core/orchestrator/index.js";
-import { sendOutreach } from "../../../../src/core/orchestrator/outreach-sender.js";
+import { type QuestionDelivery, deliverBlockedQuestion } from "../../../../src/core/orchestrator/outreach.js";
 import { buildCarrySection } from "../../../../src/core/orchestrator/pipeline/agent-prompt.js";
 import type { Ctx } from "../../../../src/core/orchestrator/pipeline/types.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
@@ -74,13 +74,15 @@ describe("answer return on resume renders the owner's reply for any phase", () =
   });
 });
 
-// ── sendOutreach — the generalized delivery callee ─────────────────────────────
+// ── deliverBlockedQuestion — the unified outreach delivery ─────────────────────
 //
-// deliverOutreach resolves the outreach directory per blocking sub-phase (above) and hands it to
-// sendOutreach. These tests lock in that callee: a real outreach file in a non-requirements phase's
-// directory is delivered as a `question`, falling back to the owner when the named person is unknown.
+// blockTask resolves the blocking sub-phase's outreach directory (above) and hands it to
+// deliverBlockedQuestion — the single path for both an agent-written question and a synthesized autonomy
+// decision. These tests lock in: the same canonical text reaches BOTH the owner's chat and the source
+// ticket; the synthesized `needed` is used when the sub-phase wrote no file; the file is consumed on read
+// so a later block cannot re-send a stale ask; and a missing owner still posts to the ticket.
 
-describe("sendOutreach delivers from any phase's outreach directory", () => {
+describe("deliverBlockedQuestion delivers one canonical question to every surface", () => {
   let root: string;
 
   beforeEach(() => {
@@ -90,40 +92,99 @@ describe("sendOutreach delivers from any phase's outreach directory", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  function deps(people: { getPerson: () => unknown; getOwner: () => unknown }) {
+  function deps(getOwner: () => unknown): { notify: ReturnType<typeof vi.fn>; delivery: QuestionDelivery } {
     const notify = vi.fn();
     return {
       notify,
-      sendDeps: {
-        peopleDirectory: people as never,
+      delivery: {
+        peopleDirectory: { getPerson: () => null, getOwner } as never,
         notifications: { notify } as never,
         observer: createTestObserverFacade("orchestrator"),
       },
     };
   }
 
-  it("delivers an outreach file written under a non-requirements phase directory", async () => {
+  function messagesFrom(notify: ReturnType<typeof vi.fn>): string[] {
+    return notify.mock.calls.map((call) => (call[0] as { message: string }).message);
+  }
+
+  it("delivers an agent-written outreach file to BOTH the owner's chat and the source ticket", () => {
     const outreachDir = path.join(root, "execution", "outreach");
     mkdirSync(outreachDir, { recursive: true });
     writeFileSync(path.join(outreachDir, "owner.txt"), "Which DB driver should I use?", "utf-8");
+    const { notify, delivery } = deps(() => mockOwner());
 
-    const owner = mockOwner();
-    const { notify, sendDeps } = deps({ getPerson: () => owner, getOwner: () => owner });
+    const question = deliverBlockedQuestion(delivery, {
+      taskId: "task-99",
+      subPhase: "implement",
+      outreachDir,
+      needed: "fallback that must not be used",
+    });
 
-    const result = await sendOutreach("task-99", outreachDir, null, sendDeps);
-
-    expect(result.delivered).toBe(true);
+    expect(question).toBe("Which DB driver should I use?");
     expect(notify).toHaveBeenCalledWith(
       expect.objectContaining({ kind: NotificationKinds.question, personId: "owner", taskId: "task-99" }),
     );
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: NotificationKinds.ticket_comment, taskId: "task-99" }),
+    );
+    // Same canonical text on both surfaces — no divergence.
+    expect(messagesFrom(notify).every((m) => m.includes("Which DB driver should I use?"))).toBe(true);
   });
 
-  it("reports no_files when the asking phase wrote no outreach (the synthesized-question fallback path)", async () => {
-    const owner = mockOwner();
-    const { sendDeps } = deps({ getPerson: () => owner, getOwner: () => owner });
+  it("falls back to the synthesized `needed` when the sub-phase wrote no outreach file", () => {
+    const { notify, delivery } = deps(() => mockOwner());
 
-    const result = await sendOutreach("task-99", path.join(root, "execution", "outreach"), null, sendDeps);
+    const question = deliverBlockedQuestion(delivery, {
+      taskId: "task-99",
+      subPhase: "gather",
+      outreachDir: path.join(root, "requirements", "outreach"),
+      needed: "Confirm the scope_expansion decision",
+    });
 
-    expect(result).toEqual({ delivered: false, reason: "no_files" });
+    expect(question).toBe("Confirm the scope_expansion decision");
+    expect(notify).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: NotificationKinds.question, personId: "owner" }),
+    );
+  });
+
+  it("consumes the outreach file so a later block uses the synthesized question, not the stale file", () => {
+    const outreachDir = path.join(root, "requirements", "outreach");
+    mkdirSync(outreachDir, { recursive: true });
+    const file = path.join(outreachDir, "owner.txt");
+    writeFileSync(file, "Original gather question", "utf-8");
+    const { delivery } = deps(() => mockOwner());
+
+    // First block: the agent's file is the question...
+    const first = deliverBlockedQuestion(delivery, { taskId: "t", subPhase: "gather", outreachDir, needed: "unused" });
+    expect(first).toBe("Original gather question");
+    expect(existsSync(file)).toBe(false); // ...and it is consumed.
+
+    // Resume surfaces an autonomy decision (synthesized, no new file): the decision wins, not the stale file.
+    const second = deliverBlockedQuestion(delivery, {
+      taskId: "t",
+      subPhase: "gather",
+      outreachDir,
+      needed: "Confirm the scope_expansion decision",
+    });
+    expect(second).toBe("Confirm the scope_expansion decision");
+  });
+
+  it("posts to the ticket but warns instead of DMing when no owner is configured", () => {
+    const { notify, delivery } = deps(() => null);
+    const warn = vi.spyOn(delivery.observer, "warn");
+
+    const question = deliverBlockedQuestion(delivery, {
+      taskId: "task-99",
+      subPhase: "gather",
+      outreachDir: null,
+      needed: "Need a decision",
+    });
+
+    expect(question).toBe("Need a decision");
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.ticket_comment }));
+    expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.question }));
+    expect(warn).toHaveBeenCalled();
   });
 });

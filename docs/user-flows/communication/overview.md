@@ -18,7 +18,7 @@ and it lives in two modules: the **notification-router** (outbound) and the **re
 | Notification vocabulary | `src/schemas/notifications.ts` | `NotificationKind`, the typed `Notification` union, `recipientsForKind` |
 | Inbound poller + classifier | `src/core/daemon/response-poller.ts` | Poll comm plugins, classify each message as reply or query |
 | Query handler | `src/core/daemon/query-handler.ts` | Answer `status` / `cost` / `progress #N` / `help` |
-| Reaching out | `src/core/orchestrator/outreach-sender.ts` | Turn a blocked task's questions into outbound notifications |
+| Reaching out | `src/core/orchestrator/outreach.ts` | Resolve a block's one canonical question and deliver it to the owner's chat + the source ticket |
 | The autonomy consult | `src/core/orchestrator/pipeline/runner.ts` | `consultDecisions` — ask the owner about a discretionary call |
 | Router wiring | `src/cli/commands/start/bootstrap.ts` | Builds one router at startup, shared by daemon + orchestrator |
 
@@ -164,12 +164,19 @@ phase raised it.
 
 ### Delivery, and the answer returning
 
-A block from **any** phase delivers its question — not just requirements. The orchestrator resolves
-the blocking sub-phase's own `outreach/` directory and sends any files it wrote as `question`
-notifications (plus a `ticket_comment` summary on the source ticket). When the sub-phase wrote no
-file — the autonomy ask, which has no file — the synthesized question in `detail.needed` is delivered
-directly as a `question` instead, so it reaches you either way. If no owner is configured, the
-orchestrator warns rather than sending into the void.
+Both kinds of ask — a `needs_human` file and a synthesized decision — converge on **one** delivery
+path. The orchestrator resolves the blocking sub-phase's own `outreach/` directory (any phase, not
+just requirements) into a single canonical question: the file(s) the agent wrote, or the block's
+synthesized `needed` when it wrote none. That one question is delivered **identically** to every
+surface you watch — your chat channel (a `question`) and the source ticket (a `ticket_comment`
+carrying the full question, not a summary) — and persisted as `blocked.needed`, the text the
+dashboard renders. Chat, ticket, and dashboard never show a different (or stale) question.
+
+Resolving from the `outreach/` directory **consumes** its files (reads, then deletes them), so a
+later block in the same sub-phase — a resumed run that surfaces an autonomy decision, which writes no
+file — can never re-send a prior block's stale ask. If no owner is configured, the ticket comment
+still posts and the dashboard still shows the question; the orchestrator only warns that it could not
+reach you on chat.
 
 When you answer, the [inbound path](#3-listening--inbound-queries-and-replies) unblocks the task and
 it resumes **where it asked**. Your reply is carried into the agent's next prompt as authoritative

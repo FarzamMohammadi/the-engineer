@@ -27,7 +27,7 @@ import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { ObservationSpan } from "../observer/index.js";
 import { emitAgentCost } from "./agent-cost.js";
-import { sendOutreach } from "./outreach-sender.js";
+import { deliverBlockedQuestion } from "./outreach.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
 import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
 import { type Cursor, type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
@@ -417,76 +417,39 @@ export class Orchestrator {
     });
   }
 
-  /** Transition a blocked task, persist the typed block payload, and deliver any pending outreach. */
-  private async blockTask(ctx: Ctx, sessionId: string, detail: BlockDetail): Promise<ExecuteTaskResult> {
+  /** Transition a blocked task: deliver its question uniformly to every surface, then persist the payload. */
+  private blockTask(ctx: Ctx, sessionId: string, detail: BlockDetail): ExecuteTaskResult {
     const reason = toBlockReason(detail.category);
-    // A human wait — whether a sub-phase reported `needs_human` or the autonomy policy escalated a
-    // discretionary decision — delivers the questions the asking sub-phase wrote, from THAT sub-phase's
-    // own outreach directory (not just requirements'). The synthesized autonomy question rides in
-    // `detail.needed`, so it is delivered even when the sub-phase wrote no outreach file.
-    if (
-      detail.category === BlockCategories.awaiting_human ||
-      detail.category === BlockCategories.awaiting_human_decision
-    ) {
-      await this.deliverOutreach(ctx, detail);
-    }
+    // A human wait — a sub-phase's `needs_human` or the autonomy policy's escalated decision — resolves to
+    // ONE canonical question, delivered to the owner's chat and the source ticket, and persisted as `needed`
+    // so the dashboard renders the same text. The outreach directory is the blocking sub-phase's own (not
+    // just requirements'), so a question from any phase delivers; resolving from it consumes the files, so a
+    // later block cannot re-send a stale ask. Any non-human block carries its `needed` unchanged.
+    const needed =
+      detail.category === BlockCategories.awaiting_human || detail.category === BlockCategories.awaiting_human_decision
+        ? deliverBlockedQuestion(
+            {
+              peopleDirectory: this.ctx.peopleDirectory,
+              notifications: this.ctx.notifications,
+              observer: ctx.observer,
+            },
+            {
+              taskId: ctx.task.id,
+              subPhase: detail.sub_phase,
+              outreachDir: ctx.worktreePath && ctx.thoughtsDir ? outreachDirForSubPhase(ctx, detail.sub_phase) : null,
+              needed: detail.needed,
+            },
+          )
+        : detail.needed;
     this.ctx.taskEngine.requestTransition(ctx.task.id, TaskStates.blocked, null, detail.category, "orchestrator");
     this.ctx.taskEngine.updateTaskField(ctx.task.id, "blocked", {
       reason,
       category: detail.category,
       sub_phase: detail.sub_phase,
-      needed: detail.needed,
+      needed,
     } satisfies BlockedDetails);
     this.endSession(sessionId, SessionEndReasons.blocked, ctx.task.id);
     return { outcome: Outcomes.blocked, phase: detail.sub_phase, reason };
-  }
-
-  /**
-   * Deliver the question the blocking sub-phase raised — from ANY phase, not just requirements.
-   * The outreach directory is resolved from the blocking sub-phase's own `resultDir` (the single
-   * source of truth for where it wrote its work), so a `needs_human` from research, planning,
-   * execution, review, or delivery delivers its `outreach/` files. When the sub-phase wrote no
-   * outreach file (the autonomy escalation, or a phase that reported `needs_human` without a file),
-   * the synthesized question in `detail.needed` is delivered to the owner so the question is never lost.
-   */
-  private async deliverOutreach(ctx: Ctx, detail: BlockDetail): Promise<void> {
-    if (!(ctx.worktreePath && ctx.thoughtsDir)) {
-      return;
-    }
-    const outreachDir = outreachDirForSubPhase(ctx, detail.sub_phase);
-    const result = outreachDir
-      ? await sendOutreach(ctx.task.id, outreachDir, ctx.task.external_ref, {
-          peopleDirectory: this.ctx.peopleDirectory,
-          notifications: this.ctx.notifications,
-          observer: ctx.observer,
-        })
-      : ({ delivered: false, reason: "no_files" } as const);
-    if (result.delivered) {
-      return;
-    }
-    // No outreach file from the asking sub-phase — deliver the operator-facing question directly so the
-    // owner still sees what to answer. This is the path the autonomy escalation always takes (its question
-    // is synthesized, not written to a file), and the safety net for any phase that asked without a file.
-    this.deliverNeededToOwner(ctx, detail);
-  }
-
-  /** Deliver the block's operator-facing question to the owner as a `question`, or warn if no owner is configured. */
-  private deliverNeededToOwner(ctx: Ctx, detail: BlockDetail): void {
-    const owner = this.ctx.peopleDirectory.getOwner();
-    if (!owner) {
-      ctx.observer.warn("Task blocked on a human, but no owner is configured to receive the question", {
-        taskId: ctx.task.id,
-        subPhase: detail.sub_phase,
-      });
-      return;
-    }
-    const message = `${detail.needed}\n\n[Task: ${ctx.task.id.slice(0, 8)}]`;
-    this.ctx.notifications.notify({
-      kind: NotificationKinds.question,
-      taskId: ctx.task.id,
-      personId: owner.id,
-      message,
-    });
   }
 
   /** Close a session, never letting a close failure swallow the outcome that earned it. */

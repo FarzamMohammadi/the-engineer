@@ -104,3 +104,73 @@ deliverable, sourced identically at PR creation and on rework.
   CI-fix/conflict re-pushes (pre-existing).
 - `knip` does not recognize `lefthook.yml`'s use of the `lefthook` devDependency (pre-existing lint
   noise on the base branch).
+
+---
+
+# Execution run 2 — 2026-06-15 (resolve the failing `lint` gate)
+
+The issue #24 feature change (commit `c1f1b95`) was already complete and committed. The prior pass
+left **one** gate red: `pnpm run lint` failed on `knip`:
+
+```
+Unused devDependencies (1)
+lefthook  package.json:100:6
+```
+
+## Root cause (diagnosed, not guessed)
+
+`lefthook` **is** a genuinely-used devDependency — it powers the repo's git hooks via the tracked
+`lefthook.yml` (`pre-commit` biome-check, `pre-push` typecheck/knip/madge/test). The failure is a
+quirk of knip's bundled **lefthook plugin** (`node_modules/knip/dist/plugins/lefthook/index.js`):
+
+```js
+const lefthook = process.env.CI
+    ? enablers.filter(...).map(id => toDependency(id))   // CI → lefthook counted as used
+    : [];                                                // local → NOT counted → flagged "unused"
+```
+
+So knip only marks `lefthook` itself as used when `process.env.CI` is set. Verified empirically on
+this branch:
+- `env -u CI pnpm exec knip` → reports `lefthook` unused (non-zero exit) → **lint fails**.
+- `CI=true pnpm exec knip` → clean (exit 0) → **lint passes**.
+
+The verification harness runs `lint` **without** `CI`, so it hit the failure. This is pre-existing
+(`package.json`, `lefthook.yml`, and `knip.json` are byte-identical to `origin/main`) and entirely
+unrelated to the issue #24 surface — but the gate still has to be green for the change to land, and
+this re-run was explicitly asked to resolve it.
+
+## Fix (one line, matching the project's own established convention)
+
+The repo already has a `knip.json` whose `ignoreDependencies` array lists 21 dependencies knip can't
+trace through their config files (UI deps, `mermaid`, `tailwindcss`, …). `lefthook` is the same
+class — used via `lefthook.yml`, undetectable to knip outside CI — it was simply missing from the
+list. Added `"lefthook"` to that existing array:
+
+```json
+  "ignoreDependencies": [
+    "lefthook",
+    "pino-roll",
+    ...
+```
+
+This is the canonical, intention-revealing knip mechanism ("this dependency is used but knip can't
+see it"), follows the file's own established pattern, and makes the gate **deterministic** — it now
+passes both with and without `CI`.
+
+## Files changed (run 2)
+
+- **`knip.json`** — one entry added to `ignoreDependencies` (`"lefthook"`). No other change.
+
+## Verification (run 2)
+
+- `env -u CI pnpm run lint` → **exit 0** (biome clean, tsc ×2 clean, knip clean, madge no circular).
+- `CI=true pnpm run lint` → **exit 0** — confirms the fix is environment-independent.
+- No source or test files were touched, so the typecheck and test gates (green in run 1, and tsc runs
+  twice inside `lint`) are unaffected.
+
+## Note on scope
+
+This is a build-tooling config fix outside issue #24's feature surface, made only because the gate
+demanded it and the harness runs `lint` without `CI`. It is not surfaced as an open `decisions` entry:
+the in-file `ignoreDependencies` convention (21 prior entries for exactly this situation) already
+settles the choice — there was no genuinely-open judgment call to ask the owner about.

@@ -1,24 +1,18 @@
 {
   "status": "ok",
-  "summary": "Rework now regenerates and pushes the PR title+body, gated on a diff-against-base digest so unchanged re-pushes are no-ops; all gates green except a pre-existing unrelated knip warning.",
+  "summary": "Fixed the failing lint gate: added lefthook to knip.json's ignoreDependencies (knip only counts it as used under CI); full lint now passes with and without CI. Issue #24 feature change already committed.",
   "details": {
-    "files_changed": [
-      "src/schemas/task.ts",
-      "src/core/interfaces/workspace-manager.interface.ts",
-      "src/core/workspace-manager/index.ts",
-      "src/core/orchestrator/pipeline/delivery/pr-description.ts",
-      "src/core/orchestrator/pipeline/delivery/create-pr.ts",
-      "tests/unit/schemas/task.test.ts",
-      "tests/unit/core/workspace-manager/index.test.ts",
-      "tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts"
-    ],
-    "verification": {
-      "typecheck": "pass",
-      "biome": "pass",
-      "madge_circular": "pass",
-      "unit_tests": "pass (2620 tests)",
-      "lint_knip": "pre-existing unrelated failure only: knip flags lefthook as unused (false-positive, fails identically on base; my diff does not touch package.json)"
+    "verification_fix": {
+      "failing_gate": "lint (knip flagged lefthook as an unused devDependency)",
+      "root_cause": "knip's lefthook plugin only marks lefthook itself as used when process.env.CI is set; the verification harness runs lint without CI, so it reports the genuinely-used (via lefthook.yml git hooks) dependency as unused. Pre-existing on origin/main; package.json, lefthook.yml, and knip.json are byte-identical to base.",
+      "fix": "Added \"lefthook\" to the existing ignoreDependencies array in knip.json, matching the file's established convention (21 prior entries for dependencies knip cannot trace through config files). Makes the gate deterministic in any environment.",
+      "files_changed": ["knip.json"]
     },
-    "notes": "Implemented Approach S from the plan including the planning-run-2 correction (digest excludes thoughts/ so regenerated deliverables don't self-trigger). Both surfaced decisions (D1 diff-digest change-detection, D2 diff-derived title) were owner-confirmed in planning run 2; no open decisions remain to surface."
+    "gates": {
+      "lint_no_CI": "exit 0 (biome, tsc x2, knip, madge all clean)",
+      "lint_CI_true": "exit 0 (fix is environment-independent)",
+      "tests_typecheck": "unaffected — no source/test files touched in this run; green in run 1"
+    },
+    "feature_change_status": "Issue #24 rework PR title+body refresh was implemented and committed in run 1 (commit c1f1b95). This run only resolved the unrelated, pre-existing lint failure that blocked verification."
   }
 }

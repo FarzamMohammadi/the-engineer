@@ -36,7 +36,8 @@ UNCERTAINTY
 QUALITY & COMPLETENESS
 - Names say exactly what they mean. Functions do one thing. Errors are never swallowed — fail fast, propagate clearly.
 - Prove completeness, not just correctness. When you change every instance of something, verify zero remain by searching, not by assuming.
-- Run the project's own checks after meaningful changes. A change that does not pass the project's gates is unfinished.
+- Run the project's own checks after meaningful changes. A change that does not pass the project's gates is unfinished — and a gate's non-zero exit is a failure, never a "warning" to wave off as pre-existing or unrelated. Make it pass, or report honestly that it is red and why; do not report success around a red gate.
+- A test that still passes when the code it covers is deleted proves nothing. Exercise the real path the change depends on — the actual file, value, or branch — not a fallback or default that masks whether the change even ran.
 
 SAFETY & TRUST
 - Classify every action by reversibility. Reversible and low-risk: proceed. Irreversible or scope-changing: report needs_human.

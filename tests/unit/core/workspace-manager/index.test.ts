@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +13,7 @@ import { createTestWorkspaceManager } from "../../../helpers/test-workspace-mana
 
 const TRAILING_HYPHEN = /-$/;
 const SHA_40 = /^[\da-f]{40}$/;
+const SHA_256 = /^[\da-f]{64}$/;
 
 let handle: TestWorkspaceManagerHandle;
 
@@ -320,6 +321,45 @@ describe("getWorktreePath", () => {
     h.setupTask("task-1");
 
     expect(h.workspaceManager.getWorktreePath("task-1")).toBeNull();
+  });
+});
+
+describe("diffDigestAgainstBase", () => {
+  it("digests merged code but excludes the engine's own thoughts/ deliverables", () => {
+    const h = setup();
+    h.setupTask("task-1");
+    const record = h.workspaceManager.createWorkspace("task-1", h.repoName, { title: "Digest" });
+
+    // Fresh branch — nothing ahead of base — gives a baseline digest.
+    const baseline = h.workspaceManager.diffDigestAgainstBase("task-1");
+    expect(baseline).toMatch(SHA_256);
+
+    // A real (non-thoughts) code change moves the substance digest.
+    writeFileSync(join(record.worktreePath, "feature.ts"), "export const x = 1;\n");
+    execSync("git add -A && git commit -m 'add feature'", {
+      cwd: record.worktreePath,
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+    const afterCode = h.workspaceManager.diffDigestAgainstBase("task-1");
+    expect(afterCode).toMatch(SHA_256);
+    expect(afterCode).not.toBe(baseline);
+
+    // Committing engine deliverables under thoughts/ must NOT move the digest — otherwise every round
+    // (which regenerates pr-title.md / pr-description.md) would re-trigger a spurious description push.
+    mkdirSync(join(record.worktreePath, "thoughts", "delivery"), { recursive: true });
+    writeFileSync(join(record.worktreePath, "thoughts", "delivery", "pr-title.md"), "Add the feature\n");
+    execSync("git add -A && git commit -m 'add thoughts'", {
+      cwd: record.worktreePath,
+      encoding: "utf-8",
+      stdio: "pipe",
+    });
+    expect(h.workspaceManager.diffDigestAgainstBase("task-1")).toBe(afterCode);
+  });
+
+  it("returns null for an unknown task", () => {
+    const { workspaceManager } = setup();
+    expect(workspaceManager.diffDigestAgainstBase("nonexistent")).toBeNull();
   });
 });
 

@@ -168,6 +168,6 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["dist", "coverage", "node_modules", "~", ".claude"]
+    "ignore": ["dist", "coverage", "node_modules", "~", ".claude", "thoughts"]
   }
 }

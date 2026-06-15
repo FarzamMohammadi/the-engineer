@@ -26,7 +26,7 @@ In PR mode, delivery runs four sub-phases in order, then waits:
 
 1. **`pr-description`** — an agent pass that writes the PR narrative to a deliverable file (`thoughts/delivery/pr-description.md`) that `create-pr` later reads.
 2. **`push`** — commits anything the agent left uncommitted (a safety net; execution commits as it goes), then pushes the branch through the workspace manager's authenticated push. Runs in **both** modes — it is the entire deliverable in push-only mode. A push that cannot run throws, and the task blocks loud and recoverable; nothing to push is a clean advance.
-3. **`create-pr`** — opens the pull request: it composes the title and body (plugin decorations + a trigger reference + the agent's narrative + a footer), opens the PR through the git hosting plugin, records the PR number on the task, and notifies. On a **rework re-entry** (the PR already exists), it instead dismisses the now-stale approval and marks the addressed feedback applied — see [The rework loop](#the-rework-loop).
+3. **`create-pr`** — opens the pull request: it composes the title and body (plugin decorations + a trigger reference + the agent's narrative + a footer), opens the PR through the git hosting plugin, records the PR number on the task, and notifies. On a **rework re-entry** (the PR already exists), it instead dismisses the now-stale approval, refreshes the PR's title and body so they describe the whole PR as it now stands, and marks the addressed feedback applied — see [The rework loop](#the-rework-loop).
 4. **`await-review`** — parks the task in the `awaiting_pr_review` block and exits the pipeline. This is an expected wait, not a failure and not a separate state: the task is `blocked`, and the poller resumes it when an external event arrives.
 
 A fifth sub-phase, **`auto-merge`**, is **entry-only** — the normal advance path stops at `await-review` and never reaches it. It runs only when an external `pr_ready_to_merge` or `pr_merged` event re-enters the task there.
@@ -102,7 +102,7 @@ When a review event needs work rather than a merge, the task re-enters the pipel
 - **New feedback** (`pr_comments`) re-enters at **requirements** — feedback can change scope, so it runs the full pipeline forward (trivial-complexity skip-gates carry it past research/planning as needed). The feedback rides into the re-entered phase as context.
 - **CI failure / merge conflict** re-enters at **execution** (`implement`) to fix the root cause and re-push.
 
-When the rework reaches delivery again, `create-pr` sees the PR already exists: it **dismisses the stale approval** (the code changed, so the prior sign-off no longer applies) and marks the addressed feedback applied, then `await-review` parks the task again. A human re-approves to re-trigger the merge — that human gate is what bounds the feedback loop, alongside a global `total_reworks` ceiling on a single dispatch.
+When the rework reaches delivery again, `create-pr` sees the PR already exists: it **dismisses the stale approval** (the code changed, so the prior sign-off no longer applies), **refreshes the PR's title and body** so they describe the whole PR as it now stands (regenerated from the full diff against base, and pushed only when that diff actually changed — an unchanged re-push is a clean no-op), and marks the addressed feedback applied, then `await-review` parks the task again. The refresh is best-effort: a failed host update never blocks the rework, since the code is already pushed. A human re-approves to re-trigger the merge — that human gate is what bounds the feedback loop, alongside a global `total_reworks` ceiling on a single dispatch.
 
 **Automated blockers are bounded too.** A merge conflict or CI failure re-enters on its own, with no human in the loop — and because the per-dispatch `total_reworks` ceiling resets on every PR-event re-entry, it cannot see a blocker that keeps re-firing across dispatches. So Core counts *consecutive* automated-blocker re-entries on the open PR (`review.consecutive_blocker_reentries`); once they exceed `daemon.review_polling.max_blocker_reentries` (default 3), the task stops reworking and is **escalated to the owner** — re-blocked under the `pr_rework_cap_hit` reason, with an alert — instead of looping forever on a blocker the automated rework cannot clear. A reviewer comment (human engagement) or the blocker clearing resets the count. The owner resolves the PR and runs `engineer retry` to resume.
 
@@ -123,7 +123,7 @@ Every transition the owner cares about leaves a trail. The owner's channels rece
 | Reviewer feedback re-queues the task | ticket | "Reviewer feedback received — reworking to address it." |
 | CI failure re-queues the task | ticket | "CI is failing on the pull request — reworking to fix it." |
 | Merge conflict re-queues the task | ticket | "The pull request has merge conflicts — reworking to resolve them." |
-| Rework pushed | ticket | "Pushed rework addressing review feedback." |
+| Rework pushed | ticket | "Pushed rework to the PR." |
 | Approval + green re-queues for merge | ticket | "Pull request approved with CI green — merging." |
 | External merge detected | ticket | "Pull request merged — finalizing." |
 | Auto-merge disabled, PR ready | ticket | "PR #{n} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready." |

@@ -334,6 +334,12 @@ describe("ReviewStateSchema", () => {
     });
     expect(merged.merged_at).toBe("2026-06-01T00:00:00.000Z");
   });
+
+  it("omits presented_diff_digest when absent and round-trips a recorded digest", () => {
+    expect(ReviewStateSchema.parse({ pr_number: 7, feedback_rounds: [] })).not.toHaveProperty("presented_diff_digest");
+    const withDigest = ReviewStateSchema.parse({ pr_number: 7, feedback_rounds: [], presented_diff_digest: "abc123" });
+    expect(withDigest.presented_diff_digest).toBe("abc123");
+  });
 });
 
 describe("BlockedDetailsSchema", () => {

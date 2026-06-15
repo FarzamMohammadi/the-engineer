@@ -1,17 +1,31 @@
 {
   "status": "ok",
-  "summary": "Change is clean, correct, and minimal; meets all 7 acceptance criteria; gates re-run green. Two non-blocking observations (unrelated knip.json lefthook line; defensive body fallback).",
+  "summary": "Self-review: the rework PR title+body refresh is correct, complete, minimal, and idiomatic — all 7 acceptance criteria met, gates green on independent re-run; no correctness findings, three non-blocking observations.",
   "details": {
-    "findings_blocking": 0,
-    "observations_non_blocking": 2,
-    "gates_reverified": {
+    "verdict": "ship",
+    "gates_rerun": {
       "typecheck": "clean",
-      "tests": "122 affected + 67 adjacent passed",
-      "lint_no_CI": "green (biome, tsc x2, knip, madge)"
+      "vitest_create_pr_workspace_manager_schemas": "122 passed"
     },
-    "notes": [
-      "O1: knip.json adds 'lefthook' to ignoreDependencies — pre-existing, feature-unrelated build-tooling fix; acceptable (follows file convention, required for green gate); suggest the regenerated PR body call it out.",
-      "O2: rework body fallback to 'PR for: <title>' is defensive and matches the existing creation path; not reachable on the normal pipeline path; no action."
+    "observations": [
+      {
+        "id": "O1",
+        "severity": "low",
+        "blocking": false,
+        "summary": "knip.json adds 'lefthook' to ignoreDependencies — a pre-existing, feature-unrelated build-tooling fix (package.json/lefthook.yml byte-identical to base); needed for the lint gate, follows the file's 21-entry convention, one line, reversible."
+      },
+      {
+        "id": "O2",
+        "severity": "low",
+        "blocking": false,
+        "summary": "Rework body falls back to a stub 'PR for: <title>' if pr-description.md is missing; cannot occur on the normal path (prDescription runs first and blocks on needs_human) and mirrors the existing creation-path fallback. Non-issue."
+      },
+      {
+        "id": "O3",
+        "severity": "low",
+        "blocking": false,
+        "summary": "The pr-description prompt instruction that makes the agent write pr-title.md (the title feature's linchpin) has no test guarding it; a future edit dropping it would silently revert titles to the task title with no test failure. Prompt-content assertions are not a project convention and the fallback is tested, so this is an optional regression-guard suggestion, not a gap. Concrete fix: assert buildInstructions(dir) contains 'pr-title.md' in delivery.test.ts."
+      }
     ]
   }
 }

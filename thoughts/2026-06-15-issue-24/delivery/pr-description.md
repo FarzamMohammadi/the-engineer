@@ -83,3 +83,24 @@ actually changed, so a re-push that doesn't alter the merged code is a clean no-
     updates are now a real path, so a one-line log add would be reasonable later.
 - **Graceful degradation:** a missing `pr-title.md` (only `pr-description.md` is contractually
   enforced) falls back to the task title — prior behavior, not a defect.
+
+---
+
+## Re-run verification — 2026-06-15
+
+This phase ran again. The description above is preserved (not rewritten) because I independently
+re-derived it against the shipped diff and it still holds. What I checked this pass:
+
+- **Diff against base re-read** (`git diff a07cc9d..HEAD`, base `origin/main`). Code is unchanged
+  since the prior run — refine pass 2 applied no fixes — so the narrative above still describes
+  exactly what ships. Files: `create-pr.ts` (+135/-17: `refreshPrPresentation`, digest gate, title
+  from `pr-title.md`, creation baseline), `pr-description.ts` (title deliverable + reworded prompt),
+  `workspace-manager/index.ts` (+`diffDigestAgainstBase`), `workspace-manager.interface.ts` (method
+  decl), `schemas/task.ts` (+`presented_diff_digest`), `knip.json` (+`lefthook` line), and the three
+  test files (`create-pr.test.ts`, `workspace-manager/index.test.ts`, `schemas/task.test.ts`).
+- **Every claim in the body cross-checked against the diff** — `composePrTitle`/`composePrBody`
+  reuse, `updatePR` wiring, the three-dot `origin/<base>...HEAD` range with `:(exclude)thoughts/`,
+  the best-effort `update_pr_presentation` span mirroring `dismissStaleApproval`, and the additive
+  `.optional()` schema field. All match the source as written above.
+
+No correction needed; the description is accurate and complete for the change as it stands.

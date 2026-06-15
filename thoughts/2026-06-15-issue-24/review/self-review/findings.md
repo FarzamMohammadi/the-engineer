@@ -85,3 +85,61 @@ needed; recorded for completeness.
 ## Bottom line
 Correct, complete, minimal, and idiomatic. Ship it. The only thing a human reviewer might
 double-take on is the lone `knip.json` line (O1) — surfacing it in the PR body resolves that.
+
+---
+
+# Self-Review — pass 2 (re-run · 2026-06-15)
+
+_Re-invoked as the self-review lens. The prior pass (above) wrote a thorough verdict but left its
+`session-result.json` as the unfilled placeholder template; this pass re-verifies independently,
+records the same verdict, and emits a proper result. The code diff is unchanged since pass 1 — `refine`
+ran in between and applied no fixes._
+
+## Verdict (unchanged): **ship / `ok`**
+
+I re-derived the change against `git diff origin/main...HEAD` and re-ran the gates rather than trusting
+pass 1. Same conclusion: correct, complete, minimal, idiomatic; all 7 final acceptance criteria met.
+No new correctness findings. The two prior observations (O1 knip-`lefthook`, O2 body fallback) still
+hold exactly as recorded and remain non-blocking.
+
+## Independent re-verification performed this pass
+
+- **Gates (re-run, not trusted):** `pnpm run typecheck` → clean (tsconfig + tsconfig.test).
+  `vitest` create-pr + workspace-manager + schemas → **122 passed**, including
+  `diffDigestAgainstBase > …excludes the engine's own thoughts/ deliverables` and all four rework
+  cases (changed / unchanged / digest-null / updatePR-rejects).
+- **Wiring is closed:** `rg` confirms `updatePR` now has exactly one core caller
+  (`refreshPrPresentation`), resolving the prior knip "unused export" gap; `diffDigestAgainstBase` and
+  `readPrTitle` each have two real callers (creation + rework); `presented_diff_digest` is written on
+  both paths and read in the gate. No dead code, no single-use wrapper.
+- **`updatePR` payload matches `PRUpdatesSchema`** (`{title, body, draft, labels_add, labels_remove}`,
+  all nullable) — verified against `schemas/adapters.ts`.
+- **Creation/update title parity (AC#4) re-confirmed:** both `openNewPr:243` and
+  `refreshPrPresentation:155` use `composePrTitle(readPrTitle(ctx) ?? ctx.task.title, …)` — identical
+  sourcing, so the first re-push cannot spuriously rewrite an unchanged title.
+- **What ships:** the committed `thoughts/2026-06-15-issue-24/**` tree (incl. `*.bak` result backups)
+  is the engine's normal scaffolding — `thoughts/` is not gitignored, is absent from `origin/main`, and
+  is stripped at merge via `exclude_thoughts_on_merge`/`removeThoughtsAndPush` (the very boundary the
+  digest excludes). Not a stray-file finding. The bundled docs (`plugin-docs.ts`) already describe
+  `updatePR` and were reported in-sync by the CI docs:bundle step. No debug logging, no leftover
+  scaffolding in `src/`.
+
+## One additional minor observation (non-blocking)
+
+### O3 — The `pr-title.md` prompt instruction (the title feature's linchpin) has no test guarding it
+`pr-description.ts:buildInstructions` is what makes the agent emit `pr-title.md`; if a future edit drops
+that instruction, the title silently reverts to the raw task title — i.e. a quiet regression of the
+exact bug this PR fixes — and **no test would catch it**. `readPrTitle`'s fallback is tested, but the
+prompt content is not. The plan's step-3 verify explicitly called for asserting `buildPrompt(ctx)`
+mentions `pr-title.md` and the "whole PR" framing; that assertion was not added.
+- **Severity: low / optional.** Asserting prompt-string content is *not* an established convention in
+  this suite (no `buildPrompt`/`buildInstructions` content assertions exist anywhere in
+  `tests/unit/core/orchestrator/pipeline/`), and the runtime degrades gracefully via the tested
+  fallback. So this is a cheap regression-guard *suggestion*, not a gap that should block delivery.
+- **Concrete fix if refine chooses to act:** in `delivery.test.ts`, add one case asserting
+  `buildInstructions(dir)` (or `buildPrompt(ctx)`) contains `"pr-title.md"` and the whole-PR framing.
+
+## Bottom line (pass 2)
+No change to the verdict. The implementation is sound, every part earns its keep, and all gates are
+green on independent re-run. O1/O2 are documented non-issues; O3 is an optional test-hardening nicety.
+Ship it.

@@ -81,3 +81,96 @@ discretionary, and here it isn't warranted.
 
 Correct, complete, minimal, idiomatic; all acceptance criteria met; all gates green. Nothing material
 remains. Deliver it.
+
+---
+
+# Refine — pass 2 (re-run · 2026-06-15)
+
+_Refiner pass 2 · verdict: **ship**_
+
+## Why this pass ran
+
+Pass 1 (above) did a thorough re-derivation and concluded **ship**, but left its
+`session-result.json` as the unfilled template placeholder — so the verdict was never machine-recorded
+and the orchestrator re-invoked refine. The self-review lens's pass 2 noticed the same gap. This pass
+re-verifies the change independently (code diff unchanged since pass 1 — no fixes were applied in
+between), reaches the same conclusion, and emits a proper result with `details.verdict`.
+
+## Consolidated findings (one lens: self-review, two passes)
+
+The self-review lens recorded three observations across its two passes. I re-checked each against the
+actual code, not the report:
+
+| # | Finding | My independent verdict |
+|---|---------|------------------------|
+| O1 | `knip.json` adds `"lefthook"` to `ignoreDependencies` — pre-existing, feature-unrelated build-tooling fix riding along | **Keep.** Required for the lint gate to pass in this environment (knip only counts `lefthook` as used when `CI` is set; the harness runs `lint` without `CI`). Follows the file's own 21-entry convention; one line; reversible; `package.json`/`lefthook.yml` byte-identical to base confirm it's pre-existing. Lint is green with it. |
+| O2 | Rework body falls back to `` `PR for: ${ctx.task.title}` `` if `pr-description.md` missing | **Non-issue.** Same fallback already exists on the creation path (`openNewPr`); `prDescription` runs before `createPr` and a `needs_human` there blocks the pipeline, so `createPr` is only reached after the file is written. Consistent existing behavior, not a regression. |
+| O3 | The `pr-description.ts` prompt instruction that emits `pr-title.md` (the title feature's linchpin) has no test guarding it | **Optional; not adding it — see decision below.** The lens itself rated it low/optional and non-blocking. |
+
+No duplicates beyond the two-pass overlap; nothing dropped — all three hold up against the code.
+
+## O3 in depth — why I am shipping without the guard
+
+The self-review lens suggested asserting `buildInstructions(dir)`/`buildPrompt(ctx)` contains
+`"pr-title.md"`. I investigated whether that fix is cheap and convention-respecting. It is neither:
+
+- `buildInstructions` and `buildPrompt` are **module-private** in `pr-description.ts` (not exported).
+- There is **no `pr-description.test.ts`** — the sub-phase has no direct unit test — and the only
+  test entry point, `prDescription.run`, drives a real LLM agent (not exercisable in a unit test).
+- **Zero** prompt-content assertions exist anywhere under `tests/` (verified by grep).
+
+So the only way to add the guard is to **export a previously-private function purely to assert a
+prompt string** — a public-surface widening that introduces a brittle pattern the suite deliberately
+avoids. The runtime already degrades gracefully if the instruction is ever dropped (`readPrTitle`
+returns null → title falls back to `ctx.task.title`, i.e. prior behavior), and **that fallback path is
+tested** (`create-pr.test.ts` exercises it: the worktree file is absent in the mock, so the rework
+test's `title: "Add feature"` comes through the fallback). Trading a public-surface change for a guard
+on a tested graceful-degradation path is a net negative. Recorded as a `test_coverage` decision.
+
+## Independent verification performed this pass
+
+**Code, read line-by-line (assume-issues-exist stance):**
+- **Root cause fixed.** The rework path (`reworkExistingPr`) previously never called `updatePR`; it now
+  calls `refreshPrPresentation`, which composes title+body and calls `hosting.updatePR`. The
+  regenerated body is no longer written-and-discarded. ✓
+- **Digest gate is sound.** `diffDigestAgainstBase` (`workspace-manager/index.ts:675`) uses
+  `git diff origin/<base>...HEAD -- . :(exclude)thoughts/` → sha256. Three-dot range matches the
+  existing convention at `evaluation/snapshot.ts:63`; the `thoughts/` exclusion mirrors
+  `exclude_thoughts_on_merge`/`removeThoughtsAndPush` so the engine's own regenerated deliverables
+  don't self-trigger a push. `gitExec` exists with signature `(args, cwd, options?)`. Git failure /
+  missing record → null → caller skips (never throws). ✓
+- **No data-loss path.** Every `review`-field writer spreads `...task.review`/`...review`
+  (`pr-event-poller.ts:293/329/335/375`, `auto-merge.ts:312`, `create-pr.ts:90/256`), so
+  `presented_diff_digest` is preserved across all of them; `openNewPr` is the only fresh-object write
+  and it now sets the baseline. ✓
+- **Crash-safety ordering correct.** `updatePR` runs before the digest persist, so a crash between them
+  costs at most one idempotent redundant re-push next round — never a missed update. ✓
+- **Schema is additive.** `presented_diff_digest: z.string().nullable().optional()` — existing task
+  literals parse unchanged (round-trip test confirms the field is omitted when absent). ✓
+- **Push-only unaffected.** All new host calls sit under `createPr`/`prDescription`, both
+  `skip: skipWhenPushOnly`. ✓
+
+**Gates re-run independently (not trusting any prior report):**
+- `pnpm run typecheck` → clean (tsconfig + tsconfig.test).
+- `env -u CI pnpm run lint` → green (biome 500 files, tsc×2, knip 229 files / 3 warnings, madge no circular deps).
+- `vitest run` on delivery + workspace-manager + schemas + pr-event-poller → **172 passed**, including
+  all five new rework cases (changed / unchanged / digest-null / updatePR-rejects + creation baseline),
+  the `thoughts/`-exclusion guard, and the schema round-trip.
+
+## Fixes applied this pass
+
+None. Same as pass 1: no security issue, requirement gap, or clarity/simplicity problem survived
+scrutiny. There was nothing to fix and therefore nothing to commit.
+
+## Process note
+
+I did not run the full 3-agent expert-panel-review skill. Same judgment as pass 1: a small, localized,
+fully-tested wiring fix that passed a two-pass self-review lens and every gate does not warrant a
+three-perspective panel, and my own line-by-line re-derivation surfaced no open issue. Reading the
+skill is mandatory; invoking it is discretionary and disproportionate here.
+
+## Verdict (pass 2): **ship**
+
+Correct, complete, minimal, idiomatic; root cause fixed; all acceptance criteria met; all gates green
+on independent re-run. O1/O2 are confirmed non-issues; O3 is an optional guard not worth a
+public-surface change. Nothing material remains. Deliver it.

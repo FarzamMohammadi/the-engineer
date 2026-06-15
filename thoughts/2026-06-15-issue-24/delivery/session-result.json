@@ -1,9 +1,20 @@
 {
   "status": "ok",
-  "summary": "Wrote the PR description for issue #24 (refresh PR title+body on rework) from the shipped diff, review, and execution notes.",
+  "summary": "PR description verified accurate against the shipped diff and preserved; appended a re-run verification note rather than overwriting the prior, correct deliverable.",
   "details": {
     "deliverable": "thoughts/2026-06-15-issue-24/delivery/pr-description.md",
-    "sections": ["What & why", "How", "Verification", "Risks & follow-ups"],
-    "notes": "First delivery run — no prior pr-description.md to accumulate onto. Flagged the unrelated one-line knip.json (lefthook) change under risks so reviewers aren't surprised."
+    "action": "re-verified existing description against git diff vs base; code unchanged since prior run, every claim corroborated, no correction needed",
+    "base": "a07cc9d (origin/main)",
+    "files_shipping": [
+      "src/core/orchestrator/pipeline/delivery/create-pr.ts",
+      "src/core/orchestrator/pipeline/delivery/pr-description.ts",
+      "src/core/workspace-manager/index.ts",
+      "src/core/interfaces/workspace-manager.interface.ts",
+      "src/schemas/task.ts",
+      "knip.json",
+      "tests/unit/core/orchestrator/pipeline/delivery/create-pr.test.ts",
+      "tests/unit/core/workspace-manager/index.test.ts",
+      "tests/unit/schemas/task.test.ts"
+    ]
   }
 }

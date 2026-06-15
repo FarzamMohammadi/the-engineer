@@ -157,9 +157,16 @@ export async function runPipeline(
     // An effect (it records the verdict observation), so it lives here in the loop rather than in the
     // pure next(): a sub-phase cannot forget to be consulted. An ask_human verdict turns the agent's
     // quiet "I decided X" into a stop-and-ask before the work proceeds; otherwise routing continues.
-    const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
-    if (ask) {
-      return emitBlock(ctx, phaseDef.phase, ask);
+    // Intent-forming phases (consultsDecisions === false) do not gate: a decision raised while the agent
+    // is still understanding the task is premature, so it is recorded for the trail, not asked — this is
+    // what stops requirements' ask-biased intake from re-surfacing a settled choice each resume.
+    if (phaseDef.consultsDecisions === false) {
+      noteUnconsultedDecisions(ctx, phaseDef.phase, subPhase.name, result);
+    } else {
+      const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
+      if (ask) {
+        return emitBlock(ctx, phaseDef.phase, ask);
+      }
     }
 
     // ── route (ok | needs_human): plan purely, then apply and emit ──
@@ -442,6 +449,46 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
     sub_phase: subPhase,
     needed: synthesizeBatchedQuestion(toAsk),
   };
+}
+
+/**
+ * Record — without gating — the decisions a sub-phase surfaced in an intent-forming phase (one whose
+ * `consultsDecisions` is false). The dashboard observer sees only what is emitted, so a choice noted but
+ * not asked must still leave a trail: one info line plus a full-confidence decision per choice, naming
+ * what was recorded and why it was not put to the owner here (the call is consulted in the phase that
+ * makes it). Silent when the sub-phase surfaced none.
+ */
+function noteUnconsultedDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): void {
+  const decisions = readSurfacedDecisions(result);
+  if (decisions.length === 0) {
+    return;
+  }
+  ctx.observer.info("Decisions surfaced while forming intent — recorded, not gated", {
+    taskId: ctx.task.id,
+    phase,
+    subPhase,
+    count: decisions.length,
+  });
+  for (const decision of decisions) {
+    ctx.observer.recordDecision(
+      "autonomy_not_gated",
+      `${phase}/${subPhase} surfaced a "${decision.category}" choice while forming intent`,
+      [
+        {
+          id: "record_only",
+          description: "Record the choice for the trail — an intent-forming phase does not gate on it",
+        },
+        {
+          id: "consult_policy",
+          description: "Consult the owner's autonomy policy (done only in the phase that makes the call)",
+        },
+      ],
+      "record_only",
+      `${decision.summary} Chose "${decision.chosen}" (${decision.reasoning}). Recorded only — this phase forms intent; the call is consulted where it is made.`,
+      1,
+      traceScope(ctx, phase),
+    );
+  }
 }
 
 /**

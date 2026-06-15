@@ -311,11 +311,12 @@ export function mockSubPhase(name: string, overrides: Partial<SubPhase> = {}): S
   };
 }
 
-/** A phase definition. `maxIterations` defaults to 3 (the Review cap). */
+/** A phase definition. `maxIterations` defaults to 3 (the Review cap); `extra` sets optional fields (e.g. `consultsDecisions`). */
 export function mockPhase(
   phase: PhaseDefinition["phase"],
   subPhases: readonly SubPhase[],
   maxIterations = 3,
+  extra: Partial<Omit<PhaseDefinition, "phase" | "subPhases" | "maxIterations">> = {},
 ): PhaseDefinition {
-  return { phase, subPhases, maxIterations };
+  return { phase, subPhases, maxIterations, ...extra };
 }

@@ -290,6 +290,26 @@ describe("runPipeline", () => {
       );
     });
 
+    it("does not gate on decisions in an intent-forming phase — records them instead", async () => {
+      // requirements/research set consultsDecisions: false. A decision surfaced there is premature, so the
+      // runner records it for the trail and advances, never asking the owner — even when the policy WOULD
+      // escalate it. This is the fix for the gather loop: an ask-biased intake cannot re-block on a decision.
+      const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+      const sub = { ...surfacing("scope_expansion", { files: 12 }), next };
+      const { ctx, consultJudgment, observer } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "would escalate if consulted" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("requirements", [sub], 1, { consultsDecisions: false })], ctx);
+
+      expect(consultJudgment).not.toHaveBeenCalled();
+      expect(outcome).toEqual({ kind: "completed" });
+      const noted = observer.decisions.find((d) => d.name === "autonomy_not_gated");
+      expect(noted?.chosen).toBe("record_only");
+      expect(noted?.reasoning).toContain("fetchUser");
+    });
+
     it("does not consult the policy when no decisions are surfaced", async () => {
       const order: string[] = [];
       const { ctx, consultJudgment } = createMockPipeline();

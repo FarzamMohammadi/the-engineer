@@ -99,10 +99,15 @@ proceed). Autonomy governs choices the agent *can* make; a hard block is for cho
 
 When the policy escalates a decision, the task **pauses and reaches out to the owner** with the
 question — what the agent decided, why, and the choice it is asking you to confirm. This works from
-**any** phase, not just requirements: a discretionary decision surfaced during research, planning,
-execution, review, or delivery delivers its question the same way. When you answer, the task resumes
-**where it asked**, with your reply carried into the agent's context as authoritative — so it acts on
-your decision rather than re-deriving it.
+any phase that **makes** a discretionary call — planning, execution, review, or delivery deliver their
+question the same way. When you answer, the task resumes **where it asked**, with your reply carried
+into the agent's context as authoritative — so it acts on your decision rather than re-deriving it.
+
+The **intent-forming** phases — requirements and research — are exempt: there the agent is still
+understanding the task, not making the implementation call the policy governs, so a decision it
+surfaces is premature. It is recorded for the trail, not asked, and the call is consulted later in the
+phase that actually makes it. This keeps requirements' deliberately ask-biased intake from re-surfacing
+a choice you have already settled on every resume.
 
 If several decisions need confirming at once, they are asked **together** in one reach-out — answer
 them all in a single reply rather than one per round.

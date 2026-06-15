@@ -174,3 +174,72 @@ This is a build-tooling config fix outside issue #24's feature surface, made onl
 demanded it and the harness runs `lint` without `CI`. It is not surfaced as an open `decisions` entry:
 the in-file `ignoreDependencies` convention (21 prior entries for exactly this situation) already
 settles the choice — there was no genuinely-open judgment call to ask the owner about.
+
+---
+
+# Execution run 3 — 2026-06-15 (verify the open PR's CI; no fix needed)
+
+This pass was handed a carry-over instruction: *"The open pull request's CI checks are failing.
+Reproduce the failures by running the project's own gates, fix the root cause, and let delivery
+re-push the branch."* I did not take that at face value — I reproduced every CI gate locally **and**
+queried the live PR status. **Both agree: CI is green.** The failure the instruction refers to was
+already fixed by run 2 (the knip/`lefthook` fix, commit `e203901`) and has since been pushed.
+
+## What the CI actually runs (`.github/workflows/ci.yml`)
+
+Three jobs, all on `CI=true` (GitHub Actions sets it):
+1. **lint** — `pnpm lint` (biome + tsc ×2 + knip + madge), then a docs-sync step: `pnpm run
+   docs:bundle` followed by `git diff --exit-code src/cli/bundled/plugin-docs.ts`.
+2. **test** — `pnpm test` (vitest).
+3. **build** — `pnpm build` (tsdown lib bundle + vite dashboard bundle).
+
+Runs 1–2 verified lint/typecheck/test but never exercised **`pnpm build`** or the **docs:bundle
+sync** step. This pass closed both gaps.
+
+## Reproduction — every gate, run as CI runs it
+
+- **build** (`CI=true pnpm build`): ✓ lib bundle (`dist/index.mjs`) + dashboard bundle built, exit 0.
+- **docs:bundle sync** (`CI=true pnpm run docs:bundle` → `git diff --exit-code
+  src/cli/bundled/plugin-docs.ts`): regenerated 12 docs, **no diff** — bundled docs already in sync.
+- **lint** (`CI=true pnpm lint`): exit 0 (biome 500 files clean, tsc ×2 clean, knip clean, madge no
+  circular).
+- **test** (`CI=true pnpm test`): **2618 tests / 139 files pass**, exit 0.
+
+## Cross-check against the live PR
+
+`gh pr view` (PR #28) reports `headRefOid` = `b79b137e…`, identical to local `HEAD` and to
+`origin/<branch>`. The `statusCheckRollup` shows **lint, test, build all `SUCCESS`** (CI run completed
+2026-06-15T20:36 UTC). The dashboard and the local reproduction match.
+
+## Why the carry-over said "failing" — and why it no longer is
+
+The original red gate was `knip` flagging `lefthook` as an unused devDependency (run 2's diagnosis).
+Run 2 fixed it by adding `"lefthook"` to `knip.json`'s `ignoreDependencies`; that fix is present at
+HEAD (`knip.json:13`, confirmed via `git show HEAD:knip.json`) and was pushed with the branch. The
+"CI failing" instruction was a stale snapshot from **before** that fix landed on the remote. Commit
+graph (`origin/main..HEAD`): feature code `c1f1b95` → knip fix `e203901` → notes `3d691c0` → delivery
+thoughts `b79b137` (HEAD). Source tree is fully committed; the working tree held only this phase's own
+deliverable files.
+
+## One observed wart (left as-is, deliberately)
+
+Under `CI=true`, knip's bundled lefthook plugin **does** count `lefthook` as used, so it emits a
+non-fatal *configuration hint* — "lefthook in knip.json — Remove from ignoreDependencies". It is a
+hint, not an error: `knip` and `pnpm lint` still **exit 0**. Removing the entry would re-break lint in
+the **non-CI** environment (where the plugin does *not* count lefthook, and the verification harness
+runs `lint` without `CI`). Keeping the entry is what makes lint pass deterministically in **both**
+environments — exactly run 2's intent. So the hint is the correct trade-off, not a regression; no
+change made.
+
+## Net change this run
+
+No source, test, or config change — there was nothing to fix. The only working-tree changes are this
+phase's own deliverables: this `implementation.md` accumulation, the real `session-result.json`
+(replacing the harness placeholder), and the harness's `.bak` backup of run 2's result (committed to
+match the established convention — the planning/requirements `.bak` backups are already tracked at
+HEAD). After committing, `git status` is clean.
+
+## Outcome
+
+`ok` — CI is verified green by both local reproduction (all three jobs + docs-sync) and the live PR
+status; the root cause of the earlier failure was already resolved and pushed. No open questions.

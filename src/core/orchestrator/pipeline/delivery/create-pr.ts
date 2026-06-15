@@ -154,12 +154,15 @@ async function refreshPrPresentation(
     return { updated: false, digest: last, reason: "unchanged" };
   }
 
-  const title = composePrTitle(readPrTitle(ctx) ?? ctx.task.title, ctx.task.external_ref);
-  // A rework must not degrade a good published body: when the description deliverable is absent or
-  // empty, send body: null ("leave the host body unchanged") rather than overwriting the live body
-  // (which may be the rich body written at creation) with the `PR for: <title>` stub. The title still
-  // refreshes — its fallback reproduces the live title when the deliverable is absent, so it is never
-  // degraded. Creation keeps the stub fallback: there is nothing live to degrade when first opening.
+  // A rework must not degrade a good published presentation. When a deliverable is absent or empty
+  // we send null for that field ("leave the host value unchanged") rather than overwriting the live
+  // value with a fallback: for the body that fallback is the `PR for: <title>` stub, and for the
+  // title it is `ctx.task.title` — the *original task* title, the exact drift this feature exists to
+  // prevent. Leaving them unchanged preserves whatever the deliverable produced at creation or a prior
+  // round. Creation keeps the task-title fallback: PROptions.title is non-nullable and there is nothing
+  // live to degrade when first opening.
+  const titleDeliverable = readPrTitle(ctx);
+  const title = titleDeliverable ? composePrTitle(titleDeliverable, ctx.task.external_ref) : null;
   const description = readPrDescription(ctx);
   const body = description ? composePrBody(sanitizeSecrets(description), ctx.task.external_ref) : null;
 

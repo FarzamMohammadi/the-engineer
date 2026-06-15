@@ -295,10 +295,11 @@ describe("create-pr run", () => {
     expect((result as { data?: Record<string, unknown> }).data).toMatchObject({ description_updated: true });
   });
 
-  it("on rework with changed substance but no deliverable leaves the live body in place", async () => {
-    // No deliverable on disk: the body must be null ("leave the host body unchanged") rather than the
-    // `PR for: <title>` stub, so a rework never degrades a rich body written at creation. The title
-    // still refreshes (its fallback reproduces the live title) and the digest still advances.
+  it("on rework with changed substance but no deliverable leaves the live title and body in place", async () => {
+    // No deliverable on disk: both title and body must be null ("leave the host value unchanged")
+    // rather than a fallback, so a rework never degrades the presentation written at creation — never
+    // overwriting the body with the `PR for: <title>` stub nor reverting the title to the *original
+    // task* title (`ctx.task.title`), the drift this feature exists to prevent. The digest still advances.
     const { ctx, updatePR, updateTaskField, notify } = mockCtx({
       review: reworkReview({ presented_diff_digest: "old-digest" }),
       diffDigest: "new-digest",
@@ -311,7 +312,7 @@ describe("create-pr run", () => {
     expect(updatePR).toHaveBeenCalledWith(
       "acme/app",
       7,
-      expect.objectContaining({ title: "Add feature", body: null, draft: null }),
+      expect.objectContaining({ title: null, body: null, draft: null }),
     );
     expect(updateTaskField).toHaveBeenCalledWith(
       "t1",

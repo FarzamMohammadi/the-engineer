@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Independently verified the rework PR title+body refresh: all 7 acceptance criteria met, all gates green, knip line confirmed necessary; no fixes needed.",
-  "details": { "verdict": "ship" }
-}

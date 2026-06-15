@@ -1,9 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Wrote the PR description for issue #24 (refresh PR title+body on rework) from the shipped diff, review, and execution notes.",
-  "details": {
-    "deliverable": "thoughts/2026-06-15-issue-24/delivery/pr-description.md",
-    "sections": ["What & why", "How", "Verification", "Risks & follow-ups"],
-    "notes": "First delivery run — no prior pr-description.md to accumulate onto. Flagged the unrelated one-line knip.json (lefthook) change under risks so reviewers aren't surprised."
-  }
-}

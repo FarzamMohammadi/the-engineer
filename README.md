@@ -231,7 +231,7 @@ A seed directory holds saved configuration (`configs/` and `plugins/` YAML) so s
 
 ## Versioning
 
-v1.0.0 is the first release that runs the lifecycle end to end — not a stability guarantee. The project is young and still moving fast, so a minor release can reshape configuration or internals. Additive database migrations apply automatically at startup, but breaking schema or config changes do not migrate your existing state — when one lands, a [reset](docs/cli.md#upgrading) is the upgrade path. Releases ship as [GitHub releases](https://github.com/FarzamMohammadi/the-engineer/releases) (npm publish is deferred); if something breaks across a release, [open an issue](https://github.com/FarzamMohammadi/the-engineer/issues).
+v1.0.0 is the first release that runs the lifecycle end to end — not a stability guarantee. The project is young and still moving fast, so a minor release can reshape configuration or internals. Additive database migrations apply automatically at startup, but breaking schema or config changes do not migrate your existing state — when one lands, a [reset](docs/cli.md#upgrading) is the upgrade path. Releases ship as [GitHub releases](https://github.com/FarzamMohammadi/the-engineer/releases) (npm publish is deferred); if something breaks across a release, [open an issue](https://github.com/FarzamMohammadi/the-engineer/issues). Maintainers cut releases with the release workflow — see [Cutting a Release](docs/contribution-docs/how-tos/release.md).
 
 ## License
 

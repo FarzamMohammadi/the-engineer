@@ -23,6 +23,9 @@ coverage/
 *.swp
 *.swo
 
+# Editor / tooling backups
+*.bak
+
 # Environment / secrets (track .example files, ignore real ones)
 .env*
 !.env*.example

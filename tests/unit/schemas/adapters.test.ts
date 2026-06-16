@@ -703,28 +703,31 @@ describe("PRUpdatesSchema", () => {
 });
 
 describe("MergeResultSchema", () => {
-  it("parses successful merge", () => {
-    const result = MergeResultSchema.parse({
-      merge_sha: "abc123",
-      success: true,
-      error: null,
-    });
-    expect(result.merge_sha).toBe("abc123");
+  it("parses a successful merge as the success arm", () => {
+    const result = MergeResultSchema.parse({ success: true, merge_sha: "abc123" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.merge_sha).toBe("abc123");
+    }
   });
 
-  it("parses failed merge with AdapterError", () => {
-    const result = MergeResultSchema.parse({
-      merge_sha: "",
-      success: false,
-      error: {
-        code: "merge_conflict",
-        message: "Conflicts in 2 files",
-        retryable: false,
-        retry_after_ms: null,
-        severity: AdapterErrorSeverities.error,
-      },
-    });
-    expect(result.error?.code).toBe("merge_conflict");
+  it("parses a failed merge carrying a typed reason and message", () => {
+    const result = MergeResultSchema.parse({ success: false, reason: "conflict", message: "Conflicts in 2 files" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.reason).toBe("conflict");
+      expect(result.message).toBe("Conflicts in 2 files");
+    }
+  });
+
+  it("rejects a failed merge that omits the reason — the failure arm requires it", () => {
+    expect(MergeResultSchema.safeParse({ success: false, message: "boom" }).success).toBe(false);
+  });
+
+  it("rejects an off-vocabulary reason — the vocabulary is closed", () => {
+    expect(MergeResultSchema.safeParse({ success: false, reason: "not_authorized", message: "boom" }).success).toBe(
+      false,
+    );
   });
 });
 

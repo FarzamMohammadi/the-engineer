@@ -374,11 +374,29 @@ export const PRUpdatesSchema = z.object({
 });
 export type PRUpdates = z.infer<typeof PRUpdatesSchema>;
 
-export const MergeResultSchema = z.object({
-  merge_sha: z.string(),
-  success: z.boolean(),
-  error: AdapterErrorSchema.nullable(),
-});
+/**
+ * Why a merge attempt failed, in a host-agnostic, closed vocabulary Core routes on. Every git-hosting
+ * plugin maps its platform's failure into one of these; Core handles each exhaustively. `not_mergeable`
+ * is a host rule the Engineer's token cannot satisfy (a required review, no merge permission) — a human
+ * must complete the merge. `conflict` is the branch no longer merging cleanly into its base. `transient`
+ * is anything retryable (a flaky API, a not-yet-computed mergeability, rate limiting).
+ */
+export const MergeFailureReasonSchema = z.enum(["not_mergeable", "conflict", "transient"]);
+export type MergeFailureReason = z.infer<typeof MergeFailureReasonSchema>;
+
+/**
+ * The outcome of a merge attempt — a discriminated union on `success`, so illegal states are
+ * unrepresentable. A success carries only the merge SHA; a failure REQUIRES a typed `reason` (the
+ * routing contract Core switches on exhaustively) and a human-facing `message`. A plugin physically
+ * cannot return a failure without a valid reason, and Core cannot forget to handle one — the build
+ * breaks otherwise. This is the one adapter result Core routes on, so it is shaped for routing rather
+ * than mirroring the generic `{ success, error }` results: the reason IS the contract, and the slim
+ * arm carries only what Core reads (route + notify), nothing it never inspects.
+ */
+export const MergeResultSchema = z.discriminatedUnion("success", [
+  z.object({ success: z.literal(true), merge_sha: z.string() }),
+  z.object({ success: z.literal(false), reason: MergeFailureReasonSchema, message: z.string() }),
+]);
 export type MergeResult = z.infer<typeof MergeResultSchema>;
 
 export const PRStatusSchema = z.object({

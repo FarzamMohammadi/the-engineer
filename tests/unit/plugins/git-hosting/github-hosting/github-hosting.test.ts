@@ -221,22 +221,37 @@ describe("GitHubHostingPlugin", () => {
     it("merges with squash strategy", async () => {
       const result = await plugin.mergePR("acme/webapp", 51, "squash");
       expect(result.success).toBe(true);
-      expect(result.merge_sha).toBe("abc123def456");
+      if (result.success) {
+        expect(result.merge_sha).toBe("abc123def456");
+      }
       expect(mockOctokit.pulls.merge).toHaveBeenCalledWith(expect.objectContaining({ merge_method: "squash" }));
     });
 
-    it("returns error on merge conflict (409)", async () => {
+    it("maps a 409 conflict to the conflict reason", async () => {
       mockOctokit.pulls.merge.mockRejectedValueOnce(Object.assign(new Error("Conflict"), { status: 409 }));
       const result = await plugin.mergePR("acme/webapp", 51, "squash");
       expect(result.success).toBe(false);
-      expect(result.error?.code).toBe("merge_conflict");
+      if (!result.success) {
+        expect(result.reason).toBe("conflict");
+      }
     });
 
-    it("returns error when PR not mergeable (405)", async () => {
+    it("maps a 405 (branch protection unsatisfied) to the not_mergeable reason", async () => {
       mockOctokit.pulls.merge.mockRejectedValueOnce(Object.assign(new Error("Not mergeable"), { status: 405 }));
       const result = await plugin.mergePR("acme/webapp", 51, "squash");
       expect(result.success).toBe(false);
-      expect(result.error?.code).toBe("pr_not_mergeable");
+      if (!result.success) {
+        expect(result.reason).toBe("not_mergeable");
+      }
+    });
+
+    it("maps any other merge error to the transient reason", async () => {
+      mockOctokit.pulls.merge.mockRejectedValueOnce(Object.assign(new Error("Server error"), { status: 500 }));
+      const result = await plugin.mergePR("acme/webapp", 51, "squash");
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.reason).toBe("transient");
+      }
     });
   });
 

@@ -49,9 +49,7 @@ function mockCtx(options: MockOptions = {}) {
     ...options.status,
   };
   const getPRStatus = vi.fn().mockResolvedValue(status);
-  const mergePR = vi
-    .fn()
-    .mockResolvedValue(options.mergeResult ?? { merge_sha: "sha-merged", success: true, error: null });
+  const mergePR = vi.fn().mockResolvedValue(options.mergeResult ?? { success: true, merge_sha: "sha-merged" });
   const getReviewStatus = vi.fn().mockResolvedValue({
     approved: options.reviewApproved ?? false,
     approvals: options.reviewApproved ? 1 : 0,
@@ -220,17 +218,7 @@ describe("auto-merge run", () => {
 
   it("reworks when the merge call is rejected as a conflict", async () => {
     const { ctx, published } = mockCtx({
-      mergeResult: {
-        merge_sha: "",
-        success: false,
-        error: {
-          code: "merge_conflict",
-          message: "conflict",
-          retryable: false,
-          retry_after_ms: null,
-          severity: "error",
-        },
-      },
+      mergeResult: { success: false, reason: "conflict", message: "conflict" },
     });
 
     const result = await autoMerge.run(ctx);
@@ -241,11 +229,7 @@ describe("auto-merge run", () => {
 
   it("waits to retry when the merge call fails transiently", async () => {
     const { ctx, published } = mockCtx({
-      mergeResult: {
-        merge_sha: "",
-        success: false,
-        error: { code: "network_error", message: "timeout", retryable: true, retry_after_ms: null, severity: "error" },
-      },
+      mergeResult: { success: false, reason: "transient", message: "timeout" },
     });
 
     const result = await autoMerge.run(ctx);
@@ -254,19 +238,9 @@ describe("auto-merge run", () => {
     expect(published).toEqual([]);
   });
 
-  it("hands the merge off to the owner when the host blocks the Engineer (pr_not_mergeable) — terminal, notified, no record", async () => {
+  it("hands the merge off to the owner when the host blocks the Engineer (not_mergeable) — terminal, notified, no record", async () => {
     const { ctx, updateTaskField, notify, published, observer } = mockCtx({
-      mergeResult: {
-        merge_sha: "",
-        success: false,
-        error: {
-          code: "pr_not_mergeable",
-          message: "At least 1 approving review is required",
-          retryable: false,
-          retry_after_ms: null,
-          severity: "error",
-        },
-      },
+      mergeResult: { success: false, reason: "not_mergeable", message: "At least 1 approving review is required" },
     });
 
     const result = await autoMerge.run(ctx);
@@ -285,15 +259,9 @@ describe("auto-merge run", () => {
   });
 
   const hostBlocked = {
-    merge_sha: "",
     success: false,
-    error: {
-      code: "pr_not_mergeable",
-      message: "At least 1 approving review is required",
-      retryable: false,
-      retry_after_ms: null,
-      severity: "error",
-    },
+    reason: "not_mergeable",
+    message: "At least 1 approving review is required",
   } as const;
 
   it("tells the owner to re-approve when the thoughts-cleanup push dismissed their formal approval", async () => {

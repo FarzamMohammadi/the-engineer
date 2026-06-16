@@ -1,5 +1,10 @@
 import type { GitHostingAdapter } from "../../../../adapters/git-hosting.js";
-import { AdapterTypes, type MergeStrategy, type PRStatus } from "../../../../schemas/adapters.js";
+import {
+  AdapterTypes,
+  type MergeFailureReason,
+  type MergeStrategy,
+  type PRStatus,
+} from "../../../../schemas/adapters.js";
 import { EventTypes } from "../../../../schemas/events.js";
 import { NotificationKinds } from "../../../../schemas/notifications.js";
 import { ObservationTypes } from "../../../../schemas/observer.js";
@@ -271,15 +276,9 @@ async function performMerge(
   );
   const result = await hosting.mergePR(repo, prNumber, strategy);
   if (!result.success) {
-    span.setError(new Error(result.error?.message ?? "merge did not complete"));
-    span.end({ success: false, code: result.error?.code ?? null });
-    return routeMergeFailure(
-      ctx,
-      prNumber,
-      result.error?.code ?? null,
-      result.error?.message ?? null,
-      wasApproved && stripped,
-    );
+    span.setError(new Error(result.message));
+    span.end({ success: false, reason: result.reason });
+    return routeMergeFailure(ctx, prNumber, result.reason, result.message, wasApproved && stripped);
   }
   span.end({ success: true, merge_sha: result.merge_sha });
 
@@ -310,7 +309,7 @@ function removeThoughtsBeforeMerge(ctx: Ctx): boolean {
 // ── Merge-Failure Routing ───────────────────────────────────────────────────────
 
 /**
- * Route a failed merge attempt by its adapter error code. A conflict reworks. A host block — a rule the
+ * Route a failed merge attempt by its typed failure reason. A conflict reworks. A host block — a rule the
  * Engineer cannot satisfy with its token (a required review, or no merge permission) — is handed off to
  * the owner to merge: terminal, so the task leaves the review-poll set and cannot re-trigger. Anything
  * else is treated as transient and retried. The route is recorded (Coding Standards § 14 — merge failure
@@ -319,15 +318,15 @@ function removeThoughtsBeforeMerge(ctx: Ctx): boolean {
 function routeMergeFailure(
   ctx: Ctx,
   prNumber: number,
-  code: string | null,
-  message: string | null,
+  reason: MergeFailureReason,
+  message: string,
   approvalDismissed: boolean,
 ): SubPhaseResult {
-  const failure = classifyMergeFailure(code);
-  recordMergeOutcome(ctx, prNumber, code, failure);
+  const failure = classifyMergeFailure(reason);
+  recordMergeOutcome(ctx, prNumber, reason, failure);
   switch (failure.disposition) {
     case "merge_conflict":
-      return resolved("merge_conflict", `Merge rejected as conflicting: ${message ?? "no longer mergeable"}`);
+      return resolved("merge_conflict", `Merge rejected as conflicting: ${message}`);
     case "needs_human_merge": {
       notifyHostBlockedMerge(ctx, prNumber, approvalDismissed);
       return resolved("needs_human_merge", `PR #${String(prNumber)} handed off — the host blocks the Engineer's merge`);
@@ -336,10 +335,10 @@ function routeMergeFailure(
       ctx.observer.warn("Merge did not complete — returning to the review wait to retry", {
         taskId: ctx.task.id,
         prNumber,
-        code,
+        reason,
         message,
       });
-      return resolved("retry_wait", `Merge did not complete (${code ?? "unknown"}) — waiting to retry`);
+      return resolved("retry_wait", `Merge did not complete (${reason}) — waiting to retry`);
     }
   }
 }
@@ -350,22 +349,27 @@ interface MergeFailureRoute {
   readonly reasoning: string;
 }
 
-/** Classify a failed merge attempt by its adapter error code. Pure — the caller owns the record and notify effects. */
-function classifyMergeFailure(code: string | null): MergeFailureRoute {
-  if (code === "merge_conflict") {
-    return { disposition: "merge_conflict", reasoning: "the base moved and the branch no longer merges cleanly" };
+/** Map the plugin's typed failure reason to a route. Pure and exhaustive — a new reason breaks the build here. */
+function classifyMergeFailure(reason: MergeFailureReason): MergeFailureRoute {
+  switch (reason) {
+    case "conflict":
+      return { disposition: "merge_conflict", reasoning: "the base moved and the branch no longer merges cleanly" };
+    case "not_mergeable":
+      return {
+        disposition: "needs_human_merge",
+        reasoning:
+          "the host's rules block the Engineer's own merge (a required review it cannot satisfy, or no merge permission) — a human must complete it",
+      };
+    case "transient":
+      return {
+        disposition: "retry_wait",
+        reasoning: "a transient merge failure — wait and retry once the PR is ready again",
+      };
+    default: {
+      const exhaustive: never = reason;
+      throw new Error(`Unhandled merge failure reason "${JSON.stringify(exhaustive)}"`);
+    }
   }
-  if (code === "pr_not_mergeable") {
-    return {
-      disposition: "needs_human_merge",
-      reasoning:
-        "the host's rules block the Engineer's own merge (a required review it cannot satisfy, or no merge permission) — a human must complete it",
-    };
-  }
-  return {
-    disposition: "retry_wait",
-    reasoning: "a transient merge failure — wait and retry once the PR is ready again",
-  };
 }
 
 const MERGE_OUTCOME_OPTIONS = [
@@ -375,10 +379,10 @@ const MERGE_OUTCOME_OPTIONS = [
 ] as const;
 
 /** Record why a failed merge attempt routed where it did — the merge-failure-by-cause decision the owner can inspect. */
-function recordMergeOutcome(ctx: Ctx, prNumber: number, code: string | null, failure: MergeFailureRoute): void {
+function recordMergeOutcome(ctx: Ctx, prNumber: number, reason: MergeFailureReason, failure: MergeFailureRoute): void {
   ctx.observer.recordDecision(
     "merge_outcome",
-    `PR #${String(prNumber)} merge attempt failed (code ${code ?? "unknown"})`,
+    `PR #${String(prNumber)} merge attempt failed (reason ${reason})`,
     MERGE_OUTCOME_OPTIONS,
     failure.disposition,
     failure.reasoning,

@@ -55,23 +55,56 @@ function lastNotification(deps: QueryHandlerDeps): { message: string; personId: 
 }
 
 describe("classifyQuery", () => {
-  it("classifies the supported forms and rejects free text", () => {
-    expect(classifyQuery("what's the status?")).toBe("status");
-    expect(classifyQuery("how much cost so far")).toBe("cost");
-    expect(classifyQuery("progress #42")).toBe("progress");
-    expect(classifyQuery("#42 progress")).toBe("progress");
-    expect(classifyQuery("help")).toBe("help");
+  it("classifies the prefixed command forms", () => {
+    expect(classifyQuery("!status")).toBe("status");
+    expect(classifyQuery("!cost")).toBe("cost");
+    expect(classifyQuery("!progress #42")).toBe("progress");
+    expect(classifyQuery("!help")).toBe("help");
+  });
+
+  it("tolerates surrounding whitespace and casing on a command", () => {
+    expect(classifyQuery("  !STATUS ")).toBe("status");
+    expect(classifyQuery("!status please")).toBe("status");
+    expect(classifyQuery("!help me with status")).toBe("help");
+  });
+
+  it("treats a command word in free text as not a command (the incident)", () => {
+    // The reported incident: prose merely containing "help" must never classify as the help command.
+    expect(classifyQuery("the desc should help capture why the changes are proposed")).toBe("unknown");
+    expect(classifyQuery("what's the status?")).toBe("unknown");
+    expect(classifyQuery("how much cost so far")).toBe("unknown");
     expect(classifyQuery("looks good, go ahead")).toBe("unknown");
+  });
+
+  it("requires the prefix — a bare command word is not a command", () => {
+    expect(classifyQuery("status")).toBe("unknown");
+    expect(classifyQuery("cost")).toBe("unknown");
+    expect(classifyQuery("help")).toBe("unknown");
+    expect(classifyQuery("progress #42")).toBe("unknown");
+    expect(classifyQuery("#42 progress")).toBe("unknown");
+  });
+
+  it("requires a known keyword as a whole token immediately after the prefix", () => {
+    expect(classifyQuery("!helpme")).toBe("unknown");
+    expect(classifyQuery("!statuses")).toBe("unknown");
+    expect(classifyQuery("!foo")).toBe("unknown");
+    expect(classifyQuery("! status")).toBe("unknown");
+    expect(classifyQuery("!progress")).toBe("unknown");
   });
 });
 
 describe("isQueryVocabulary", () => {
-  it("is true for any supported form and false for free text", () => {
-    expect(isQueryVocabulary("status")).toBe(true);
-    expect(isQueryVocabulary("cost")).toBe(true);
-    expect(isQueryVocabulary("progress #1")).toBe(true);
-    expect(isQueryVocabulary("help")).toBe(true);
+  it("is true for any prefixed command form", () => {
+    expect(isQueryVocabulary("!status")).toBe(true);
+    expect(isQueryVocabulary("!cost")).toBe(true);
+    expect(isQueryVocabulary("!progress #1")).toBe(true);
+    expect(isQueryVocabulary("!help")).toBe(true);
+  });
+
+  it("is false for free text and prefix-without-known-keyword", () => {
     expect(isQueryVocabulary("use the second option")).toBe(false);
+    expect(isQueryVocabulary("the desc should help capture why")).toBe(false);
+    expect(isQueryVocabulary("!foo")).toBe(false);
   });
 });
 
@@ -91,7 +124,7 @@ describe("handleQuery", () => {
       return [];
     });
 
-    handleQuery(payload("status"), deps);
+    handleQuery(payload("!status"), deps);
 
     const notification = lastNotification(deps);
     expect(notification.message).toContain("01ACTIVE");
@@ -105,7 +138,7 @@ describe("handleQuery", () => {
   it("resolves the response recipient to the owner, not the raw sender handle", () => {
     const deps = createMockDeps();
 
-    handleQuery(payload("status"), deps);
+    handleQuery(payload("!status"), deps);
 
     const notification = lastNotification(deps);
     expect(notification.kind).toBe(NotificationKinds.status_response);
@@ -116,7 +149,7 @@ describe("handleQuery", () => {
     const deps = createMockDeps();
     (deps.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue(null);
 
-    handleQuery(payload("status"), deps);
+    handleQuery(payload("!status"), deps);
 
     expect(deps.notifications.notify).not.toHaveBeenCalled();
   });
@@ -140,7 +173,7 @@ describe("handleQuery", () => {
       return [];
     });
 
-    handleQuery(payload("progress #42"), deps);
+    handleQuery(payload("!progress #42"), deps);
 
     const notification = lastNotification(deps);
     expect(notification.message).toContain("Issue #42");
@@ -158,22 +191,22 @@ describe("handleQuery", () => {
       warnings: ["daily spend at 85% of limit"],
     });
 
-    handleQuery(payload("cost"), deps);
+    handleQuery(payload("!cost"), deps);
 
     const notification = lastNotification(deps);
     expect(notification.message).toContain("within limits");
     expect(notification.message).toContain("85% of limit");
   });
 
-  it("enumerates the supported forms for 'help'", () => {
+  it("enumerates the prefixed command forms for '!help'", () => {
     const deps = createMockDeps();
 
-    handleQuery(payload("help"), deps);
+    handleQuery(payload("!help"), deps);
 
     const notification = lastNotification(deps);
-    expect(notification.message).toContain("status");
-    expect(notification.message).toContain("progress #N");
-    expect(notification.message).toContain("cost");
+    expect(notification.message).toContain("!status");
+    expect(notification.message).toContain("!progress #N");
+    expect(notification.message).toContain("!cost");
   });
 
   it("falls back to help for unrecognized content with no multi-blocked context", () => {
@@ -199,7 +232,7 @@ describe("handleQuery", () => {
     const deps = createMockDeps();
     (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
-    handleQuery(payload("progress #999"), deps);
+    handleQuery(payload("!progress #999"), deps);
 
     const notification = lastNotification(deps);
     expect(notification.message).toContain("not found");

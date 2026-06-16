@@ -17,7 +17,7 @@ and it lives in two modules: the **notification-router** (outbound) and the **re
 | Outbound router | `src/core/daemon/notification-router.ts` | Resolve recipients, suppress duplicates, fan out, retry |
 | Notification vocabulary | `src/schemas/notifications.ts` | `NotificationKind`, the typed `Notification` union, `recipientsForKind` |
 | Inbound poller + classifier | `src/core/daemon/response-poller.ts` | Poll comm plugins, classify each message as reply or query |
-| Query handler | `src/core/daemon/query-handler.ts` | Answer `status` / `cost` / `progress #N` / `help` |
+| Query handler | `src/core/daemon/query-handler.ts` | Answer `!status` / `!cost` / `!progress #N` / `!help` |
 | Reaching out | `src/core/orchestrator/outreach.ts` | Resolve a block's one canonical question and deliver it to the owner's chat + the source ticket |
 | The autonomy consult | `src/core/orchestrator/pipeline/runner.ts` | `consultDecisions` — ask the owner about a discretionary call |
 | Router wiring | `src/cli/commands/start/bootstrap.ts` | Builds one router at startup, shared by daemon + orchestrator |
@@ -202,15 +202,17 @@ Every inbound message is one of two things, and Core decides which before acting
 inbound message
   └─ classifyInbound(hasLinkedTask, content, blockedCount)
        ├─ carries task metadata?        → unblock reply (it names its task)
-       ├─ matches query vocabulary?     → query   (wins even when one task is blocked)
+       ├─ a !-prefixed command?         → query   (wins even when one task is blocked)
        ├─ exactly one task blocked?     → unblock reply (the sole-blocked fallback)
        └─ zero or 2+ blocked?           → query   (nothing to reply to / can't match one)
 ```
 
-The precedence is deliberate: a `status` typed while one task happens to be blocked is a **query**,
-not the answer to that task's question. The full classification table — and the query vocabulary
-(`status`, `cost`, `progress #N`, `help`) with their responses — lives in the
-[adapter contract](../../plugins/communication/README.md#inbound-queries), which owns that surface.
+The precedence is deliberate: `!status` sent while one task happens to be blocked is a **query**,
+not the answer to that task's question — and a command word buried in a free-text reply (e.g. one that
+mentions "help") is never mistaken for a command, so the answer reaches the blocked task. The full
+classification table — and the query vocabulary (`!status`, `!cost`, `!progress #N`, `!help`) with their
+responses — lives in the [adapter contract](../../plugins/communication/README.md#inbound-queries), which
+owns that surface.
 
 - A **reply** goes to the unblock-resolver, which unblocks the matching task so it resumes.
 - A **query** goes to the query-handler, which answers with a `status_response` to the asker.

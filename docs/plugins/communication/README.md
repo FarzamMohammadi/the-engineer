@@ -71,21 +71,21 @@ override hasCapability(capability: string): boolean {
 
 When a plugin has the `receive` capability, Core polls it for inbound messages and decides what each one is: an **unblock reply** (the owner answering a question that blocked a task) or a **query** (the owner asking the system for status). The plugin is dumb transport here too -- it just returns the messages; Core classifies and routes them.
 
-**Query vocabulary.** A query is one of these plain words (slash-free, because some platforms drop `/`-prefixed messages):
+**Query vocabulary.** A query is a command marked with the `!` prefix: the trimmed message must **start** with `!` immediately followed by a known keyword. A command word appearing anywhere else in a message (e.g. a reply that mentions "help" in passing) is inert -- it is never read as a command. The non-slash `!` prefix is deliberate: it stays clear of platforms' native `/`-bot-commands (Telegram drops `/`-prefixed messages) and keeps classification in Core, channel-agnostic.
 
 | Query | Response |
 |-------|----------|
-| `status` | Active and blocked tasks by id and title (blocked tasks show their block reason), plus a one-line count of every other state. |
-| `progress #N` | Detail for the task tracking issue `N`: title, state, priority, phase, block reason. |
-| `cost` | Whether spending is within limits, plus any per-window percent-of-limit warnings. |
-| `help` | The list of supported queries. |
+| `!status` | Active and blocked tasks by id and title (blocked tasks show their block reason), plus a one-line count of every other state. |
+| `!progress #N` | Detail for the task tracking issue `N`: title, state, priority, phase, block reason. |
+| `!cost` | Whether spending is within limits, plus any per-window percent-of-limit warnings. |
+| `!help` | The list of supported queries. |
 
-Responses are short and plain by design -- the dashboard is the full detail surface. Anything Core does not recognize gets the `help` text back.
+Responses are short and plain by design -- the dashboard is the full detail surface. Anything Core does not recognize gets the `!help` text back.
 
 **Query vs. unblock reply.** Core classifies each inbound message before treating it as a reply, in this order:
 
 1. The message carries task metadata (`task_id` / `external_ref`) -- it explicitly names a task, so it is an unblock reply.
-2. The message matches the query vocabulary -- it is a query. **This wins even when exactly one task is blocked**, so the owner can ask `status` mid-block without their query being mistaken for the answer.
+2. The message is a `!`-prefixed command -- it is a query. **This wins even when exactly one task is blocked**, so the owner can send `!status` mid-block without their query being mistaken for the answer.
 3. Exactly one task is blocked and the message is free text -- it is the reply to that one task's question.
 4. Zero or two-plus tasks are blocked and the message is free text -- it goes to the query handler. With none blocked there is nothing to reply to; with several, a metadata-less message cannot be matched to one task, so Core replies "couldn't match -- N are blocked" and points at the unambiguous reply form (reply on the task's ticket).
 

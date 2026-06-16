@@ -1,3 +1,9 @@
+// Architecture boundary guard — see tests/architecture/README.md.
+// Enforces the SEMANTIC half of Plugin Opacity: no platform name appears as a string literal anywhere in
+// src/core/. Its sibling tier-import-rules.test.ts enforces the structural half (the three-tier import
+// graph), which cannot see a hardcoded channel because a string literal crosses no import boundary — which
+// is exactly how a hardcoded channel once slipped into Core.
+
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
@@ -11,10 +17,8 @@ const CORE_ROOT = resolve(process.cwd(), "src", "core");
 const QUOTE_CLASS = "[\"'`]";
 
 // Platform / channel names Core must never hardcode. Plugin Opacity (docs/philosophy.md): Core speaks only
-// through adapter contracts and the plugin registry — it never names a specific platform. It derives every
-// platform value (a channel, an id, a token) from plugin metadata or the registry by adapter type. A hit
-// here is a real violation. The structural guard in tier-import-rules.test.ts cannot catch this, because a
-// string literal crosses no import boundary — which is exactly how a hardcoded channel once slipped into Core.
+// through adapter contracts and the plugin registry — it never names a specific platform, but derives every
+// platform value (a channel, an id, a token) from plugin metadata or the registry by adapter type.
 const FORBIDDEN_PLATFORMS = [
   "github",
   "gitlab",

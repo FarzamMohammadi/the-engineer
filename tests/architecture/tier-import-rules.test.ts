@@ -1,3 +1,9 @@
+// Architecture boundary guard — see tests/architecture/README.md.
+// Enforces the STRUCTURAL three-tier import rules by walking every file's import graph: adapters never
+// import Core, Core never imports plugins or test code, and the SDK barrel never re-exports Core internals.
+// This is the structural half of Plugin Opacity; its sibling plugin-opacity.test.ts enforces the semantic
+// half (no platform-name literal in src/core/), which an import-graph walk cannot detect.
+
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 

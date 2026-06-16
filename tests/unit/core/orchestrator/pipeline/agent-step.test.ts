@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -75,11 +75,14 @@ describe("agentStep", () => {
     const strayDir = path.join(dir, "research");
     const agent = fakeAgent(() => {
       mkdirSync(strayDir, { recursive: true });
-      writeFileSync(
-        path.join(strayDir, "session-result.json"),
-        JSON.stringify({ status: "ok", summary: "did the work, wrong place" }),
-        "utf-8",
-      );
+      const strayResult = path.join(strayDir, "session-result.json");
+      writeFileSync(strayResult, JSON.stringify({ status: "ok", summary: "did the work, wrong place" }), "utf-8");
+      // A real agent run spans seconds, so its result lands well after the step's template reset. This fake
+      // writes back-to-back with the reset, so on a coarse-grained filesystem (e.g. the Linux CI runner) the
+      // two writes can share one timestamp tick and the stray reads as pre-existing. Stamp it forward to model
+      // the real elapsed time and clear the reset floor deterministically on every filesystem.
+      const afterReset = new Date(Date.now() + 60_000);
+      utimesSync(strayResult, afterReset, afterReset);
       return Promise.resolve(AGENT_RESULT);
     });
     const { ctx } = createMockPipeline({ agent, worktreePath: dir });

@@ -287,14 +287,14 @@ describe("GitHubCommPlugin", () => {
         body: "Description",
         labels: ["bug"],
         assignees: null,
-        parent_issue: null,
+        parent_id: null,
       });
-      expect(result.number).toBe(99);
+      expect(result.id).toBe("99");
       expect(result.url).toBe("https://github.com/acme/webapp/issues/99");
     });
 
     it("updateTicket() updates state and labels", async () => {
-      await plugin.updateTicket("acme/webapp", 42, {
+      await plugin.updateTicket("acme/webapp", "42", {
         state: "closed",
         labels_add: ["done"],
         labels_remove: ["in-progress"],

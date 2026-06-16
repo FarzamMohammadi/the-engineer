@@ -42,8 +42,8 @@ Core checks `hasCapability(name)` before calling any optional method. Default im
 | Method | Signature | Description |
 |--------|-----------|-------------|
 | `doCommentOnTicket(externalRef, comment)` | `(externalRef: ExternalRef, comment: string) => Promise<void>` | Comment on an external ticket (issue/PR). |
-| `doCreateTicket(repo, options)` | `(repo: string, options: IssueOptions) => Promise<IssueResult>` | Create a new ticket. Returns issue number and URL. |
-| `doUpdateTicket(repo, issueNumber, updates)` | `(repo: string, issueNumber: number, updates: IssueUpdates) => Promise<void>` | Update an existing ticket (state, labels, body). |
+| `doCreateTicket(repo, options)` | `(repo: string, options: TicketOptions) => Promise<TicketResult>` | Create a new ticket. Returns the new ticket's id and URL. |
+| `doUpdateTicket(repo, ticketId, updates)` | `(repo: string, ticketId: string, updates: TicketUpdates) => Promise<void>` | Update an existing ticket (state, labels, body). |
 
 ### Capability system
 
@@ -140,13 +140,15 @@ All public methods on `CommunicationAdapter` use `wrapAsync()` which rethrows `A
 | `sub_state` | `string \| null` | Task sub-state for label granularity. |
 | `reason` | `string \| null` | Reason for the state change. |
 
-### IssueOptions / IssueResult / IssueUpdates
+### TicketOptions / TicketResult / TicketUpdates
+
+Ticket identity is the tracker's own id as an opaque **string** (the same shape as `ExternalRef.id`) -- never assumed numeric. GitHub numbers issues (`"42"`), Jira keys them (`"PROJ-123"`), Linear uses `"ENG-512"`; a plugin converts to its platform's native id at its own edge, so the contract stays tracker-agnostic.
 
 | Type | Key Fields | Description |
 |------|------------|-------------|
-| `IssueOptions` | `title`, `body`, `labels?`, `assignees?`, `parent_issue?` | Input for creating a new ticket. |
-| `IssueResult` | `number`, `url` | Output from ticket creation. |
-| `IssueUpdates` | `state?`, `labels_add?`, `labels_remove?`, `body?` | Partial update to an existing ticket. All fields nullable -- only non-null fields are applied. |
+| `TicketOptions` | `title`, `body`, `labels?`, `assignees?`, `parent_id?` | Input for creating a new ticket. `parent_id` is the parent ticket's id (string). |
+| `TicketResult` | `id`, `url` | Output from ticket creation -- the new ticket's id (string) and its URL. |
+| `TicketUpdates` | `state?`, `labels_add?`, `labels_remove?`, `body?` | Partial update to an existing ticket. All fields nullable -- only non-null fields are applied. |
 
 ### ReconciliationResult
 
@@ -346,7 +348,7 @@ The contract suite validates:
 | `src/adapters/base.ts` | `BaseAdapter` -- lifecycle template methods, `hasCapability()` |
 | `src/adapters/errors.ts` | `AdapterMethodError`, `createAdapterError()` |
 | `src/adapters/index.ts` | Plugin SDK barrel -- single import point |
-| `src/schemas/adapters.ts` | All Zod schemas (`Target`, `FormattedMessage`, `SendResult`, `InboundMessage`, `SyncMetadata`, `IssueOptions`, etc.) |
+| `src/schemas/adapters.ts` | All Zod schemas (`Target`, `FormattedMessage`, `SendResult`, `InboundMessage`, `SyncMetadata`, `TicketOptions`, etc.) |
 | `src/plugins/communication/github-comm/github-comm.ts` | Reference: send + sync + ticket_management |
 | `src/plugins/communication/github-comm/config.ts` | Reference config schema |
 | `src/plugins/communication/github-comm/github-utils.ts` | Label diffing and channel parsing utilities |

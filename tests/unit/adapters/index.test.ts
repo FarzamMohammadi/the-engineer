@@ -63,9 +63,9 @@ describe("SDK boundary (src/adapters/index.ts)", () => {
       "MessageTypeSchema",
       "InboundMessageSchema",
       "SyncMetadataSchema",
-      "IssueOptionsSchema",
-      "IssueResultSchema",
-      "IssueUpdatesSchema",
+      "TicketOptionsSchema",
+      "TicketResultSchema",
+      "TicketUpdatesSchema",
       "TaskReconciliationInputSchema",
       "ReconciliationResultSchema",
       // LLM

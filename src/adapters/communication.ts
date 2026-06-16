@@ -2,15 +2,15 @@ import {
   AdapterErrorSeverities,
   type FormattedMessage,
   type InboundMessage,
-  type IssueOptions,
-  type IssueResult,
-  type IssueUpdates,
   type MessageType,
   type ReconciliationResult,
   type SendResult,
   type SyncMetadata,
   type Target,
   type TaskReconciliationInput,
+  type TicketOptions,
+  type TicketResult,
+  type TicketUpdates,
 } from "../schemas/adapters.js";
 import type { ExternalRef } from "../schemas/task.js";
 import { BaseAdapter } from "./base.js";
@@ -144,24 +144,24 @@ export abstract class CommunicationAdapter extends BaseAdapter {
   }
 
   /** Create a new ticket. Override if "ticket_management" capability. */
-  async createTicket(repo: string, options: IssueOptions): Promise<IssueResult> {
+  async createTicket(repo: string, options: TicketOptions): Promise<TicketResult> {
     return wrapAsync(() => this.doCreateTicket(repo, options));
   }
 
   /** Update an existing ticket. Override if "ticket_management" capability. */
-  async updateTicket(repo: string, issueNumber: number, updates: IssueUpdates): Promise<void> {
-    return wrapAsync(() => this.doUpdateTicket(repo, issueNumber, updates));
+  async updateTicket(repo: string, ticketId: string, updates: TicketUpdates): Promise<void> {
+    return wrapAsync(() => this.doUpdateTicket(repo, ticketId, updates));
   }
 
   protected doCommentOnTicket(_externalRef: ExternalRef, _comment: string): Promise<void> {
     throw capabilityError(this.manifest.id, "ticket_management", "commentOnTicket");
   }
 
-  protected doCreateTicket(_repo: string, _options: IssueOptions): Promise<IssueResult> {
+  protected doCreateTicket(_repo: string, _options: TicketOptions): Promise<TicketResult> {
     throw capabilityError(this.manifest.id, "ticket_management", "createTicket");
   }
 
-  protected doUpdateTicket(_repo: string, _issueNumber: number, _updates: IssueUpdates): Promise<void> {
+  protected doUpdateTicket(_repo: string, _ticketId: string, _updates: TicketUpdates): Promise<void> {
     throw capabilityError(this.manifest.id, "ticket_management", "updateTicket");
   }
 }

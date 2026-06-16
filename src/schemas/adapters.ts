@@ -164,28 +164,34 @@ export const SyncMetadataSchema = z.object({
 });
 export type SyncMetadata = z.infer<typeof SyncMetadataSchema>;
 
-export const IssueOptionsSchema = z.object({
+// A ticket on the source tracker. Identity is the tracker's OWN id in its OWN format — a string, never
+// assumed numeric — mirroring `ExternalRef.id`. GitHub numbers issues ("42"), Jira keys them ("PROJ-123"),
+// Linear uses "ENG-512". A plugin converts to its platform's native id at its own edge; the contract stays
+// tracker-agnostic so any tracker can implement it.
+export const TicketOptionsSchema = z.object({
   title: z.string(),
   body: z.string(),
   labels: z.array(z.string()).nullable(),
   assignees: z.array(z.string()).nullable(),
-  parent_issue: z.number().int().positive().nullable(),
+  /** Parent ticket id in the tracker's own format, or null. Opaque string — never assumed numeric. */
+  parent_id: z.string().nullable(),
 });
-export type IssueOptions = z.infer<typeof IssueOptionsSchema>;
+export type TicketOptions = z.infer<typeof TicketOptionsSchema>;
 
-export const IssueResultSchema = z.object({
-  number: z.number().int().positive(),
+export const TicketResultSchema = z.object({
+  /** The created ticket's id in the tracker's own format (e.g. "42", "PROJ-123"). Opaque string. */
+  id: z.string(),
   url: z.string(),
 });
-export type IssueResult = z.infer<typeof IssueResultSchema>;
+export type TicketResult = z.infer<typeof TicketResultSchema>;
 
-export const IssueUpdatesSchema = z.object({
+export const TicketUpdatesSchema = z.object({
   state: z.enum(["open", "closed"]).nullable(),
   labels_add: z.array(z.string()).nullable(),
   labels_remove: z.array(z.string()).nullable(),
   body: z.string().nullable(),
 });
-export type IssueUpdates = z.infer<typeof IssueUpdatesSchema>;
+export type TicketUpdates = z.infer<typeof TicketUpdatesSchema>;
 
 export const TaskReconciliationInputSchema = z.object({
   task_id: z.string(),

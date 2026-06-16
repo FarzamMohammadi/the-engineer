@@ -5,15 +5,15 @@ import {
   type FormattedMessage,
   type HealthStatus,
   type InitResult,
-  type IssueOptions,
-  type IssueResult,
-  type IssueUpdates,
   type MessageType,
   type ReconciliationResult,
   type SendResult,
   type SyncMetadata,
   type Target,
   type TaskReconciliationInput,
+  type TicketOptions,
+  type TicketResult,
+  type TicketUpdates,
   createAdapterError,
 } from "../../../adapters/index.js";
 import { AdapterErrorSeverities } from "../../../schemas/adapters.js";
@@ -237,7 +237,7 @@ export class GitHubCommPlugin extends CommunicationAdapter {
     });
   }
 
-  protected async doCreateTicket(repo: string, options: IssueOptions): Promise<IssueResult> {
+  protected async doCreateTicket(repo: string, options: TicketOptions): Promise<TicketResult> {
     const [owner, repoName] = repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
@@ -257,16 +257,19 @@ export class GitHubCommPlugin extends CommunicationAdapter {
       params["assignees"] = options.assignees;
     }
     const { data } = await this.octokit.issues.create(params as Parameters<typeof this.octokit.issues.create>[0]);
-    return { number: data.number, url: data.html_url };
+    // The contract's ticket id is an opaque string; GitHub's is the issue number — stringify at the edge.
+    return { id: String(data.number), url: data.html_url };
   }
 
-  protected async doUpdateTicket(repo: string, issueNumber: number, updates: IssueUpdates): Promise<void> {
+  protected async doUpdateTicket(repo: string, ticketId: string, updates: TicketUpdates): Promise<void> {
     const [owner, repoName] = repo.split("/");
     if (!(owner && repoName)) {
       throw new AdapterMethodError(
         createAdapterError("invalid_input", `Invalid repo format: expected "owner/repo", got "${repo}"`),
       );
     }
+    // GitHub identifies issues by number; convert the contract's opaque ticket id back at the plugin edge.
+    const issueNumber = Number(ticketId);
 
     // Update state/body
     const updateParams: Record<string, unknown> = {

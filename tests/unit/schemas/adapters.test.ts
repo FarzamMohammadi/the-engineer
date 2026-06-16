@@ -19,9 +19,6 @@ import {
   HealthStatusSchema,
   InboundMessageSchema,
   InitResultSchema,
-  IssueOptionsSchema,
-  IssueResultSchema,
-  IssueUpdatesSchema,
   MergeResultSchema,
   MergeStrategySchema,
   MessageTypeSchema,
@@ -44,6 +41,9 @@ import {
   SyncMetadataSchema,
   TargetSchema,
   TaskReconciliationInputSchema,
+  TicketOptionsSchema,
+  TicketResultSchema,
+  TicketUpdatesSchema,
   TriggerEventSchema,
 } from "../../../src/schemas/adapters.js";
 
@@ -349,51 +349,51 @@ describe("SyncMetadataSchema", () => {
   });
 });
 
-describe("IssueOptionsSchema", () => {
+describe("TicketOptionsSchema", () => {
   it("parses valid data", () => {
-    const opts = IssueOptionsSchema.parse({
+    const opts = TicketOptionsSchema.parse({
       title: "New issue",
       body: "Description",
       labels: ["bug"],
       assignees: ["farzam"],
-      parent_issue: 42,
+      parent_id: "PROJ-100",
     });
-    expect(opts.parent_issue).toBe(42);
+    expect(opts.parent_id).toBe("PROJ-100");
   });
 
   it("accepts null arrays and parent", () => {
-    const opts = IssueOptionsSchema.parse({
+    const opts = TicketOptionsSchema.parse({
       title: "x",
       body: "y",
       labels: null,
       assignees: null,
-      parent_issue: null,
+      parent_id: null,
     });
     expect(opts.labels).toBeNull();
   });
 
-  it("rejects non-positive parent_issue", () => {
+  it("rejects a non-string parent_id", () => {
     expect(() =>
-      IssueOptionsSchema.parse({
+      TicketOptionsSchema.parse({
         title: "x",
         body: "y",
         labels: null,
         assignees: null,
-        parent_issue: 0,
+        parent_id: 42,
       }),
     ).toThrow();
   });
 });
 
-describe("IssueResultSchema", () => {
-  it("parses valid data", () => {
-    expect(IssueResultSchema.parse({ number: 42, url: "https://github.com/..." })).toBeDefined();
+describe("TicketResultSchema", () => {
+  it("parses a non-numeric tracker id", () => {
+    expect(TicketResultSchema.parse({ id: "PROJ-123", url: "https://example.com/browse/PROJ-123" })).toBeDefined();
   });
 });
 
-describe("IssueUpdatesSchema", () => {
+describe("TicketUpdatesSchema", () => {
   it("parses with all null fields", () => {
-    const updates = IssueUpdatesSchema.parse({
+    const updates = TicketUpdatesSchema.parse({
       state: null,
       labels_add: null,
       labels_remove: null,
@@ -403,11 +403,11 @@ describe("IssueUpdatesSchema", () => {
   });
 
   it("accepts valid state values", () => {
-    expect(IssueUpdatesSchema.parse({ state: "open", labels_add: null, labels_remove: null, body: null }).state).toBe(
+    expect(TicketUpdatesSchema.parse({ state: "open", labels_add: null, labels_remove: null, body: null }).state).toBe(
       "open",
     );
     expect(
-      IssueUpdatesSchema.parse({
+      TicketUpdatesSchema.parse({
         state: "closed",
         labels_add: null,
         labels_remove: null,
@@ -418,7 +418,7 @@ describe("IssueUpdatesSchema", () => {
 
   it("rejects invalid state", () => {
     expect(() =>
-      IssueUpdatesSchema.parse({
+      TicketUpdatesSchema.parse({
         state: "merged",
         labels_add: null,
         labels_remove: null,

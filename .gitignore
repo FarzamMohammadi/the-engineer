@@ -17,6 +17,9 @@ coverage/
 *.db-wal
 *.db-shm
 
+# Engineer workspace audit trail (kept locally, never merged to main)
+thoughts/
+
 # IDE
 .vscode/
 .idea/

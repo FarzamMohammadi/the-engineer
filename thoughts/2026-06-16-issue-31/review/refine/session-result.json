@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Consolidated the self-review lens, re-traced the release workflow independently, ran all gates green (lint, exports, build, 2624 tests), and fixed the one actionable finding in place (removed two stray .bak backups, added *.bak to .gitignore, commit e3a6dfc); product code is correct, complete, and clean.",
-  "details": { "verdict": "ship" }
-}

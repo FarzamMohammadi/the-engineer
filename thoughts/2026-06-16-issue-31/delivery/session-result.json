@@ -1,17 +1,17 @@
 {
   "status": "ok",
-  "summary": "Wrote PR title and body describing the whole release-workflow PR (workflow + docs + supporting one-liners) as it now stands.",
+  "summary": "Re-validated the PR title and body against the final diff; Run 1 presentation remains accurate and canonical, accumulated a Run 2 confirmation.",
   "details": {
     "title": "Add maintainer-triggered SemVer GitHub release workflow",
-    "product_files": [
+    "product_files_changed": 7,
+    "files": [
       ".github/workflows/release.yml",
+      "docs/contribution-docs/how-tos/release.md",
       ".gitignore",
       "README.md",
       "docs/.vitepress/config.ts",
       "docs/contribution-docs/README.md",
-      "docs/contribution-docs/how-tos/release.md",
       "knip.json"
-    ],
-    "notes": "Body leads with what/why, then how, verification, and risks/follow-ups. Surfaced the RELEASE_PAT one-time setup, the v1.0.0->v1.0.1 spec/repo drift, the partial-failure recovery path, and that the thoughts/ audit trail is committed on this branch."
+    ]
   }
 }

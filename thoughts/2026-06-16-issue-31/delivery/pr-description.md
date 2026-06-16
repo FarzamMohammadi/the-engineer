@@ -102,3 +102,28 @@ feature, or a break?) stays human as the bump dropdown.
 This branch also carries the orchestrator's `thoughts/` audit trail for the task. Whether that ships
 in the final PR or is squashed out is an owner/orchestrator call, not part of the product change
 (the workflow + docs). The product change is the seven files outside `thoughts/`.
+
+---
+
+_Run 2 · 2026-06-15 — re-validation_
+
+Re-ran the presentation step on the final tree. Re-derived the full diff against the base
+(`merge-base` with `origin/main`) and confirmed the Run 1 title and body above remain accurate and
+canonical for the PR as it now stands. Nothing material changed:
+
+- The product change is exactly seven files outside `thoughts/`: `.github/workflows/release.yml`
+  (new, 159 lines), `docs/contribution-docs/how-tos/release.md` (new), and one-line/small edits to
+  `.gitignore`, `README.md`, `docs/.vitepress/config.ts`, `docs/contribution-docs/README.md`, and
+  `knip.json`. This matches the Run 1 narrative.
+- Spot-checked the body's specific claims against the diff: `workflow_dispatch` with `level` choice
+  (default `patch`) + `dry_run` boolean; `permissions: contents: write`; `concurrency: release`;
+  ref-must-be-`main` guard; checkout via `RELEASE_PAT` with `fetch-depth: 0`; gate order
+  lint → bundled-docs sync → test → build (mirrors `ci.yml`); `npm version --no-git-tag-version`;
+  local/remote tag + existing-release idempotency guards; `git push --atomic`; prose bump message
+  `Bump version to X.Y.Z`; `gh release create --verify-tag --generate-notes` with
+  `--notes-start-tag`. All present as described.
+- Current repo state still `package.json` 1.0.1 with a `v1.0.1` tag, so the "next real patch run
+  computes `v1.0.2`" / dry-run-OR-branch note in Risks remains correct.
+
+No edits to the body were needed; the Run 1 content stands as the PR presentation. Title unchanged:
+`Add maintainer-triggered SemVer GitHub release workflow`.

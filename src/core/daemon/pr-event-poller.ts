@@ -152,6 +152,23 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     return deduped.filter(isActionableRework);
   }
 
+  /**
+   * Channels owned by the registered git-hosting plugins — the identity namespaces a PR `/approve`
+   * author may match. Derived from the registry by adapter type, so adding or removing a hosting
+   * plugin updates the authorization set with no change here; a hosting plugin opts in by declaring
+   * `channel` in its `adapter_meta`.
+   */
+  function gitHostingChannels(): ReadonlySet<string> {
+    const channels = new Set<string>();
+    for (const plugin of registry.getPluginsByType<GitHostingAdapter>(AdapterTypes.git_hosting)) {
+      const channel = plugin.manifest.adapter_meta["channel"];
+      if (typeof channel === "string") {
+        channels.add(channel);
+      }
+    }
+    return channels;
+  }
+
   /** A comments event is actionable rework only when it carries comments to address that are not an authorized /approve (an approval, not feedback). */
   function isActionableRework(event: PrEvent): boolean {
     if (event.type !== PrEventTypes.pr_comments) {
@@ -160,7 +177,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     if (event.comments.length === 0) {
       return false;
     }
-    return findAuthorizedApproval(event.comments, peopleDirectory) === null;
+    return findAuthorizedApproval(event.comments, peopleDirectory, gitHostingChannels()) === null;
   }
 
   /**
@@ -201,7 +218,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       (event) =>
         event.type === PrEventTypes.pr_comments &&
         event.comments.length > 0 &&
-        findAuthorizedApproval(event.comments, peopleDirectory) !== null,
+        findAuthorizedApproval(event.comments, peopleDirectory, gitHostingChannels()) !== null,
     );
   }
 
@@ -242,7 +259,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   function approverOf(events: readonly PrEvent[]): string | null {
     for (const event of events) {
       if (event.type === PrEventTypes.pr_comments && event.comments.length > 0) {
-        const found = findAuthorizedApproval(event.comments, peopleDirectory);
+        const found = findAuthorizedApproval(event.comments, peopleDirectory, gitHostingChannels());
         if (found) {
           return found.author;
         }

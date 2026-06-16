@@ -143,23 +143,35 @@ const APPROVE_COMMAND_REGEX = /^\/(approve|approved)\s*$/i;
  * Authorization is permissive for the single-contributor case (no one configured → any `/approve`
  * counts) but gated once an owner or reviewer is configured, so a drive-by `/approve` on a public
  * repo never triggers a merge. Tightening this to "only the owner" is a future knob.
+ *
+ * The comment author is a git-host identity (the username that posted on the PR), so it is matched
+ * only against a person's contacts on a git-hosting channel — `gitHostingChannels`, which the caller
+ * derives from the registered git-hosting plugins by adapter type. This keeps the match in the right
+ * identity namespace (a git-host author never authorizes by coincidentally equalling a Slack or
+ * Telegram handle) and carries no hardcoded platform name, so any hosting plugin is honored the
+ * moment it declares its `channel`.
  */
 export function findAuthorizedApproval(
   comments: readonly PRComment[],
   peopleDirectory: IPeopleDirectory,
+  gitHostingChannels: ReadonlySet<string>,
 ): { author: string } | null {
   for (const comment of comments) {
     if (!APPROVE_COMMAND_REGEX.test(comment.body.trim())) {
       continue;
     }
-    if (isAuthorizedApprover(comment.author, peopleDirectory)) {
+    if (isAuthorizedApprover(comment.author, peopleDirectory, gitHostingChannels)) {
       return { author: comment.author };
     }
   }
   return null;
 }
 
-function isAuthorizedApprover(author: string, peopleDirectory: IPeopleDirectory): boolean {
+function isAuthorizedApprover(
+  author: string,
+  peopleDirectory: IPeopleDirectory,
+  gitHostingChannels: ReadonlySet<string>,
+): boolean {
   const owner = peopleDirectory.getOwner();
   const authorized = owner ? [owner, ...peopleDirectory.getReviewers()] : peopleDirectory.getReviewers();
   if (authorized.length === 0) {
@@ -167,6 +179,8 @@ function isAuthorizedApprover(author: string, peopleDirectory: IPeopleDirectory)
   }
   const handle = author.toLowerCase();
   return authorized.some((person) =>
-    person.contacts.some((contact) => contact.channel === "github" && contact.handle.toLowerCase() === handle),
+    person.contacts.some(
+      (contact) => gitHostingChannels.has(contact.channel) && contact.handle.toLowerCase() === handle,
+    ),
   );
 }

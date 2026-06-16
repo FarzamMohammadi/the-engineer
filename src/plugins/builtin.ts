@@ -137,7 +137,7 @@ const manifests = [
     requirements: [GITHUB_TOKEN_REQUIREMENT],
     combined_with: ["github-trigger", "github-comm"],
     entry: "builtin",
-    adapter_meta: { action_classes: ["git-remote", "merge"] },
+    adapter_meta: { action_classes: ["git-remote", "merge"], channel: "github" },
     contributes: { events: ["git.pr_merged"] },
   },
 ] as const;

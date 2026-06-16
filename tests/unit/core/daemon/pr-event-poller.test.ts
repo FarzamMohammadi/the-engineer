@@ -65,6 +65,9 @@ function setup(options: SetupOptions = {}) {
   const ctx = {
     registry: {
       getPrimaryPlugin: (type: string) => (type === "git_hosting" ? { detectPrEvents, getPRStatus } : null),
+      // The hosting plugin declares its channel; the poller derives the /approve authorization namespace from it.
+      getPluginsByType: (type: string) =>
+        type === "git_hosting" ? [{ manifest: { adapter_meta: { channel: "github" } } }] : [],
     },
     taskEngine: { getBlockedTasksByReason, updateTaskField, requestTransition },
     peopleDirectory: options.people ?? createTestPeopleDirectory([]),

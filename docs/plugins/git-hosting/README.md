@@ -203,7 +203,7 @@ export type YourConfig = z.output<typeof YourConfigSchema>;
 
 ### Git-hosting manifest fields
 
-When you register in `builtin.ts` (authoring guide Step 5), a git-hosting manifest uses `type: "git_hosting"` and declares its **`action_classes`** in `adapter_meta` (the kinds of outside-world actions it performs, e.g. `"git-remote"`, `"merge"`):
+When you register in `builtin.ts` (authoring guide Step 5), a git-hosting manifest uses `type: "git_hosting"` and declares two `adapter_meta` keys: **`action_classes`** (the kinds of outside-world actions it performs, e.g. `"git-remote"`, `"merge"`) and **`channel`** (the platform name your host's identities live under, e.g. `"github"`, `"gitlab"`):
 
 ```typescript
 // Manifest entry (in the manifests array)
@@ -216,10 +216,12 @@ When you register in `builtin.ts` (authoring guide Step 5), a git-hosting manife
   critical: true,
   requirements: [{ type: "env", name: "YOUR_API_TOKEN" }],
   entry: "builtin",
-  adapter_meta: { action_classes: ["git-remote", "merge"] },
+  adapter_meta: { action_classes: ["git-remote", "merge"], channel: "your-platform" },
   contributes: { events: ["git.pr_merged"] },
 }
 ```
+
+**Why `channel` matters.** When a sole contributor cannot approve their own pull request on the host, The Engineer accepts a `/approve` comment as the approval (gated by `safety.merge.enable_comment_approval`). Core authorizes that comment by matching its author — a username on your host — against the configured owner/reviewer's contact handle on **a git-hosting channel**. It derives that set of channels from the registered git-hosting plugins by adapter type, so declaring `channel` is what lets your platform's `/approve` be authorized. The match is deliberately confined to git-hosting channels: a host username never gains merge authority by coincidentally equalling someone's Slack or Telegram handle. A person's contact for your platform is `{ channel: "your-platform", handle: "their-username" }` in `people.yaml`.
 
 ### Contract tests
 

@@ -123,34 +123,59 @@ describe("PR-event policy", () => {
 
   describe("findAuthorizedApproval", () => {
     const people = createTestPeopleDirectory(); // owner github handle "test-owner", reviewer "test-reviewer"
+    // The git-host channels the active hosting plugins declare — the poller derives this from the registry.
+    const githubChannels = new Set(["github"]);
 
     it("counts an /approve from a configured owner", () => {
-      expect(findAuthorizedApproval([comment("c1", "test-owner", "/approve")], people)).toEqual({
+      expect(findAuthorizedApproval([comment("c1", "test-owner", "/approve")], people, githubChannels)).toEqual({
         author: "test-owner",
       });
     });
 
     it("matches /approved too and is case-insensitive on the command", () => {
-      expect(findAuthorizedApproval([comment("c1", "test-reviewer", "/APPROVED")], people)).toEqual({
+      expect(findAuthorizedApproval([comment("c1", "test-reviewer", "/APPROVED")], people, githubChannels)).toEqual({
         author: "test-reviewer",
       });
     });
 
     it("ignores an /approve from someone not in the directory — no drive-by merges", () => {
-      expect(findAuthorizedApproval([comment("c1", "random-drive-by", "/approve")], people)).toBeNull();
+      expect(findAuthorizedApproval([comment("c1", "random-drive-by", "/approve")], people, githubChannels)).toBeNull();
     });
 
     it("ignores a comment that merely mentions the command", () => {
-      expect(findAuthorizedApproval([comment("c1", "test-owner", "please /approve when ready")], people)).toBeNull();
+      expect(
+        findAuthorizedApproval([comment("c1", "test-owner", "please /approve when ready")], people, githubChannels),
+      ).toBeNull();
     });
 
     it("is permissive when no one is configured — the sole-contributor case", () => {
       const empty = createTestPeopleDirectory([]);
-      expect(findAuthorizedApproval([comment("c1", "anyone", "/approve")], empty)).toEqual({ author: "anyone" });
+      expect(findAuthorizedApproval([comment("c1", "anyone", "/approve")], empty, githubChannels)).toEqual({
+        author: "anyone",
+      });
     });
 
     it("returns null when there is no approval command at all", () => {
-      expect(findAuthorizedApproval([comment("c1", "test-owner", "what about the edge case?")], people)).toBeNull();
+      expect(
+        findAuthorizedApproval([comment("c1", "test-owner", "what about the edge case?")], people, githubChannels),
+      ).toBeNull();
+    });
+
+    it("authorizes an /approve from a contact on a non-github git-host channel — no hardcoded platform", () => {
+      const gitlabPeople = createTestPeopleDirectory([
+        { id: "owner", name: "GL Owner", roles: ["owner"], contacts: [{ channel: "gitlab", handle: "gl-owner" }] },
+      ]);
+      expect(
+        findAuthorizedApproval([comment("c1", "gl-owner", "/approve")], gitlabPeople, new Set(["gitlab"])),
+      ).toEqual({ author: "gl-owner" });
+    });
+
+    it("never authorizes via a non-git-host (comms) contact, even when the handle matches", () => {
+      const commsOnly = createTestPeopleDirectory([
+        { id: "owner", name: "Owner", roles: ["owner"], contacts: [{ channel: "telegram", handle: "ghost" }] },
+      ]);
+      // "ghost" equals the telegram handle, but telegram is not a git-host channel — it carries no merge authority.
+      expect(findAuthorizedApproval([comment("c1", "ghost", "/approve")], commsOnly, new Set(["gitlab"]))).toBeNull();
     });
   });
 });

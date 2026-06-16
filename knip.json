@@ -10,7 +10,6 @@
   "project": ["src/**/*.ts"],
   "ignore": ["src/dashboard/client/**"],
   "ignoreDependencies": [
-    "lefthook",
     "pino-roll",
     "@types/node-fetch",
     "tailwindcss",

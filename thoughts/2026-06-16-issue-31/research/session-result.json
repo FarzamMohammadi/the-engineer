@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "summary": "Mapped the net-new release pipeline end to end and verified every requirements claim against the live repo. The pipeline is CI/CD + docs only (no source/runtime code). Headline risk, now confirmed with data: main is a protected branch (required PR reviews, enforce_admins=false) and the default GITHUB_TOKEN is read-only, so the workflow's commit-to-main push needs an elevated credential (PAT / App token / bypass allowance) and an explicit contents:write permission block. All other open items were owner-delegated to Planning and are answerable from the verified facts.",
+  "details": {
+    "scope": "Net-new .github/workflows/release.yml + a contributor how-to; edits to VitePress sidebar, contribution-docs README, and README Versioning pointer. No TypeScript source touched.",
+    "key_findings": [
+      "main protection: required_pull_request_reviews(count=1, require_last_push_approval=true), required_status_checks=[lint,test] strict=false, enforce_admins=false, no rulesets, no tag protection.",
+      "default_workflow_permissions=read => release workflow must declare permissions: contents: write.",
+      "Tag push is unblocked (no tag protection); the commit-to-main push is the only protected operation.",
+      "PR-based bump flow is broken by require_last_push_approval + Actions cannot self-approve; bump must be a direct privileged push.",
+      "Current version 1.0.1; main is 3 commits ahead of annotated tag v1.0.1; next clean patch is v1.0.2. No GitHub Releases published yet.",
+      "GitHub native release-notes (gh release create --generate-notes) satisfies the prose-safe notes requirement with no custom parsing.",
+      "Gate = pnpm lint + pnpm test (unit) + pnpm build, mirroring ci.yml (matches requirements' settled gate-scope)."
+    ],
+    "owner_action_needed_at_execution": "Provision one push credential/setting for the protected main push: a RELEASE_PAT secret, a branch-protection bypass allowance for github-actions[bot], or a GitHub App token. Mechanism choice is Planning's; the setup step is the owner's.",
+    "deliverable": "thoughts/2026-06-16-issue-31/research/research.md"
+  }
+}

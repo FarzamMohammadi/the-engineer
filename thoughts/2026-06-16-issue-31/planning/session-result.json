@@ -1,0 +1,35 @@
+{
+  "status": "ok",
+  "summary": "Plan finalized: single workflow_dispatch release.yml (gh CLI + npm version + atomic push, PAT-authenticated) plus one minimal releasing guide; incorporated the owner's authoritative answer (RELEASE_PAT 90-day scope, dry_run, one-doc-only) and dropped the Run-1 CONTRIBUTING edit.",
+  "details": {
+    "decisions": [
+      {
+        "category": "test_coverage",
+        "summary": "Release quality gate mirrors CI's lint job including the bundled-docs sync check, not just bare pnpm lint.",
+        "chosen": "Gate = pnpm lint + bundled-docs sync (pnpm run docs:bundle + git diff --exit-code) + pnpm test (unit) + pnpm build, all before any mutation.",
+        "reasoning": "Faithfully mirrors the existing CI lint job so a release can never be cut from a state CI would reject; the sync check is cheap and aborts cleanly before any commit/tag. Research explicitly left whether to include it open.",
+        "details": { "extra_gate_steps": 1 }
+      },
+      {
+        "category": "doc_wording",
+        "summary": "Register the single releasing guide in the VitePress sidebar and contribution-docs index.",
+        "chosen": "Two one-line edits to existing files (docs/.vitepress/config.ts Contributing sidebar + docs/contribution-docs/README.md How-Tos list) so the guide isn't an orphaned page.",
+        "reasoning": "Owner asked for exactly one new doc and minimal footprint; these are not new docs but the standard registration every how-to gets, needed so the single guide is discoverable in site nav. Surfaced in case the owner wants zero edits to other files.",
+        "details": { "files": 2 }
+      },
+      {
+        "category": "doc_wording",
+        "summary": "Add one additive pointer sentence in the README Versioning section linking to the releasing guide.",
+        "chosen": "A single sentence pointer; existing npm-deferred / reset-is-the-upgrade-path / GitHub-releases narrative left intact.",
+        "reasoning": "Owner permitted a one-line README pointer 'if actually needed'; judged needed for discoverability from the most-read doc and for acceptance-criterion-9 consistency. Trivially removable.",
+        "details": { "files": 1 }
+      }
+    ],
+    "settled_by_owner_not_resurfaced": [
+      "RELEASE_PAT: fine-grained, this repo only, Contents read/write, 90-day expiry, stored as RELEASE_PAT secret (owner provisions before first run).",
+      "dry_run: boolean input, default false, ends after computing version and previewing notes."
+    ],
+    "next_real_version": "v1.0.2",
+    "owner_prerequisite_before_first_run": "Create the RELEASE_PAT Actions secret per the releasing guide; documented, not a blocker to writing the workflow/doc."
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "status": "ok",
+  "summary": "Added the workflow_dispatch release pipeline (.github/workflows/release.yml) and one minimal how-to with sidebar/index/README registrations; all gates my change affects pass. pnpm lint is red ONLY from a pre-existing knip/lefthook finding on main, unrelated to this change.",
+  "details": {
+    "files_created": [
+      ".github/workflows/release.yml",
+      "docs/contribution-docs/how-tos/release.md"
+    ],
+    "files_edited": [
+      "docs/.vitepress/config.ts",
+      "docs/contribution-docs/README.md",
+      "README.md"
+    ],
+    "gates": {
+      "biome": "pass",
+      "typecheck": "pass",
+      "madge": "pass",
+      "test": "pass (139 files, 2624 tests)",
+      "build": "pass",
+      "docs:build": "pass",
+      "knip": "fail (pre-existing) - lefthook unused devDependency"
+    },
+    "pre_existing_red_gate": {
+      "gate": "pnpm lint (knip step)",
+      "finding": "knip reports lefthook as an unused devDependency (package.json:100)",
+      "proven_pre_existing": "Reproduced on the clean base branch HEAD 1a658a0 (current origin/main) with all my changes stashed; introduced by commit 66ff148 'Remove lefthook from knip's ignoreDependencies'. Lives in package.json/knip.json, files this task does not touch. My change adds zero new lint findings.",
+      "not_fixed_because": "Outside this task's scope (release pipeline), and commit 66ff148 removed lefthook deliberately - reverting it would undo an owner decision of unknown intent.",
+      "consequences_for_owner": "CI's lint job on main is currently red for the same reason; and the new release workflow's gate runs pnpm lint, so until this is resolved a release will correctly abort at the gate (requirement #3) and cannot be cut. One-line owner fix in knip.json (re-add lefthook to ignoreDependencies) or remove the unused lefthook devDependency."
+    },
+    "owner_prerequisite": "Create the RELEASE_PAT Actions secret (fine-grained, this repo only, Contents: Read & write, 90-day expiry) before the first real run. Documented in docs/contribution-docs/how-tos/release.md. A dry_run dispatch validates gate + version + notes preview without it.",
+    "decisions": [
+      {
+        "category": "test_coverage",
+        "summary": "Release gate mirrors CI's lint job including the bundled-docs sync check, not just bare pnpm lint",
+        "chosen": "lint + docs:bundle sync check + test + build",
+        "reasoning": "Exact parity with ci.yml's lint job at negligible cost; research left this open (carried as plan decision D1)."
+      },
+      {
+        "category": "doc_wording",
+        "summary": "Register the single guide in the VitePress sidebar and contribution-docs index, and add one additive README Versioning pointer",
+        "chosen": "Two one-line registrations in existing files plus one README sentence",
+        "reasoning": "Keeps the guide from being an orphaned page and satisfies acceptance criterion 9 (README consistency); owner permitted a one-line pointer 'if needed' (plan decisions D2/D3). The README cross-reference inside the guide uses an absolute GitHub URL because a relative link to the root README is a VitePress dead link (root README is not a built docs page)."
+      }
+    ]
+  }
+}

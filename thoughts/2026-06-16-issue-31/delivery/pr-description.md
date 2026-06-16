@@ -127,3 +127,30 @@ canonical for the PR as it now stands. Nothing material changed:
 
 No edits to the body were needed; the Run 1 content stands as the PR presentation. Title unchanged:
 `Add maintainer-triggered SemVer GitHub release workflow`.
+
+---
+
+_Run 3 · 2026-06-15 — re-validation_
+
+Re-derived the full product diff against the base (`merge-base` with `origin/main` =
+`1a658a0`) and re-checked every claim in the Run 1 body line by line against it. The PR as it now
+stands is unchanged from Run 2, and the title and body above remain accurate and canonical:
+
+- **Product change is exactly seven files** outside `thoughts/`: `.github/workflows/release.yml`
+  (new, 159 lines), `docs/contribution-docs/how-tos/release.md` (new, 33 lines), and small edits to
+  `.gitignore` (+3, `*.bak`), `README.md` (Versioning pointer to the how-to), `docs/.vitepress/config.ts`
+  (sidebar entry), `docs/contribution-docs/README.md` (index entry), and `knip.json` (+`lefthook`).
+- **Workflow verified against the diff:** `workflow_dispatch` with `level` choice (default `patch`)
+  + `dry_run` boolean; `permissions: contents: write`; `concurrency: release` (`cancel-in-progress:
+  false`); ref-must-be-`main` guard; checkout `ref: main` / `fetch-depth: 0` / `token: RELEASE_PAT`;
+  gate order lint → bundled-docs sync → test → build (mirrors `ci.yml`); `npm version
+  --no-git-tag-version`; local-tag / remote-tag / existing-release idempotency guards; dry-run notes
+  preview to the step summary; prose bump commit `Bump version to X.Y.Z`; annotated tag; `git push
+  --atomic`; `gh release create --verify-tag --generate-notes` with `--notes-start-tag`. All present
+  as described.
+- **Repo-state note still holds:** `package.json` is `1.0.1` with a `v1.0.1` tag, so the next real
+  patch run computes `v1.0.2`; the acceptance criterion's dry-run OR-branch is satisfied by the
+  `dry_run` input. The Risks section already captures this.
+
+No edits to the body were warranted. Title unchanged:
+`Add maintainer-triggered SemVer GitHub release workflow`.

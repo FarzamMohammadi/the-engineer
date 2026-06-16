@@ -16,7 +16,9 @@ import type { NotificationRouter } from "./notification-router.js";
  */
 export type QueryKind = "status" | "cost" | "progress" | "help" | "unknown";
 
-const PROGRESS_RE = /progress.*#(\d+)|#(\d+).*progress/;
+// The id after `#` is the tracker's own external-ref id — opaque and not necessarily numeric
+// (GitHub `#42`, Jira `#PROJ-123`, Linear `#ENG-512`). Match any id token, case-insensitively.
+const PROGRESS_RE = /progress.*#([\w-]+)|#([\w-]+).*progress/i;
 
 /** Classify an inbound message into a supported query form, or `"unknown"` when no form matches. */
 export function classifyQuery(content: string): QueryKind {
@@ -141,7 +143,9 @@ function formatResponse(kind: QueryKind, content: string, deps: FormatterDeps, o
 }
 
 function extractIssueNumber(content: string): string {
-  const match = PROGRESS_RE.exec(content.toLowerCase());
+  // Match against the original content (not lowercased) so a case-sensitive tracker id like "PROJ-123"
+  // is preserved for display and lookup; the regex's `i` flag already handles the "progress" keyword casing.
+  const match = PROGRESS_RE.exec(content);
   return (match?.[1] ?? match?.[2]) as string;
 }
 
@@ -210,7 +214,7 @@ function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string): s
 function findTaskByIssueNumber(taskEngine: ITaskEngine, issueNumber: string): Task | null {
   for (const state of TaskStateSchema.options) {
     for (const task of taskEngine.getTasksByState(state)) {
-      if (task.external_ref?.id === issueNumber) {
+      if (task.external_ref?.id.toLowerCase() === issueNumber.toLowerCase()) {
         return task;
       }
     }

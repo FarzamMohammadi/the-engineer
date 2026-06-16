@@ -60,6 +60,8 @@ describe("classifyQuery", () => {
     expect(classifyQuery("how much cost so far")).toBe("cost");
     expect(classifyQuery("progress #42")).toBe("progress");
     expect(classifyQuery("#42 progress")).toBe("progress");
+    expect(classifyQuery("progress #PROJ-123")).toBe("progress");
+    expect(classifyQuery("PROGRESS #ENG-512")).toBe("progress");
     expect(classifyQuery("help")).toBe("help");
     expect(classifyQuery("looks good, go ahead")).toBe("unknown");
   });
@@ -146,6 +148,33 @@ describe("handleQuery", () => {
     expect(notification.message).toContain("Issue #42");
     expect(notification.message).toContain("Fix login bug");
     expect(notification.message).toContain("active");
+    expect(notification.message).toContain("execution");
+  });
+
+  it("matches a non-numeric tracker key like 'progress #PROJ-123', case-insensitively", () => {
+    const deps = createMockDeps();
+    (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation((state: string) => {
+      if (state === TaskStates.active) {
+        return [
+          {
+            id: "01J0000000000000000000ABCD",
+            external_ref: { type: "jira_issue", repo: "acme/app", id: "PROJ-123" },
+            title: "Fix login bug",
+            state: TaskStates.active,
+            sub_state: SubStates.working,
+            priority: 50,
+            phase: "execution",
+          },
+        ];
+      }
+      return [];
+    });
+
+    // Lowercase input against an uppercase Jira key — proves both non-numeric ids and a case-insensitive match.
+    handleQuery(payload("progress #proj-123"), deps);
+
+    const notification = lastNotification(deps);
+    expect(notification.message).toContain("Fix login bug");
     expect(notification.message).toContain("execution");
   });
 

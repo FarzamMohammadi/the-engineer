@@ -16,7 +16,7 @@ The abstract class `GitHostingAdapter` extends `BaseAdapter`. Plugin authors imp
 |---|---|---|
 | `createPR` | `(options: PROptions) => Promise<PRResult>` | `{ pr_number, url }` |
 | `updatePR` | `(repo: string, prNumber: number, updates: PRUpdates) => Promise<void>` | -- |
-| `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ merge_sha, success, error }` |
+| `mergePR` | `(repo: string, prNumber: number, strategy: MergeStrategy) => Promise<MergeResult>` | `{ success: true, merge_sha }` or `{ success: false, reason, message }` |
 | `closePR` | `(repo: string, prNumber: number) => Promise<void>` | -- |
 | `getPRStatus` | `(repo: string, prNumber: number) => Promise<PRStatus>` | `{ state, checks_state, merge_state, url }` |
 | `getReviewStatus` | `(repo: string, prNumber: number) => Promise<ReviewStatus>` | `{ approved, approvals, changes_requested, reviewers, comments }` |
@@ -72,8 +72,14 @@ type PRUpdates = {
 // Merge strategies
 type MergeStrategy = "merge" | "squash" | "rebase";
 
-// Merge result (success: false when protection rules block merge)
-type MergeResult = { merge_sha: string; success: boolean; error: AdapterError | null };
+// Merge result — a discriminated union on `success`. A failure REQUIRES a typed `reason` Core routes on,
+// so a host block (a required review the token cannot satisfy) can never be silently dropped.
+type MergeResult =
+  | { success: true; merge_sha: string }
+  | { success: false; reason: MergeFailureReason; message: string };
+
+// Why a merge failed — host-agnostic and closed. Map your platform's failure into one of these.
+type MergeFailureReason = "not_mergeable" | "conflict" | "transient";
 
 // PR state query
 type PRStatus = {

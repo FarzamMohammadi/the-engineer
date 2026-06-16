@@ -252,7 +252,14 @@ async function performMerge(
   record: WorkspaceRecord | null,
   review: ReviewState,
 ): Promise<SubPhaseResult> {
-  removeThoughtsBeforeMerge(ctx);
+  // Capture the formal-approval state *before* the cleanup push. If a strip commit lands after a formal
+  // approval, the host's dismiss_stale_reviews dismisses it, so the hand-off must ask the owner to
+  // re-approve. A `/approve` comment is never dismissed, so it takes the plain hand-off. Only fetched when
+  // stripping is enabled — the one case a dismissal can occur.
+  const wasApproved = ctx.safetyLayer.shouldExcludeThoughtsOnMerge()
+    ? (await hosting.getReviewStatus(repo, prNumber)).approved
+    : false;
+  const stripped = removeThoughtsBeforeMerge(ctx);
   const strategy = ctx.workspaceConfig.pr.default_merge_strategy;
   ctx.observer.info("Merging pull request", { taskId: ctx.task.id, repo, prNumber, strategy });
 
@@ -266,7 +273,13 @@ async function performMerge(
   if (!result.success) {
     span.setError(new Error(result.error?.message ?? "merge did not complete"));
     span.end({ success: false, code: result.error?.code ?? null });
-    return routeMergeFailure(ctx, prNumber, result.error?.code ?? null, result.error?.message ?? null);
+    return routeMergeFailure(
+      ctx,
+      prNumber,
+      result.error?.code ?? null,
+      result.error?.message ?? null,
+      wasApproved && stripped,
+    );
   }
   span.end({ success: true, merge_sha: result.merge_sha });
 
@@ -274,18 +287,23 @@ async function performMerge(
   return resolved("merged", `Merged PR #${String(prNumber)}`);
 }
 
-/** Remove the branch-introduced thoughts/ files before merge, when configured. Best-effort — a failure never blocks the merge. */
-function removeThoughtsBeforeMerge(ctx: Ctx): void {
+/**
+ * Remove the branch-introduced thoughts/ files before merge, when configured. Best-effort — a failure
+ * never blocks the merge. Returns whether a cleanup commit was actually pushed: a push after a formal
+ * approval dismisses it (dismiss_stale_reviews), which the hand-off notification must surface.
+ */
+function removeThoughtsBeforeMerge(ctx: Ctx): boolean {
   if (!ctx.safetyLayer.shouldExcludeThoughtsOnMerge()) {
-    return;
+    return false;
   }
   try {
-    removeThoughtsAndPush({ workspaceManager: ctx.workspaceManager, observer: ctx.observer }, ctx.task.id);
+    return removeThoughtsAndPush({ workspaceManager: ctx.workspaceManager, observer: ctx.observer }, ctx.task.id);
   } catch (error) {
     ctx.observer.warn("Failed to remove thoughts before merge — proceeding with the merge", {
       taskId: ctx.task.id,
       error: sanitizeErrorMessage(error),
     });
+    return false;
   }
 }
 
@@ -298,14 +316,20 @@ function removeThoughtsBeforeMerge(ctx: Ctx): void {
  * else is treated as transient and retried. The route is recorded (Coding Standards § 14 — merge failure
  * by cause), so the owner can always see why a PR did not merge itself.
  */
-function routeMergeFailure(ctx: Ctx, prNumber: number, code: string | null, message: string | null): SubPhaseResult {
+function routeMergeFailure(
+  ctx: Ctx,
+  prNumber: number,
+  code: string | null,
+  message: string | null,
+  approvalDismissed: boolean,
+): SubPhaseResult {
   const failure = classifyMergeFailure(code);
   recordMergeOutcome(ctx, prNumber, code, failure);
   switch (failure.disposition) {
     case "merge_conflict":
       return resolved("merge_conflict", `Merge rejected as conflicting: ${message ?? "no longer mergeable"}`);
     case "needs_human_merge": {
-      notifyHostBlockedMerge(ctx, prNumber);
+      notifyHostBlockedMerge(ctx, prNumber, approvalDismissed);
       return resolved("needs_human_merge", `PR #${String(prNumber)} handed off — the host blocks the Engineer's merge`);
     }
     default: {
@@ -363,14 +387,21 @@ function recordMergeOutcome(ctx: Ctx, prNumber: number, code: string | null, fai
   );
 }
 
-/** Notify the owner that the PR is ready but the host will not let the Engineer merge it, so they complete the merge. */
-function notifyHostBlockedMerge(ctx: Ctx, prNumber: number): void {
-  ctx.observer.info("Host blocked the merge — completing for the owner to merge", { taskId: ctx.task.id, prNumber });
-  ctx.notifications.notify({
-    kind: NotificationKinds.ticket_comment,
+/**
+ * Notify the owner that the PR is ready but the host will not let the Engineer merge it, so they complete
+ * the merge. When the pre-merge thoughts-cleanup push dismissed a formal approval, the message says so and
+ * asks for a fresh approval; otherwise it is the plain "merge it" hand-off.
+ */
+function notifyHostBlockedMerge(ctx: Ctx, prNumber: number, approvalDismissed: boolean): void {
+  ctx.observer.info("Host blocked the merge — completing for the owner to merge", {
     taskId: ctx.task.id,
-    message: `PR #${String(prNumber)} is approved and ready, but the host won't let me complete the merge (its rules need a human). Merge it when you're ready.`,
+    prNumber,
+    approvalDismissed,
   });
+  const message = approvalDismissed
+    ? `PR #${String(prNumber)} is ready, but my thoughts-cleanup commit dismissed your earlier approval. Re-approve it and merge when you're ready.`
+    : `PR #${String(prNumber)} is approved and ready, but the host won't let me complete the merge (its rules need a human). Merge it when you're ready.`;
+  ctx.notifications.notify({ kind: NotificationKinds.ticket_comment, taskId: ctx.task.id, message });
 }
 
 /** Inputs for recording a completed merge. `notifyMilestone` is true for a self-merge, false for the external-merge backfill. */

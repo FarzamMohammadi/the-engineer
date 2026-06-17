@@ -137,6 +137,11 @@ jobs:
           NEW_VERSION: ${{ steps.ver.outputs.new_version }}
         run: |
           set -euo pipefail
+          # npm version re-serializes the whole package.json with its own formatter (it expands
+          # arrays), which diverges from Biome and turns main's CI red. Re-apply the project's
+          # formatting so the bump commit passes `pnpm lint`. The gate ran before the bump, so this
+          # is the one file edited after it — format exactly it, nothing else.
+          pnpm exec biome check --write package.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Bump version to $NEW_VERSION" package.json

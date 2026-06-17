@@ -7,9 +7,15 @@ import {
   Phases,
   type RoutableResult,
 } from "../../../../../../src/core/orchestrator/pipeline/types.js";
+import { removeThoughtsAndPush } from "../../../../../../src/core/orchestrator/pr-manager.js";
 import type { MergeResult, PRStatus } from "../../../../../../src/schemas/adapters.js";
 import type { ReviewState } from "../../../../../../src/schemas/task.js";
 import { createRecordingObserver } from "../../../../../helpers/test-mock-pipeline.js";
+
+// The real thoughts cleanup shells out to git; mock it so tests control whether a strip commit was pushed.
+vi.mock("../../../../../../src/core/orchestrator/pr-manager.js", () => ({
+  removeThoughtsAndPush: vi.fn(() => false),
+}));
 
 const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summary: "", data: { disposition } });
 
@@ -29,6 +35,7 @@ interface MockOptions {
   readonly autoMergeAllowed?: boolean;
   readonly excludeThoughts?: boolean;
   readonly review?: ReviewState | null;
+  readonly reviewApproved?: boolean;
 }
 
 function mockCtx(options: MockOptions = {}) {
@@ -45,13 +52,20 @@ function mockCtx(options: MockOptions = {}) {
   const mergePR = vi
     .fn()
     .mockResolvedValue(options.mergeResult ?? { merge_sha: "sha-merged", success: true, error: null });
+  const getReviewStatus = vi.fn().mockResolvedValue({
+    approved: options.reviewApproved ?? false,
+    approvals: options.reviewApproved ? 1 : 0,
+    changes_requested: false,
+    reviewers: [],
+    comments: [],
+  });
   const deleteRemoteBranch = vi.fn();
   const updateTaskField = vi.fn();
   const notify = vi.fn();
   const published: string[] = [];
   const observer = createRecordingObserver();
 
-  const hosting = options.hosting === false ? null : { getPRStatus, mergePR };
+  const hosting = options.hosting === false ? null : { getPRStatus, mergePR, getReviewStatus };
   const ctx = {
     registry: { getPrimaryPlugin: (type: string) => (type === "git_hosting" ? hosting : null) },
     workspaceManager: {
@@ -268,6 +282,40 @@ describe("auto-merge run", () => {
     // The route is observable as a recorded decision.
     const decision = observer.decisions.find((entry) => entry.name === "merge_outcome");
     expect(decision?.chosen).toBe("needs_human_merge");
+  });
+
+  const hostBlocked = {
+    merge_sha: "",
+    success: false,
+    error: {
+      code: "pr_not_mergeable",
+      message: "At least 1 approving review is required",
+      retryable: false,
+      retry_after_ms: null,
+      severity: "error",
+    },
+  } as const;
+
+  it("tells the owner to re-approve when the thoughts-cleanup push dismissed their formal approval", async () => {
+    vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
+    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: true, mergeResult: hostBlocked });
+
+    await autoMerge.run(ctx);
+
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/dismissed your earlier approval/i) }),
+    );
+  });
+
+  it("keeps the plain hand-off when only a /approve comment was used (no formal approval to dismiss)", async () => {
+    vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
+    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: false, mergeResult: hostBlocked });
+
+    await autoMerge.run(ctx);
+
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/merge it when you're ready/i) }),
+    );
   });
 
   it("throws so the runner blocks when no git hosting plugin is registered", async () => {

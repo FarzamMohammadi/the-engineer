@@ -96,8 +96,8 @@ Re-entry flows entirely through the database (write the event, re-queue, re-disp
 | The merge attempt | What it does |
 |---|---|
 | Succeeds | Records the merge (below) |
-| Host blocks it (`pr_not_mergeable` — a required review the Engineer cannot satisfy, or no merge permission) | **Hands off to the owner** — notifies once and completes the task, exactly like auto-merge-disabled. The task leaves the review-poll set, so a standing `/approve` can never re-promote it into the same doomed merge: it does **not** loop. |
-| Conflicts (`merge_conflict`) | Reworks: jumps back to execution to resolve it |
+| Host blocks it (reason `not_mergeable` — a required review the Engineer cannot satisfy, or no merge permission) | **Hands off to the owner** — notifies once and completes the task, exactly like auto-merge-disabled. The task leaves the review-poll set, so a standing `/approve` can never re-promote it into the same doomed merge: it does **not** loop. |
+| Conflicts (reason `conflict`) | Reworks: jumps back to execution to resolve it |
 | Fails transiently | Returns to the review wait; the poller retries when the PR is ready |
 
 The hand-off is what keeps a *protected* branch from looping: when the host requires something the Engineer cannot provide (a human's formal review, say), it stops and asks the owner to merge rather than re-attempting forever. The route the attempt took is recorded as a `merge_outcome` decision, so the owner can always see why a PR did not merge itself. If the pre-merge thoughts cleanup pushed a commit that dismissed a *formal* approval (under the host's `dismiss_stale_reviews`), the hand-off says so and asks for a fresh approval — a `/approve` comment is never dismissed, so it gets the plain hand-off.

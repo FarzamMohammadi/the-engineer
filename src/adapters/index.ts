@@ -80,6 +80,7 @@ export {
   // Git Hosting
   BranchProtectionSchema,
   CommentResultSchema,
+  MergeFailureReasonSchema,
   MergeResultSchema,
   MergeStrategySchema,
   PRCommentSchema,
@@ -91,6 +92,7 @@ export {
   ReviewerStateSchema,
   type BranchProtection,
   type CommentResult,
+  type MergeFailureReason,
   type MergeResult,
   type MergeStrategy,
   type PRComment,

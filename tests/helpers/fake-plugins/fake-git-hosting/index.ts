@@ -126,11 +126,7 @@ export class FakeGitHostingPlugin extends GitHostingAdapter {
   protected doMergePR(repo: string, prNumber: number, _strategy: MergeStrategy): Promise<MergeResult> {
     const pr = this.getPR(repo, prNumber);
     pr.status = { ...pr.status, state: "merged" };
-    return Promise.resolve({
-      merge_sha: "abc123fake",
-      success: true,
-      error: null,
-    });
+    return Promise.resolve({ success: true, merge_sha: "abc123fake" });
   }
 
   protected doClosePR(repo: string, prNumber: number): Promise<void> {

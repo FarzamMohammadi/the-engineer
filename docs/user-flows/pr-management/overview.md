@@ -89,7 +89,18 @@ Re-entry flows entirely through the database (write the event, re-queue, re-disp
 | CI failing | Reworks: jumps back to execution to fix it |
 | Definitively conflicting | Reworks: jumps back to execution to resolve it |
 | Mergeability not yet computed, or checks not yet green | Returns to the review wait; the poller retries when the PR is ready |
-| Green and mergeable | Removes branch thoughts (if configured), merges with the configured strategy, records the merge |
+| Green and mergeable | Removes branch thoughts (if configured) and **attempts the merge** — then routes on the result (below) |
+
+**The merge is an optimistic attempt.** The Engineer does not try to predict whether its token is *allowed* to merge — it prepares the branch as far as it can (including the thoughts cleanup) and *attempts* the merge with whatever token it holds, then routes on what the host returns:
+
+| The merge attempt | What it does |
+|---|---|
+| Succeeds | Records the merge (below) |
+| Host blocks it (`pr_not_mergeable` — a required review the Engineer cannot satisfy, or no merge permission) | **Hands off to the owner** — notifies once and completes the task, exactly like auto-merge-disabled. The task leaves the review-poll set, so a standing `/approve` can never re-promote it into the same doomed merge: it does **not** loop. |
+| Conflicts (`merge_conflict`) | Reworks: jumps back to execution to resolve it |
+| Fails transiently | Returns to the review wait; the poller retries when the PR is ready |
+
+The hand-off is what keeps a *protected* branch from looping: when the host requires something the Engineer cannot provide (a human's formal review, say), it stops and asks the owner to merge rather than re-attempting forever. The route the attempt took is recorded as a `merge_outcome` decision, so the owner can always see why a PR did not merge itself. If the pre-merge thoughts cleanup pushed a commit that dismissed a *formal* approval (under the host's `dismiss_stale_reviews`), the hand-off says so and asks for a fresh approval — a `/approve` comment is never dismissed, so it gets the plain hand-off.
 
 A successful merge *records* the merge: it stamps `review.merged_at` on the task, publishes **`git.pr_merged`** (from the **orchestrator**), and notifies the *Merged PR* milestone. `auto-merge` does **not** delete the branch — the daemon's **workspace reaper** is the sole branch deleter and removes the merged branch once `workspace.pr.branch_retention_days` has elapsed, publishing **`git.branch_deleted`** (from the **workspace-reaper**). An externally-merged PR takes the same record path with no milestone — the external-merge backfill — so the reaper can reap its branch too. The local worktree is reaped separately by the scheduler's normal completion path.
 
@@ -127,6 +138,8 @@ Every transition the owner cares about leaves a trail. The owner's channels rece
 | Approval + green re-queues for merge | ticket | "Pull request approved with CI green — merging." |
 | External merge detected | ticket | "Pull request merged — finalizing." |
 | Auto-merge disabled, PR ready | ticket | "PR #{n} is approved and ready. Auto-merge is disabled for this repo — merge it when you're ready." |
+| Host blocks the Engineer's merge | ticket | "PR #{n} is approved and ready, but the host won't let me complete the merge (its rules need a human). Merge it when you're ready." |
+| Host-blocked, and a thoughts cleanup dismissed a formal approval | ticket | "PR #{n} is ready, but my thoughts-cleanup commit dismissed your earlier approval. Re-approve it and merge when you're ready." |
 | Merge completed | milestone | "Merged PR #{n}" |
 
 ## Resilience

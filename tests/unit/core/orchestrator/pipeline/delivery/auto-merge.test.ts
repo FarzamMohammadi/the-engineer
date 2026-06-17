@@ -318,6 +318,24 @@ describe("auto-merge run", () => {
     );
   });
 
+  it("regression (PR #28): a host-blocked merge resolves terminally — the /approve loop cannot form", async () => {
+    const { ctx, notify, updateTaskField, published } = mockCtx({ mergeResult: hostBlocked });
+
+    const result = await autoMerge.run(ctx);
+
+    // The host block resolves to needs_human_merge, which routes to a terminal completion — NOT back to
+    // awaiting_pr_review, the re-block that re-queued the task and let the poller re-promote the same
+    // /approve into a doomed merge, forever.
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    const route = autoMergeNext(okResult("needs_human_merge"));
+    expect(route).toEqual({ go: "done" });
+    expect(route).not.toMatchObject({ category: BlockCategories.awaiting_pr_review });
+    // The owner is notified exactly once; nothing is recorded as merged.
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(updateTaskField).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
+  });
+
   it("throws so the runner blocks when no git hosting plugin is registered", async () => {
     const { ctx } = mockCtx({ hosting: false });
     await expect(autoMerge.run(ctx)).rejects.toThrow("no git hosting plugin");

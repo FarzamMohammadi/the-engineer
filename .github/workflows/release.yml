@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: SemVer bump level
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+        required: true
+      dry_run:
+        description: Gate + version/notes preview only; no commit, tag, or release
+        type: boolean
+        default: false
+
+# Least privilege; the bump push to protected main authenticates as the owner via RELEASE_PAT,
+# so the default GITHUB_TOKEN never writes and read is all it needs.
+permissions:
+  contents: read
+
+# Serialize releases so two dispatches can never compute the same version and race the push.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard - release only from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases must be cut from main (got ${{ github.ref }})."
+          exit 1
+
+      # Owner identity (RELEASE_PAT) so the bump commit can land on protected main;
+      # full history + tags are needed for prev-tag detection and notes generation.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT }}
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # Quality gate, mirroring ci.yml exactly. Runs before any mutation: if it fails the
+      # run aborts with main unchanged and no tag or release.
+      - name: Lint
+        run: pnpm lint
+      - name: Verify bundled docs are in sync with docs/plugins/
+        run: |
+          set -euo pipefail
+          pnpm run docs:bundle
+          git diff --exit-code src/cli/bundled/plugin-docs.ts || {
+            echo "::error::Bundled plugin docs are stale. Run 'pnpm run docs:bundle' and commit the result."
+            exit 1
+          }
+      - name: Test
+        run: pnpm test
+      # Proves the tagged state builds cleanly (requirement #8). The bump is a version-only
+      # edit to package.json that cannot change build output, so building the pre-bump tree
+      # is equivalent to building the tagged commit.
+      - name: Build
+        run: pnpm build
+
+      - name: Compute version
+        id: ver
+        env:
+          LEVEL: ${{ inputs.level }}
+        run: |
+          set -euo pipefail
+          # Latest version tag only, so non-version tags (backup-*, etc.) never seed the notes baseline.
+          PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | head -n1 || true)"
+          npm version "$LEVEL" --no-git-tag-version >/dev/null
+          NEW_VERSION="$(node -p "require('./package.json').version")"
+          TAG="v$NEW_VERSION"
+          {
+            echo "prev_tag=$PREV_TAG"
+            echo "new_version=$NEW_VERSION"
+            echo "tag=$TAG"
+          } >> "$GITHUB_OUTPUT"
+          echo "Computed ${PREV_TAG:-<none>} -> $TAG ($LEVEL)"
+
+      # Idempotency: never overwrite an existing tag or release. Runs for dry runs too.
+      - name: Guard - tag and release do not already exist
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::Tag $TAG already exists locally."
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "::error::Tag $TAG already exists on origin."
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists."
+            exit 1
+          fi
+
+      - name: Dry run - preview version and notes
+        if: ${{ inputs.dry_run }}
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          PREV_TAG: ${{ steps.ver.outputs.prev_tag }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          echo "Dry run: would release ${PREV_TAG:-<none>} -> $TAG. No commit, tag, or release created."
+          api_args=(-f tag_name="$TAG" -f target_commitish=main)
+          if [ -n "$PREV_TAG" ]; then
+            api_args+=(-f previous_tag_name="$PREV_TAG")
+          fi
+          {
+            echo "## Dry run for $TAG"
+            echo ""
+            echo "_Note: a dry run does not exercise the protected-main push; only a real run proves it._"
+            echo ""
+            echo "### Release notes preview"
+            echo ""
+            gh api "repos/${{ github.repository }}/releases/generate-notes" "${api_args[@]}" --jq .body
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit bump, tag, and push
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          NEW_VERSION: ${{ steps.ver.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Bump version to $NEW_VERSION" package.json
+          git tag -a "$TAG" -m "$TAG"
+          # Atomic: commit and tag land together or neither does.
+          git push --atomic origin HEAD:main "refs/tags/$TAG"
+
+      - name: Publish GitHub Release
+        if: ${{ !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+          PREV_TAG: ${{ steps.ver.outputs.prev_tag }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          set -euo pipefail
+          notes_args=(--generate-notes)
+          if [ -n "$PREV_TAG" ]; then
+            notes_args+=(--notes-start-tag "$PREV_TAG")
+          fi
+          # --verify-tag uses the annotated tag we already pushed instead of creating a lightweight one.
+          gh release create "$TAG" --title "$TAG" --verify-tag "${notes_args[@]}"
+          echo "Published release $TAG" >> "$GITHUB_STEP_SUMMARY"

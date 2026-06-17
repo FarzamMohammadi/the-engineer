@@ -12,3 +12,4 @@ Add a how-to when a system has non-obvious conventions that a contributor would 
 - **[Authoring a Plugin](how-tos/plugins/authoring.md)** — the one executable, agent-drivable methodology for building a plugin behind any of the four adapter types (trigger, communication, git-hosting, agent), from identifying the adapter through contributing it back. Each step sends you into the matching [adapter contract](../plugins/plugin-context.md) for the specifics.
 - **[Observability](how-tos/observability.md)** — how to emit spans, decisions, and observations the dashboard renders.
 - **[Zod Schemas](how-tos/zod-schemas.md)** — the schema-first conventions every config and contract type follows.
+- **[Cutting a Release](how-tos/release.md)** — how the maintainer triggers a SemVer GitHub release from the Actions tab, and how to choose the patch/minor/major bump level.

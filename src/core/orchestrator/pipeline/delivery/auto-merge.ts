@@ -37,15 +37,25 @@ import { skipWhenPushOnly } from "./deliverable.js";
 //
 // Routing splits by cause (the thoughts removal, the merge call, and the merge record
 // are effects; `next` is pure):
-//   - merged / already-merged / auto-merge-disabled → done (the deliverable exists)
-//   - CI failing / not mergeable → jump back to execution to fix it (a rework, so the
+//   - merged / already-merged / auto-merge-disabled / host-blocked → done (the deliverable
+//     exists, or the host requires a human to perform the merge — either way we stop, never loop)
+//   - CI failing / merge conflict → jump back to execution to fix it (a rework, so the
 //     stale approval is dismissed and a human must re-approve before the next merge —
 //     that human gate is what bounds the loop)
 //   - a transient failure (a pending check, a flaky merge API) → return to the review
 //     wait; the stateless poller retries the merge once the PR is ready again.
 
 /** How `run` resolved the merge attempt. `next` reads this from `result.data` to pick the route. */
-type MergeDisposition = "merged" | "auto_merge_disabled" | "ci_failure" | "merge_conflict" | "retry_wait";
+type MergeDisposition =
+  | "merged"
+  | "auto_merge_disabled"
+  | "ci_failure"
+  | "merge_conflict"
+  | "needs_human_merge"
+  | "retry_wait";
+
+/** The subset of dispositions a failed merge attempt can resolve to — routed by {@link classifyMergeFailure}. */
+type MergeFailureDisposition = Extract<MergeDisposition, "merge_conflict" | "needs_human_merge" | "retry_wait">;
 
 /** Delivery: merge the approved PR. Entry-only — reached by an external event, not by advance. Skipped in push-only. */
 export const autoMerge: SubPhase = {
@@ -256,16 +266,7 @@ async function performMerge(
   if (!result.success) {
     span.setError(new Error(result.error?.message ?? "merge did not complete"));
     span.end({ success: false, code: result.error?.code ?? null });
-    if (result.error?.code === "merge_conflict") {
-      return resolved("merge_conflict", `Merge rejected as conflicting: ${result.error.message}`);
-    }
-    ctx.observer.warn("Merge did not complete — returning to the review wait to retry", {
-      taskId: ctx.task.id,
-      prNumber,
-      code: result.error?.code,
-      message: result.error?.message,
-    });
-    return resolved("retry_wait", `Merge did not complete (${result.error?.code ?? "unknown"}) — waiting to retry`);
+    return routeMergeFailure(ctx, prNumber, result.error?.code ?? null, result.error?.message ?? null);
   }
   span.end({ success: true, merge_sha: result.merge_sha });
 
@@ -286,6 +287,90 @@ function removeThoughtsBeforeMerge(ctx: Ctx): void {
       error: sanitizeErrorMessage(error),
     });
   }
+}
+
+// ── Merge-Failure Routing ───────────────────────────────────────────────────────
+
+/**
+ * Route a failed merge attempt by its adapter error code. A conflict reworks. A host block — a rule the
+ * Engineer cannot satisfy with its token (a required review, or no merge permission) — is handed off to
+ * the owner to merge: terminal, so the task leaves the review-poll set and cannot re-trigger. Anything
+ * else is treated as transient and retried. The route is recorded (Coding Standards § 14 — merge failure
+ * by cause), so the owner can always see why a PR did not merge itself.
+ */
+function routeMergeFailure(ctx: Ctx, prNumber: number, code: string | null, message: string | null): SubPhaseResult {
+  const failure = classifyMergeFailure(code);
+  recordMergeOutcome(ctx, prNumber, code, failure);
+  switch (failure.disposition) {
+    case "merge_conflict":
+      return resolved("merge_conflict", `Merge rejected as conflicting: ${message ?? "no longer mergeable"}`);
+    case "needs_human_merge": {
+      notifyHostBlockedMerge(ctx, prNumber);
+      return resolved("needs_human_merge", `PR #${String(prNumber)} handed off — the host blocks the Engineer's merge`);
+    }
+    default: {
+      ctx.observer.warn("Merge did not complete — returning to the review wait to retry", {
+        taskId: ctx.task.id,
+        prNumber,
+        code,
+        message,
+      });
+      return resolved("retry_wait", `Merge did not complete (${code ?? "unknown"}) — waiting to retry`);
+    }
+  }
+}
+
+/** The route a failed merge attempt resolves to, with the reasoning recorded for the owner. */
+interface MergeFailureRoute {
+  readonly disposition: MergeFailureDisposition;
+  readonly reasoning: string;
+}
+
+/** Classify a failed merge attempt by its adapter error code. Pure — the caller owns the record and notify effects. */
+function classifyMergeFailure(code: string | null): MergeFailureRoute {
+  if (code === "merge_conflict") {
+    return { disposition: "merge_conflict", reasoning: "the base moved and the branch no longer merges cleanly" };
+  }
+  if (code === "pr_not_mergeable") {
+    return {
+      disposition: "needs_human_merge",
+      reasoning:
+        "the host's rules block the Engineer's own merge (a required review it cannot satisfy, or no merge permission) — a human must complete it",
+    };
+  }
+  return {
+    disposition: "retry_wait",
+    reasoning: "a transient merge failure — wait and retry once the PR is ready again",
+  };
+}
+
+const MERGE_OUTCOME_OPTIONS = [
+  { id: "merge_conflict", description: "Conflict — hand back to execution to resolve it" },
+  { id: "needs_human_merge", description: "Host blocks the merge — hand off to the owner to complete it" },
+  { id: "retry_wait", description: "Transient failure — return to the review wait and retry" },
+] as const;
+
+/** Record why a failed merge attempt routed where it did — the merge-failure-by-cause decision the owner can inspect. */
+function recordMergeOutcome(ctx: Ctx, prNumber: number, code: string | null, failure: MergeFailureRoute): void {
+  ctx.observer.recordDecision(
+    "merge_outcome",
+    `PR #${String(prNumber)} merge attempt failed (code ${code ?? "unknown"})`,
+    MERGE_OUTCOME_OPTIONS,
+    failure.disposition,
+    failure.reasoning,
+    1,
+    traceScope(ctx),
+  );
+}
+
+/** Notify the owner that the PR is ready but the host will not let the Engineer merge it, so they complete the merge. */
+function notifyHostBlockedMerge(ctx: Ctx, prNumber: number): void {
+  ctx.observer.info("Host blocked the merge — completing for the owner to merge", { taskId: ctx.task.id, prNumber });
+  ctx.notifications.notify({
+    kind: NotificationKinds.ticket_comment,
+    taskId: ctx.task.id,
+    message: `PR #${String(prNumber)} is approved and ready, but the host won't let me complete the merge (its rules need a human). Merge it when you're ready.`,
+  });
 }
 
 /** Inputs for recording a completed merge. `notifyMilestone` is true for a self-merge, false for the external-merge backfill. */

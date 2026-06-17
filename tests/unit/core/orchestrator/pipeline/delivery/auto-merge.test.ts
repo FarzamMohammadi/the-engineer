@@ -84,6 +84,10 @@ describe("auto-merge next", () => {
     expect(autoMergeNext(okResult("auto_merge_disabled"))).toEqual({ go: "done" });
   });
 
+  it("completes the task on a host-blocked merge — the host needs a human to merge", () => {
+    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
+  });
+
   it("jumps to execution to fix a failing CI", () => {
     const route = autoMergeNext(okResult("ci_failure"));
     expect(route.go).toBe("jump");
@@ -234,6 +238,36 @@ describe("auto-merge run", () => {
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "retry_wait" } });
     expect(published).toEqual([]);
+  });
+
+  it("hands the merge off to the owner when the host blocks the Engineer (pr_not_mergeable) — terminal, notified, no record", async () => {
+    const { ctx, updateTaskField, notify, published, observer } = mockCtx({
+      mergeResult: {
+        merge_sha: "",
+        success: false,
+        error: {
+          code: "pr_not_mergeable",
+          message: "At least 1 approving review is required",
+          retryable: false,
+          retry_after_ms: null,
+          severity: "error",
+        },
+      },
+    });
+
+    const result = await autoMerge.run(ctx);
+
+    // Terminal hand-off: needs_human_merge routes to done — no rework, no retry-wait, so the task leaves the
+    // review-poll set and the PR #28 re-trigger loop cannot form.
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
+    // The owner is told once; nothing is recorded as merged.
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "ticket_comment" }));
+    expect(updateTaskField).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
+    // The route is observable as a recorded decision.
+    const decision = observer.decisions.find((entry) => entry.name === "merge_outcome");
+    expect(decision?.chosen).toBe("needs_human_merge");
   });
 
   it("throws so the runner blocks when no git hosting plugin is registered", async () => {

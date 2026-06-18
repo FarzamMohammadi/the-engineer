@@ -287,3 +287,61 @@ as a finished fact. `session-result.json` for this pass therefore reports `ok` w
 
 ok — owner-confirmed decision absorbed; all gates green; both task commits in place; no uncommitted source
 changes; nothing left to do.
+
+---
+
+## Pass — 2026-06-18 · Re-merge against `origin/main` (PR no longer merged cleanly)
+
+The open PR had gone stale: `origin/main` advanced 16 commits past the merge base while this
+branch held its 3 (`d7fa004` feature, `ecb3b1b` lint fix, `2f532cb` re-stated feature). The branch
+no longer merged cleanly. This pass updates the branch against the base and resolves every conflict.
+No feature behavior was redesigned — the `!`-prefix classifier from the prior passes is intact.
+
+### Why it conflicted (semantic, not just textual)
+
+`origin/main` carried two commits that touch the same surface as this feature:
+
+- `f3a9666 Resolve the progress query for non-numeric tracker ids` — widened `PROGRESS_RE` from
+  digits-only `#(\d+)` to an opaque tracker ref `#([\w-]+)` (case-insensitive), made
+  `extractIssueNumber` read the **original** content (preserve case for ids like `PROJ-123`), and
+  made `findTaskByIssueNumber` compare `external_ref.id` case-insensitively. It also added bare-form
+  test coverage (`classifyQuery("progress #PROJ-123")`, a `payload("progress #proj-123")` handleQuery
+  case).
+- `b5a5426 Make the ticket-management contract tracker-agnostic with string ids` — renamed
+  `IssueOptions/IssueResult/IssueUpdates` → `Ticket*` and reworded the communication docs (a different
+  section of the same README we edited).
+
+These are **orthogonal** to the `!`-prefix change — one narrows *how a command is recognized*, the
+other widens *what id a `progress` command may carry* — so the correct resolution keeps both.
+
+### Conflicts and how each was resolved
+
+| File | Resolution |
+|---|---|
+| `src/core/daemon/query-handler.ts` | **Auto-merged, then verified line-by-line.** Kept this branch's `COMMAND_RE` + start-anchored `classifyQuery` AND main's tracker-agnostic `PROGRESS_RE` / `extractIssueNumber` / `findTaskByIssueNumber`. `classifyQuery`'s `PROGRESS_RE.test(trimmed.toLowerCase())` gate is correct with main's now-`i` regex (lowercasing is redundant but harmless; the id is extracted separately from original content). `!progress` without `#N` still → `unknown` (invariant preserved). |
+| `tests/unit/core/daemon/query-handler.test.ts` | **Manual.** Kept this branch's restructured prefix tests; folded main's non-numeric coverage in as `!`-prefixed assertions (`!progress #PROJ-123`, `!PROGRESS #ENG-512`). Adapted main's auto-merged handleQuery case `payload("progress #proj-123")` → `payload("!progress #proj-123")` (a bare form would now be `unknown` under the prefix rule and fail). |
+| `src/cli/bundled/plugin-docs.ts` | **Regenerated**, not hand-merged. Ran `pnpm run docs:bundle` from the merged `docs/plugins/**`; the bundle now reflects both the `!` prefix and main's `Ticket*` rename. Verified idempotent (`git diff --exit-code` clean after a fresh render). |
+
+`docs/plugins/communication/README.md` auto-merged cleanly — main's `Ticket*` section and this branch's
+`!`-prefix "Inbound queries" section are disjoint regions. `response-poller.ts` was untouched by main.
+
+### Gates re-run on the merged result (exactly as the harness/CI runs them)
+
+| Gate | Command | Result |
+|---|---|---|
+| typecheck | `pnpm run typecheck` | exit 0 |
+| lint | `pnpm run lint` | exit 0 (biome + tsc×2 + knip + madge; 3 pre-existing biome warnings in untouched files) |
+| test | `pnpm test` | **140 files, 2645 tests passed**, incl. the bundled-docs byte-for-byte guard |
+| docs drift | `pnpm run docs:bundle` → `git diff --exit-code src/cli/bundled/plugin-docs.ts` | clean (idempotent) |
+| clean merge | `git merge-tree origin/main HEAD` | 0 conflicts; branch 0 commits behind `origin/main` |
+
+### Final state
+
+- Merge commit `bdde7f7 Merge origin/main into the !-prefix command branch` completes the update; the
+  branch now contains all of `origin/main` plus the three feature commits.
+- `git status` clean — no uncommitted source changes (only the engineer-workspace `thoughts/` deliverables
+  remain, written as part of this pass).
+- The PR merges cleanly into its base again; delivery can re-push.
+
+ok — branch updated against base, every conflict resolved (feature behavior preserved, main's
+tracker-agnostic improvements kept), all gates green, merge committed.

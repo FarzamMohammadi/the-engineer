@@ -48,7 +48,7 @@ Run the bundled triage script. It is read-only (the daemon can be live) and dump
 .claude/skills/assess-run/scripts/triage.sh <task-id-or-prefix>      # add --home <dir> for a custom data dir
 ```
 
-It prints nine sections: **task** (state, scope, acceptance criteria, recorded decisions, blocked/review payloads, cost, counters) · **sessions** (one per dispatch, with `end_reason`) · **pipeline journey** (sub-phase calls in order) · **state transitions** · **decisions** (`route:*` / `skip:*` / gates) · **errors** · **events** (git / cost / comms / health) · **trace files** · **workspace** (commits + diff).
+It prints eleven sections: **task** (state, scope, acceptance criteria, recorded decisions, blocked/review payloads, cost, counters) · **sessions** (one per dispatch, with `end_reason`) · **pipeline journey** (sub-phase calls in order) · **state transitions** · **decisions** (`route:*` / `skip:*` / gates, each with its **chosen option and reasoning**) · **errors & termination** (the bug surface plus the co-located kill story — errors, abnormal transitions, `health.*` events) · **checkpoints** (phase carry-forward) · **data-integrity checks** (deterministic anomaly flags) · **events** (git / cost / comms) · **trace files** · **workspace** (the task's **own** commits vs merged-in, + diff).
 
 Read the spine and reconstruct what happened as a narrative before judging anything. The highest-signal reads:
 
@@ -66,11 +66,11 @@ Write the narrative down (you'll need it for the report). Note every anomaly as 
 Go layer by layer. For each, the spine usually tells you whether to dig; **open a raw trace (§Deep-dive) only when a hypothesis needs the agent's actual conversation to confirm.**
 
 ### A. Core mechanics — did the machinery work?
-The invariant brain: state machine, scheduler, cost tracker, session lifecycle, event/observation integrity, health, comms, retries. Look for: `crashed` sessions and `error` observations (what failed, was it handled?); state loops or illegal-looking transitions; counters that disagree with the journey; `completed_at`/`started_at` ordering that can't be real; cost ceilings firing correctly (and recovering); `comm.send_failed` and whether the owner actually got reached; `health.*` noise. These are usually **bugs in The Engineer** — the highest-value findings.
+The invariant brain: state machine, scheduler, cost tracker, session lifecycle, event/observation integrity, health, comms, retries. Look for: the termination chain in §6 (`crashed` sessions, `error` observations, abnormal transitions, the `health.*` event that preceded a kill — was the kill *legitimate*, or did the system punish itself, e.g. counting owner-blocked wait as active time?); state loops or illegal-looking transitions; counters that disagree with the journey; the impossible-ordering / stale-stamp flags §8 raises for you; cost ceilings firing correctly (and recovering); `comm.send_failed` and whether the owner actually got reached. These are usually **bugs in The Engineer** — the highest-value findings.
 
 ### B. Pipeline quality — did each phase do real engineering?
-Per phase that ran (requirements→`gather`, research→`investigate`, planning→`design`, execution→`implement`+`verify`, review→`self-review`/`architecture`/`code-quality`/`security`/`refine`, delivery→`pr-description`/`create-pr`/`push`/`await-review`/`auto-merge`):
-- **Requirements** — did `gather` extract true intent, constraints, and acceptance criteria, and *persist them to the structured fields*? Empty `acceptance_criteria`/`decisions` on a richly-specified task is a real gap.
+Take the sub-phases that **actually ran** from §3 — don't assume a fixed topology, it can be re-sliced — and judge each against the intent of its phase:
+- **Requirements** — did `gather` extract true intent, constraints, and acceptance criteria, and *persist them to the structured fields*? When those fields are empty (§1) on a richly-specified task, open the phase artifact (`requirements.md` / the gather checkpoint) before concluding — *never extracted* (a pipeline-quality gap, lands in the gather prompt) and *extracted but not persisted to the structured field* (an observability/Core gap, lands at the write site) are different findings in different categories. Don't conflate them.
 - **Research / Planning** — did it ground in the codebase before deciding, find existing mechanisms to reuse, and question its own plan? Or jump to implementation?
 - **Execution** — did the work match the plan and satisfy the criteria? Did `verify` gates pass honestly (a failing gate that the run moved past anyway is a finding)?
 - **Review** — were the lenses applied or skipped, and was each skip defensible? Did `refine` actually improve the work or just churn?
@@ -79,10 +79,10 @@ Per phase that ran (requirements→`gather`, research→`investigate`, planning�
 Grade against **Real Engineer Behavior** and **Post-Completion Rigor** (`docs/philosophy.md`). Pipeline-quality gaps usually become **phase-prompt principle** improvements — frame them as such.
 
 ### C. Commits — is the work complete and the history clean?
-From §9: are commits cohesive and logically grouped, each green, with titles that explain the *why*? Check against the project's commit discipline (`AGENTS.md` § "Commit Discipline" — one succinct high-level sentence, no needless prefixes/colons). Duplicated, mislabeled, or "fix the previous commit" commits are findings. Confirm the diff actually covers the acceptance criteria (tests + docs + logging, not just code — the Definition of Done treats those as one unit).
+From §11, judge the task's **own** commits (the `--no-merges` list) — if a merge commit is present, the diffstat folds in base files, so don't attribute those to the task. Are the commits cohesive and logically grouped, each green, with titles that explain the *why*? Check against the project's commit discipline (`AGENTS.md` § "Commit Discipline" — one succinct high-level sentence, no needless prefixes/colons, never a feature-shaped title on a commit that ships no feature code). Duplicated, mislabeled, or "fix the previous commit" commits are findings. Confirm the diff actually covers the acceptance criteria (tests + docs + logging, not just code — the Definition of Done treats those as one unit).
 
 ### D. Final output — is the PR worthy?
-Read the `pr-description` trace and the actual PR (via `gh pr view <n>` using `review.pr_number` from §1). Does the description give a reviewer the context, reasoning, and "why" behind the change — understandable on first read by someone with no context (Universal Audience)? Does the PR satisfy the acceptance criteria? Is it the kind of PR that survives review?
+Read the `pr-description` trace and the actual PR. Pull the PR state explicitly (the bare `gh pr view` emits only a deprecation warning and no body): `gh pr view <n> --json number,state,mergeable,mergeStateStatus,reviewDecision,isDraft,title,body` using `review.pr_number` from §1. Does the description give a reviewer the context, reasoning, and "why" behind the change — understandable on first read by someone with no context (Universal Audience)? Does the PR satisfy the acceptance criteria? Is it the kind of PR that survives review?
 
 ### E. Observability (meta) — could the trail tell the story?
 While doing A–D, notice where you had to *guess* because the trail was thin — a decision recorded as made but not inspectable, a phase with no rationale, an error with no recovery context, a counter that lied. Each blind spot is an **observability gap** finding, judged against the three tests in `docs/philosophy.md` § "Radical Observability." This is the layer The Engineer cares about most; be exacting.
@@ -161,7 +161,7 @@ DB=~/.engineer/data/engineer.db
 sqlite3 -readonly "$DB" "SELECT input, output, metadata FROM observations WHERE task_id LIKE '<prefix>%' AND name='<decision>';"
 # the agent_activity stream for one sub-phase (the parsed trace as queryable rows):
 sqlite3 -readonly "$DB" "SELECT type,name,status,substr(error_message,1,60) FROM observations WHERE session_id='<full-session-id>' AND type='agent_activity' ORDER BY start_time;"
-# checkpoints — what the phase carried forward (key findings, open questions, next action):
+# checkpoints — full carry-forward content (spine §7 shows lengths; drill here when a row is non-empty):
 sqlite3 -readonly "$DB" "SELECT phase, key_findings, open_questions, next_action FROM checkpoints WHERE task_id LIKE '<prefix>%' ORDER BY timestamp;"
 ```
 

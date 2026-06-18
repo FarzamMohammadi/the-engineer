@@ -1,0 +1,14 @@
+{
+  "status": "ok",
+  "summary": "Owner-authored spec is complete: explicit `!`-prefix command classification with stated prefix, forms, requirements, and acceptance criteria — all ACs trace to stated intent or verifiable facts; no open forks need the owner.",
+  "details": {
+    "complexity": "moderate",
+    "verification": {
+      "commands": [
+        { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] },
+        { "name": "lint", "command": "pnpm", "args": ["run", "lint"] },
+        { "name": "test", "command": "pnpm", "args": ["test"] }
+      ]
+    }
+  }
+}

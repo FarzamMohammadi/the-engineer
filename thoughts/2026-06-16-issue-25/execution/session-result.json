@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "summary": "Inbound chat commands now require a start-anchored '!' prefix + known keyword; owner-confirmed lefthook/knip lint fix is in place; all gates green and both task commits present.",
+  "details": {
+    "commits": [
+      "d7fa004 — Require an explicit ! prefix for inbound chat commands (classifier + tests + docs + bundle)",
+      "ecb3b1b — Re-add lefthook to knip's ignoreDependencies so lint is green outside CI (owner-confirmed)"
+    ],
+    "gates": {
+      "typecheck": "pnpm run typecheck → exit 0",
+      "lint": "pnpm run lint (no CI set) → exit 0 (only 3 pre-existing biome cognitive-complexity warnings in untouched files)",
+      "test": "pnpm test → 139 files, 2632 tests passed (incl. bundled-docs byte-for-byte guard)",
+      "docs_drift": "pnpm run docs:bundle then git diff --exit-code src/cli/bundled/plugin-docs.ts → clean"
+    },
+    "owner_decision_resolved": "Owner explicitly confirmed re-adding lefthook to knip's ignoreDependencies (reverting the effect of 66ff148 is intended). The decision is now settled and is not re-surfaced as an open choice.",
+    "working_tree": "clean except untracked thoughts/ (engineer-workspace deliverables, intentionally not committed to the feature branch)"
+  }
+}

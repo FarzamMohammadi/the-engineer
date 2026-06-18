@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Independently verified the !-prefix change (logic, completeness, real-path tests, Telegram end-to-end) and re-ran all gates green; no issues to fix, nothing to commit.",
-  "details": { "verdict": "ship" }
-}

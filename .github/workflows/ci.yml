@@ -11,6 +11,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Lint the workflows themselves (shellcheck over run: blocks is bundled in the image).
+      # Runs in the required lint job so a broken workflow edit can't merge silently.
+      - name: Lint GitHub Actions workflows
+        uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -color
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

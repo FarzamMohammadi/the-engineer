@@ -7,9 +7,15 @@ import {
   Phases,
   type RoutableResult,
 } from "../../../../../../src/core/orchestrator/pipeline/types.js";
+import { removeThoughtsAndPush } from "../../../../../../src/core/orchestrator/pr-manager.js";
 import type { MergeResult, PRStatus } from "../../../../../../src/schemas/adapters.js";
 import type { ReviewState } from "../../../../../../src/schemas/task.js";
 import { createRecordingObserver } from "../../../../../helpers/test-mock-pipeline.js";
+
+// The real thoughts cleanup shells out to git; mock it so tests control whether a strip commit was pushed.
+vi.mock("../../../../../../src/core/orchestrator/pr-manager.js", () => ({
+  removeThoughtsAndPush: vi.fn(() => false),
+}));
 
 const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summary: "", data: { disposition } });
 
@@ -29,6 +35,7 @@ interface MockOptions {
   readonly autoMergeAllowed?: boolean;
   readonly excludeThoughts?: boolean;
   readonly review?: ReviewState | null;
+  readonly reviewApproved?: boolean;
 }
 
 function mockCtx(options: MockOptions = {}) {
@@ -42,16 +49,21 @@ function mockCtx(options: MockOptions = {}) {
     ...options.status,
   };
   const getPRStatus = vi.fn().mockResolvedValue(status);
-  const mergePR = vi
-    .fn()
-    .mockResolvedValue(options.mergeResult ?? { merge_sha: "sha-merged", success: true, error: null });
+  const mergePR = vi.fn().mockResolvedValue(options.mergeResult ?? { success: true, merge_sha: "sha-merged" });
+  const getReviewStatus = vi.fn().mockResolvedValue({
+    approved: options.reviewApproved ?? false,
+    approvals: options.reviewApproved ? 1 : 0,
+    changes_requested: false,
+    reviewers: [],
+    comments: [],
+  });
   const deleteRemoteBranch = vi.fn();
   const updateTaskField = vi.fn();
   const notify = vi.fn();
   const published: string[] = [];
   const observer = createRecordingObserver();
 
-  const hosting = options.hosting === false ? null : { getPRStatus, mergePR };
+  const hosting = options.hosting === false ? null : { getPRStatus, mergePR, getReviewStatus };
   const ctx = {
     registry: { getPrimaryPlugin: (type: string) => (type === "git_hosting" ? hosting : null) },
     workspaceManager: {
@@ -82,6 +94,10 @@ describe("auto-merge next", () => {
 
   it("completes the task when auto-merge is disabled — the human merges the ready PR", () => {
     expect(autoMergeNext(okResult("auto_merge_disabled"))).toEqual({ go: "done" });
+  });
+
+  it("completes the task on a host-blocked merge — the host needs a human to merge", () => {
+    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
   });
 
   it("jumps to execution to fix a failing CI", () => {
@@ -202,17 +218,7 @@ describe("auto-merge run", () => {
 
   it("reworks when the merge call is rejected as a conflict", async () => {
     const { ctx, published } = mockCtx({
-      mergeResult: {
-        merge_sha: "",
-        success: false,
-        error: {
-          code: "merge_conflict",
-          message: "conflict",
-          retryable: false,
-          retry_after_ms: null,
-          severity: "error",
-        },
-      },
+      mergeResult: { success: false, reason: "conflict", message: "conflict" },
     });
 
     const result = await autoMerge.run(ctx);
@@ -223,16 +229,78 @@ describe("auto-merge run", () => {
 
   it("waits to retry when the merge call fails transiently", async () => {
     const { ctx, published } = mockCtx({
-      mergeResult: {
-        merge_sha: "",
-        success: false,
-        error: { code: "network_error", message: "timeout", retryable: true, retry_after_ms: null, severity: "error" },
-      },
+      mergeResult: { success: false, reason: "transient", message: "timeout" },
     });
 
     const result = await autoMerge.run(ctx);
 
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "retry_wait" } });
+    expect(published).toEqual([]);
+  });
+
+  it("hands the merge off to the owner when the host blocks the Engineer (not_mergeable) — terminal, notified, no record", async () => {
+    const { ctx, updateTaskField, notify, published, observer } = mockCtx({
+      mergeResult: { success: false, reason: "not_mergeable", message: "At least 1 approving review is required" },
+    });
+
+    const result = await autoMerge.run(ctx);
+
+    // Terminal hand-off: needs_human_merge routes to done — no rework, no retry-wait, so the task leaves the
+    // review-poll set and the PR #28 re-trigger loop cannot form.
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
+    // The owner is told once; nothing is recorded as merged.
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "ticket_comment" }));
+    expect(updateTaskField).not.toHaveBeenCalled();
+    expect(published).toEqual([]);
+    // The route is observable as a recorded decision.
+    const decision = observer.decisions.find((entry) => entry.name === "merge_outcome");
+    expect(decision?.chosen).toBe("needs_human_merge");
+  });
+
+  const hostBlocked = {
+    success: false,
+    reason: "not_mergeable",
+    message: "At least 1 approving review is required",
+  } as const;
+
+  it("tells the owner to re-approve when the thoughts-cleanup push dismissed their formal approval", async () => {
+    vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
+    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: true, mergeResult: hostBlocked });
+
+    await autoMerge.run(ctx);
+
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/dismissed your earlier approval/i) }),
+    );
+  });
+
+  it("keeps the plain hand-off when only a /approve comment was used (no formal approval to dismiss)", async () => {
+    vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
+    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: false, mergeResult: hostBlocked });
+
+    await autoMerge.run(ctx);
+
+    expect(notify).toHaveBeenLastCalledWith(
+      expect.objectContaining({ message: expect.stringMatching(/merge it when you're ready/i) }),
+    );
+  });
+
+  it("regression (PR #28): a host-blocked merge resolves terminally — the /approve loop cannot form", async () => {
+    const { ctx, notify, updateTaskField, published } = mockCtx({ mergeResult: hostBlocked });
+
+    const result = await autoMerge.run(ctx);
+
+    // The host block resolves to needs_human_merge, which routes to a terminal completion — NOT back to
+    // awaiting_pr_review, the re-block that re-queued the task and let the poller re-promote the same
+    // /approve into a doomed merge, forever.
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    const route = autoMergeNext(okResult("needs_human_merge"));
+    expect(route).toEqual({ go: "done" });
+    expect(route).not.toMatchObject({ category: BlockCategories.awaiting_pr_review });
+    // The owner is notified exactly once; nothing is recorded as merged.
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(updateTaskField).not.toHaveBeenCalled();
     expect(published).toEqual([]);
   });
 

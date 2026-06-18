@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  type Dirent,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 
@@ -77,7 +86,7 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
   }
 
   const directory = options.directory(ctx);
-  resetResultFile(directory);
+  const resetAt = resetResultFile(directory);
 
   // Build the prompt once (it reads the worktree) and reuse it for the run and the drill-down blob.
   const systemPrompt = options.systemPrompt?.(ctx) ?? null;
@@ -120,11 +129,11 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
       return endAgentSpan(span, spanScope, failed("agent_unavailable", describe(run.error)));
     }
 
-    const reason =
+    const base =
       parsed === "invalid"
         ? "session-result.json was not updated by the agent (still a template or malformed)"
         : "session-result.json was not created by the agent";
-    return endAgentSpan(span, spanScope, failed("no_result", reason));
+    return endAgentSpan(span, spanScope, failed("no_result", withStrayHint(base, ctx, directory, resetAt)));
   } catch (error) {
     // The abort re-thrown above, or any unexpected throw — close the span errored before it propagates.
     span.setError(error);
@@ -426,8 +435,12 @@ function readResult(directory: string): SessionResult | null | "invalid" {
   }
 }
 
-/** Back up a real prior result, then write a fresh template so a no-op agent run fails loud. */
-function resetResultFile(directory: string): void {
+/**
+ * Back up a real prior result, then write a fresh template so a no-op agent run fails loud.
+ * Returns the template's mtime — the floor `findStrayResult` uses to tell a result this run
+ * wrote elsewhere apart from one a prior step or run left behind.
+ */
+function resetResultFile(directory: string): number {
   mkdirSync(directory, { recursive: true });
   const file = path.join(directory, RESULT_FILE);
   const prior = readResult(directory);
@@ -440,6 +453,80 @@ function resetResultFile(directory: string): void {
   }
   const template = { status: "<ok | needs_human | failed>", summary: "<one-line summary>", details: {} };
   writeFileSync(file, `${JSON.stringify(template, null, 2)}\n`, "utf-8");
+  return statSync(file).mtimeMs;
+}
+
+// ── Stray-result Diagnosis ───────────────────────────────────────────────────
+
+/** Directories the stray-result walk never descends — heavy, agent-irrelevant, or VCS internals. */
+const STRAY_SCAN_SKIP = new Set([".git", "node_modules", "dist", "coverage", ".claude"]);
+/** Depth cap for the stray-result walk: real deliverables sit a few levels in; bound the rare-path cost. */
+const STRAY_SCAN_MAX_DEPTH = 6;
+
+/**
+ * Decorate a `no_result` reason when a valid result landed elsewhere in the worktree. The run reported
+ * success yet left no usable result at the canonical path — a common cause is the agent writing a real
+ * result to the WRONG directory (it shortened or relocated the path it was handed). Naming where the
+ * work actually landed turns a forensic dig into a glance. Detection only: a misplaced result is still
+ * a broken contract that must fail, so we never read or route it — we only point at it.
+ */
+function withStrayHint(base: string, ctx: Ctx, directory: string, resetAt: number): string {
+  if (!ctx.worktreePath) {
+    return base;
+  }
+  const stray = findStrayResult(ctx.worktreePath, path.join(directory, RESULT_FILE), resetAt);
+  if (!stray) {
+    return base;
+  }
+  return `${base}. A valid result was written to ${path.relative(ctx.worktreePath, stray)} — the agent wrote to the wrong directory.`;
+}
+
+/**
+ * Walk the worktree for a real session-result.json written during THIS run (mtime past the template
+ * reset) at any path but the canonical one. Bounded in depth and pruned of heavy dirs so the rare
+ * failure path stays cheap. Returns the first match, or null when none is found.
+ */
+function findStrayResult(dir: string, canonicalFile: string, resetAt: number, depth = 0): string | null {
+  let entries: Dirent[];
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (isTraversable(entry, depth)) {
+      const found = findStrayResult(full, canonicalFile, resetAt, depth + 1);
+      if (found) {
+        return found;
+      }
+    } else if (isStrayResult(entry, full, canonicalFile, resetAt)) {
+      return full;
+    }
+  }
+  return null;
+}
+
+/** A subdirectory worth descending: not a pruned heavy dir, and still within the depth cap. */
+function isTraversable(entry: Dirent, depth: number): boolean {
+  return entry.isDirectory() && depth < STRAY_SCAN_MAX_DEPTH && !STRAY_SCAN_SKIP.has(entry.name);
+}
+
+/** A non-canonical session-result.json written this run that parses as a real result. */
+function isStrayResult(entry: Dirent, full: string, canonicalFile: string, resetAt: number): boolean {
+  return entry.isFile() && entry.name === RESULT_FILE && full !== canonicalFile && isFreshValidResult(full, resetAt);
+}
+
+/** A session-result.json counts as a stray only if it was written after the reset and parses as a real result. */
+function isFreshValidResult(file: string, resetAt: number): boolean {
+  try {
+    if (statSync(file).mtimeMs <= resetAt) {
+      return false;
+    }
+    return SessionResultSchema.safeParse(JSON.parse(readFileSync(file, "utf-8"))).success;
+  } catch {
+    return false;
+  }
 }
 
 /** Structured trace path for this step, or null when tracing is disabled. */

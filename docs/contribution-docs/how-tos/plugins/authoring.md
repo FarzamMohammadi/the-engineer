@@ -46,11 +46,12 @@ For the Linear example: `src/plugins/trigger/linear-trigger/linear-trigger.ts` a
 
 ## Step 4 — Implement the `do*` methods
 
-Fill in the `do*` methods from your contract table. Every adapter follows the same template-method shape: you implement the protected `do*` variants; the public methods (`poll()`, `sendMessage()`, `run()`, etc.) are inherited and wrap yours with uniform error handling. Three rules hold for every adapter:
+Fill in the `do*` methods from your contract table. Every adapter follows the same template-method shape: you implement the protected `do*` variants; the public methods (`poll()`, `sendMessage()`, `run()`, etc.) are inherited and wrap yours with uniform error handling. These rules hold for every adapter:
 
 - **`doInitialize(config)` parses, never throws.** Run `YourConfigSchema.safeParse(config)`; on failure return `{ success: false, message }`, never throw. This is the parse-don't-validate boundary — after it, trust your typed config.
 - **Use the injected `PluginContext`.** Core injects `this.context.logger` (structured logging, your `plugin_id` stamped automatically) and `this.context.stateStore` (persist a cursor/watermark across restarts) before `initialize()` runs. See [Plugin Context](../../../plugins/plugin-context.md) for the full contract.
-- **Report failures as data where the contract says so.** Delivery and merge failures come back in a result field (`SendResult.error`, `MergeResult.error`), not as thrown exceptions — Core distinguishes a retryable outside-world failure from a plugin bug.
+- **Report failures as data where the contract says so.** Delivery and merge failures come back in the result, not as thrown exceptions — a `SendResult` carries an `error`, a failed `MergeResult` carries a typed `reason` — so Core distinguishes a retryable outside-world failure from a plugin bug.
+- **Stay opaque — translate at your edge.** The contract speaks in opaque strings (ids, channels) and platform-agnostic types; convert them to your platform's native shapes *inside* your `do*` methods, and never leak a platform-specific assumption upward. Core must work for any platform without knowing yours — a build guard fails the moment a platform name lands in Core. See [Plugin Opacity in practice](../../../philosophy.md#plugin-opacity--core-sees-only-adapters).
 
 > **Pointer →** In your contract page, work through the **Contract** table and **Key Types**, and mirror the built-in reference plugin named in its **Reference** table. Extract: the signature and intent of each `do*` method, the shape of every type you return, and any adapter-unique rule called out under **Developing a New Plugin** (for example, an agent plugin MUST pipe the prompt via stdin and sanitize the subprocess environment; a git-hosting plugin must never force-merge). Resume here once your `do*` methods compile.
 

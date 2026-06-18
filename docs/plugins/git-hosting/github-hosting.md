@@ -52,7 +52,7 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **PR updates.** Only sends API calls for fields that are non-null. Label additions and removals are handled separately. Label removal logs a `warn` and treats failure as non-fatal — the label may already be gone (concurrent removal, never set).
 
-**Merging.** Calls `pulls.merge` with the configured merge strategy (`squash`, `merge`, or `rebase`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns an error with `pr_not_mergeable` or `merge_conflict` -- it does not bypass protections.
+**Merging.** Calls `pulls.merge` with the configured merge strategy (`squash`, `merge`, or `rebase`). The plugin never force-merges. If branch protection requirements are not satisfied (required reviews, status checks), the merge returns a failure carrying the typed `reason` `not_mergeable` or `conflict` -- it does not bypass protections.
 
 **PR status.** Fetches the PR and the combined commit status for the head SHA. Maps GitHub's state to a simplified `open | closed | merged` enum. CI check status is determined by querying both the Status API (`repos.getCombinedStatusForRef`) and the Checks API (`checks.listForRef`) in parallel, then combining them worst-state-wins (so a single failing check anywhere fails the gate).
 
@@ -68,10 +68,10 @@ default_merge_strategy: squash           # squash | merge | rebase (default: squ
 
 **Health checks.** Same as other GitHub plugins -- calls the rate limit API, reports unhealthy below 100 remaining requests.
 
-**Error classification for merges:**
-- 405 --> `pr_not_mergeable` (branch protection not satisfied)
-- 409 --> `merge_conflict`
-- Other --> `network_error`
+**Error classification for merges** -- each GitHub failure maps onto the host-agnostic `MergeFailureReason` Core routes on:
+- 405 --> `not_mergeable` (branch protection not satisfied -- a human must complete the merge)
+- 409 --> `conflict`
+- Other --> `transient` (retried)
 
 ## Limitations
 

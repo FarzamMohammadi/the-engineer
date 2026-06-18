@@ -7,6 +7,7 @@ import {
   GitHostingAdapter,
   type HealthStatus,
   type InitResult,
+  type MergeFailureReason,
   type MergeResult,
   type MergeStrategy,
   type PRComment,
@@ -165,26 +166,12 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
         merge_method: strategy,
       });
       this.context.logger.info("PR merged", { repo, prNumber, sha: data.sha });
-      return {
-        merge_sha: data.sha,
-        success: true,
-        error: null,
-      };
+      return { success: true, merge_sha: data.sha };
     } catch (error) {
-      const code = classifyMergeError(error);
-      this.context.logger.warn("PR merge failed", {
-        repo,
-        prNumber,
-        errorCode: code,
-        message: error instanceof Error ? error.message : String(error),
-      });
-      return {
-        merge_sha: "",
-        success: false,
-        error: createAdapterError(code, error instanceof Error ? error.message : String(error), {
-          retryable: false,
-        }),
-      };
+      const reason = classifyMergeError(error);
+      const message = error instanceof Error ? error.message : String(error);
+      this.context.logger.warn("PR merge failed", { repo, prNumber, reason, message });
+      return { success: false, reason, message };
     }
   }
 
@@ -700,15 +687,20 @@ function mapReviewState(state: string): "approved" | "changes_requested" | "comm
   }
 }
 
-function classifyMergeError(error: unknown): string {
+/**
+ * Map a GitHub merge error onto the host-agnostic {@link MergeFailureReason} Core routes on. 405 is the
+ * host refusing a rule the token cannot satisfy (a required review, no merge permission) — a human must
+ * merge; 409 is a base/branch conflict; anything else is treated as transient and retried.
+ */
+function classifyMergeError(error: unknown): MergeFailureReason {
   if (error && typeof error === "object" && "status" in error) {
     const status = (error as { status: number }).status;
     if (status === 405) {
-      return "pr_not_mergeable";
+      return "not_mergeable";
     }
     if (status === 409) {
-      return "merge_conflict";
+      return "conflict";
     }
   }
-  return "network_error";
+  return "transient";
 }

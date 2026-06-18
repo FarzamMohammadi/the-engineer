@@ -239,6 +239,14 @@ The adapter contract IS the integration boundary. Everything Core needs from the
 
 **The test:** Before merging any code, ask: "If I deleted every plugin and replaced them with completely different implementations for different platforms, would Core still compile and function?" If the answer is no, the code violates this principle.
 
+**Opacity in practice — the traps that recur, and how they are caught.** A handful of concrete patterns cause most opacity slips. Internalize them:
+
+- **Identity is an opaque string — convert at the plugin's edge.** A trigger event id, an `ExternalRef.id`, a `TicketResult.id` is the external system's *own* id in its *own* format — never assumed numeric. GitHub numbers issues (`"42"`); Jira keys them (`"PROJ-123"`); Linear uses `"ENG-512"`. Core and the contracts carry the string verbatim; the plugin converts to its platform's native shape *inside* its own methods. Mind the asymmetry: a pull-request *number* is numeric on every git host, so `pr_number` is genuinely generic — but a *ticket* id is not.
+- **Tie an actor to a platform through the registry, never a literal.** When Core must match a platform identity — e.g. authorizing a `/approve` comment's author against the owner's contact — it resolves the platform from the registry by adapter type (the git-hosting plugin's `adapter_meta.channel`), never a hardcoded `"github"`. A new hosting plugin is honored the moment it declares its channel, and authority stays in the right namespace (a git-host username never matches a Slack or Telegram handle by coincidence).
+- **Derive setup, detection, and routing from manifests.** Which plugins to offer at setup, which secrets `doctor` checks, which plugin handles an outbound channel — all read from the discovered plugins' manifests and `adapter_meta`, never a hardcoded list.
+
+Two build-time guards enforce this so a regression cannot merge: [`tests/architecture/tier-import-rules.test.ts`](https://github.com/FarzamMohammadi/the-engineer/blob/main/tests/architecture/tier-import-rules.test.ts) catches a *structural* leak (Core importing a plugin), and [`tests/architecture/plugin-opacity.test.ts`](https://github.com/FarzamMohammadi/the-engineer/blob/main/tests/architecture/plugin-opacity.test.ts) catches a *semantic* one (a platform name as a string literal anywhere in `src/core/`). If you are typing a platform's name into Core, the second guard is about to fail — derive the value instead.
+
 See [`architecture/three-tier-model.md`](architecture/three-tier-model.md) § How the Tiers Interact and § Extensibility by Design for the full architectural specification.
 
 ### Design Every Output for Its Consumer

@@ -100,6 +100,7 @@ export default withMermaid(
             { text: "Operator Setup", link: "/contribution-docs/how-tos/setup/operator-setup" },
             { text: "Observability", link: "/contribution-docs/how-tos/observability" },
             { text: "Zod Schemas", link: "/contribution-docs/how-tos/zod-schemas" },
+            { text: "Cutting a Release", link: "/contribution-docs/how-tos/release" },
             { text: "Coding Standards", link: "/coding-standards" },
             { text: "Anti-Patterns", link: "/anti-patterns" },
           ],

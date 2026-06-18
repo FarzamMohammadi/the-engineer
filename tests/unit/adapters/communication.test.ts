@@ -7,8 +7,6 @@ import type {
   FormattedMessage,
   HealthStatus,
   InitResult,
-  IssueOptions,
-  IssueResult,
   MessageType,
   PluginManifest,
   ReconciliationResult,
@@ -16,6 +14,8 @@ import type {
   SyncMetadata,
   Target,
   TaskReconciliationInput,
+  TicketOptions,
+  TicketResult,
 } from "../../../src/schemas/adapters.js";
 import { MessageTypes } from "../../../src/schemas/adapters.js";
 import { TaskStates } from "../../../src/schemas/task.js";
@@ -93,12 +93,12 @@ class FullCommAdapter extends MinimalCommAdapter {
     return Promise.resolve();
   }
 
-  protected override doCreateTicket(repo: string, _options: IssueOptions): Promise<IssueResult> {
+  protected override doCreateTicket(repo: string, _options: TicketOptions): Promise<TicketResult> {
     this.issueCalls.push({ method: "createTicket", repo });
-    return Promise.resolve({ number: 42, url: "https://github.com/test/repo/issues/42" });
+    return Promise.resolve({ id: "42", url: "https://github.com/test/repo/issues/42" });
   }
 
-  protected override doUpdateTicket(repo: string, _issueNumber: number, _updates: unknown): Promise<void> {
+  protected override doUpdateTicket(repo: string, _ticketId: string, _updates: unknown): Promise<void> {
     this.issueCalls.push({ method: "updateTicket", repo });
     return Promise.resolve();
   }
@@ -243,14 +243,14 @@ describe("CommunicationAdapter", () => {
             body: "Body",
             labels: null,
             assignees: null,
-            parent_issue: null,
+            parent_id: null,
           }),
       },
       {
         name: "updateTicket",
         capability: "ticket_management",
         call: (a) =>
-          a.updateTicket("test/repo", 1, {
+          a.updateTicket("test/repo", "1", {
             state: null,
             labels_add: null,
             labels_remove: null,
@@ -327,15 +327,15 @@ describe("CommunicationAdapter", () => {
         body: "Body",
         labels: null,
         assignees: null,
-        parent_issue: null,
+        parent_id: null,
       });
-      await adapter.updateTicket("test/repo", 1, {
+      await adapter.updateTicket("test/repo", "1", {
         state: null,
         labels_add: null,
         labels_remove: null,
         body: null,
       });
-      expect(issueResult.number).toBe(42);
+      expect(issueResult.id).toBe("42");
       expect(adapter.issueCalls).toHaveLength(3);
     });
   });

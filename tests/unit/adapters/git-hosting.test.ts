@@ -38,7 +38,7 @@ class TestGitHostingAdapter extends GitHostingAdapter {
 
   protected doMergePR(_repo: string, _prNumber: number, _strategy: MergeStrategy): Promise<MergeResult> {
     this.maybeThrow("mergePR");
-    return Promise.resolve({ merge_sha: "abc123", success: true, error: null });
+    return Promise.resolve({ success: true, merge_sha: "abc123" });
   }
 
   protected doClosePR(_repo: string, _prNumber: number): Promise<void> {
@@ -198,7 +198,9 @@ describe("GitHostingAdapter", () => {
       adapter.manifest = createManifest();
       const result = await adapter.mergePR("test/repo", 42, MergeStrategies.squash);
       expect(result.success).toBe(true);
-      expect(result.merge_sha).toBe("abc123");
+      if (result.success) {
+        expect(result.merge_sha).toBe("abc123");
+      }
     });
 
     it("closePR", async () => {

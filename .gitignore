@@ -17,11 +17,17 @@ coverage/
 *.db-wal
 *.db-shm
 
+# Engineer workspace audit trail (kept locally, never merged to main)
+thoughts/
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# Editor / tooling backups
+*.bak
 
 # Environment / secrets (track .example files, ignore real ones)
 .env*

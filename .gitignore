@@ -36,6 +36,10 @@ thoughts/
 # Personal seed directories (seed-example/ itself stays tracked as a reference)
 seed-example-*
 
+# Claude Code local config — track only the shared skills, ignore everything else
+.claude/*
+!.claude/skills/
+
 package-lock.json
 
 # OS

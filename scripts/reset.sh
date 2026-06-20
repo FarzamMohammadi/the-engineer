@@ -7,8 +7,8 @@
 # Usage:
 #   ./scripts/reset.sh                            Wipe everything, then interactive setup.
 #   ./scripts/reset.sh <seed-dir>                 Wipe everything, then setup seeded from <seed-dir>.
-#   ./scripts/reset.sh --persist-data             Keep the database, workspaces, and .env;
-#                                                 clear config only, then interactive setup.
+#   ./scripts/reset.sh --persist-data             Keep the database, workspaces, traces, and
+#                                                 .env; clear config only, then interactive setup.
 #   ./scripts/reset.sh --persist-data <seed-dir>  As above, seeded from <seed-dir>.
 #
 # The seed directory is optional, and the two arguments are independent. With no
@@ -103,8 +103,12 @@ else
 fi
 
 if [ "$PERSIST_DATA" = true ]; then
-  section "Clearing config (database, workspaces, and .env preserved)"
-  for subdir in logs run state traces docs example-templates config; do
+  section "Clearing config (database, workspaces, traces, and .env preserved)"
+  # `traces/` holds the content-addressable blob store the preserved database
+  # points to (prompts, responses, transcripts, diffs). Wiping it would leave
+  # dangling refs that render as "Blob no longer available (404)" in the
+  # dashboard, so it stays with the persisted set, not the cleared one.
+  for subdir in logs run state docs example-templates config; do
     rm -rf "${ENGINEER_HOME:?}/$subdir"
   done
   success "Ephemeral state and config cleared"

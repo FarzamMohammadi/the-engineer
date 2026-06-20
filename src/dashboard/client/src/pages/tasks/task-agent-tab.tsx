@@ -90,8 +90,11 @@ export function TaskAgentTab({ taskId, taskActive }: TaskAgentTabProps): React.J
 
 /** Fetch the feed's sources and assemble the ordered step feed — every sub-phase run with what it owns. */
 function useStepFeed(taskId: string, taskActive: boolean): { steps: EnrichedStep<Observation>[]; isLoading: boolean } {
-  const { data: agentTraces } = useTaskAgentTraces(taskId, taskActive);
-  const { data: phaseTransitions, isLoading } = useObservations({
+  // A run's LLM/non-LLM classification depends on the agent traces, so the feed waits for BOTH the run
+  // skeleton (phase_transition) AND the traces before first paint — otherwise an LLM step would flash as a
+  // generic non-LLM step row for one tick until the traces arrive, briefly breaking the distinct treatment.
+  const { data: agentTraces, isLoading: tracesLoading } = useTaskAgentTraces(taskId, taskActive);
+  const { data: phaseTransitions, isLoading: transitionsLoading } = useObservations({
     type: "phase_transition",
     task_id: taskId,
     limit: 1000,
@@ -120,7 +123,7 @@ function useStepFeed(taskId: string, taskActive: boolean): { steps: EnrichedStep
     () => buildStepFeed(phaseTransitions ?? [], agentTraces ?? [], verdicts ?? [], toolExecs ?? [], decisions ?? []),
     [phaseTransitions, agentTraces, verdicts, toolExecs, decisions],
   );
-  return { steps, isLoading };
+  return { steps, isLoading: transitionsLoading || tracesLoading };
 }
 
 /** A stable React key for a feed row: the LLM call's span id, or the run's identity for a non-LLM step. */

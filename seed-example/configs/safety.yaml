@@ -13,6 +13,13 @@ scope:
       - "*.pem"
       - "*.key"
 
+autonomy:
+  decisions:
+    scope_expansion:
+      level: always_decide      # blast radius / file count — don't ask
+    refactoring_broad:
+      level: always_ask         # refactoring beyond the task's files — always confirm
+
 merge:
   auto_merge_after_approval:
     default: true

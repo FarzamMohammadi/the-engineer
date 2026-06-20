@@ -120,9 +120,9 @@ describe("classifyInbound", () => {
     expect(classifyInbound(true, "status", 1)).toEqual({ route: "linked_reply" });
   });
 
-  it("routes a query-vocabulary message as a query, winning over the sole-blocked reply", () => {
-    // Exactly one task blocked, but the content is "status" — query wins (the owner can ask mid-block).
-    expect(classifyInbound(false, "what's the status", 1)).toEqual({
+  it("routes a prefixed command as a query, winning over the sole-blocked reply", () => {
+    // Exactly one task blocked, but the content is "!status" — query wins (the owner can ask mid-block).
+    expect(classifyInbound(false, "!status", 1)).toEqual({
       route: "query",
       reason: "query_vocabulary",
       blockedCount: 1,
@@ -131,6 +131,15 @@ describe("classifyInbound", () => {
 
   it("routes a free-text message as the sole-blocked reply when exactly one task is blocked", () => {
     expect(classifyInbound(false, "use the second approach", 1)).toEqual({ route: "sole_blocked_reply" });
+  });
+
+  it("routes free text containing a command word as the sole-blocked reply (the incident)", () => {
+    // A reply that merely mentions "help" must reach the blocked task, never the command handler.
+    expect(classifyInbound(false, "the desc should help capture why", 1)).toEqual({ route: "sole_blocked_reply" });
+  });
+
+  it("routes a prefix-without-known-keyword message as free text, not a command", () => {
+    expect(classifyInbound(false, "!foo", 1)).toEqual({ route: "sole_blocked_reply" });
   });
 
   it("routes any message as a query when no task is blocked", () => {
@@ -389,8 +398,8 @@ describe("ResponsePoller", () => {
     await poller.poll(100_000);
   }
 
-  it("routes 'status' to the query handler even when exactly one task is blocked (query wins)", async () => {
-    await runWithMessage("status", [makeBlockedTask("task-1", "owner/repo", "42")]);
+  it("routes '!status' to the query handler even when exactly one task is blocked (query wins)", async () => {
+    await runWithMessage("!status", [makeBlockedTask("task-1", "owner/repo", "42")]);
 
     expect(resolver.tryUnblock).not.toHaveBeenCalled();
     expect(ctx.notifications.notify).toHaveBeenCalledWith(
@@ -407,15 +416,26 @@ describe("ResponsePoller", () => {
     expect(ctx.notifications.notify).not.toHaveBeenCalled();
   });
 
-  it("routes 'status' to the query handler when no task is blocked", async () => {
-    await runWithMessage("status", []);
+  it("routes free text containing a command word to the blocked task, not the command handler (the incident)", async () => {
+    // The reported incident: a long answer with "help" buried in it must unblock the sole blocked task.
+    const content = "pull request desc should provide context that help capture why the changes are proposed";
+    await runWithMessage(content, [makeBlockedTask("task-1", "owner/repo", "42")]);
+
+    expect(resolver.tryUnblock).toHaveBeenCalledWith(
+      expect.objectContaining({ by: "task_id", taskId: "task-1", content }),
+    );
+    expect(ctx.notifications.notify).not.toHaveBeenCalled();
+  });
+
+  it("routes '!status' to the query handler when no task is blocked", async () => {
+    await runWithMessage("!status", []);
 
     expect(resolver.tryUnblock).not.toHaveBeenCalled();
     expect(ctx.notifications.notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "status_response" }));
   });
 
-  it("routes 'status' to the query handler when 2+ tasks are blocked", async () => {
-    await runWithMessage("status", [
+  it("routes '!status' to the query handler when 2+ tasks are blocked", async () => {
+    await runWithMessage("!status", [
       makeBlockedTask("task-1", "owner/repo", "42"),
       makeBlockedTask("task-2", "owner/repo", "99"),
     ]);
@@ -425,7 +445,7 @@ describe("ResponsePoller", () => {
   });
 
   it("publishes a task_id=null audit event for a query (not attributed to any task)", async () => {
-    await runWithMessage("status", [makeBlockedTask("task-1", "owner/repo", "42")]);
+    await runWithMessage("!status", [makeBlockedTask("task-1", "owner/repo", "42")]);
 
     const commEvents = (ctx.eventBus.publish as ReturnType<typeof vi.fn>).mock.calls.filter(
       (call: unknown[]) => (call[0] as { type: string }).type === "comm.message_received",

@@ -11,8 +11,11 @@ import type { NotificationRouter } from "./notification-router.js";
 // ── Query Vocabulary ───────────────────────────────────────────────────────
 
 /**
- * The supported inbound query forms. Slash-free by design: Telegram drops `/`-prefixed messages, so the
- * vocabulary is plain words the owner types directly (`status`, `cost`, `progress #N`, `help`).
+ * The supported inbound query forms (`!status`, `!cost`, `!progress #N`, `!help`). A command is recognized
+ * only when the trimmed message STARTS with the `!` prefix immediately followed by a known keyword token, so
+ * a command word buried in an ordinary reply (e.g. "...changes that help capture...") is never misread as a
+ * command. The non-slash `!` prefix is deliberate: it stays clear of Telegram's native `/`-bot-commands (the
+ * Telegram plugin drops `/`-prefixed messages) and keeps classification in Core, channel-agnostic.
  */
 export type QueryKind = "status" | "cost" | "progress" | "help" | "unknown";
 
@@ -20,28 +23,38 @@ export type QueryKind = "status" | "cost" | "progress" | "help" | "unknown";
 // (GitHub `#42`, Jira `#PROJ-123`, Linear `#ENG-512`). Match any id token, case-insensitively.
 const PROGRESS_RE = /progress.*#([\w-]+)|#([\w-]+).*progress/i;
 
-/** Classify an inbound message into a supported query form, or `"unknown"` when no form matches. */
+/**
+ * A command is the prefix, then a known keyword as a whole token, at the very start of the trimmed message.
+ * Start-anchored with a `\b` token boundary so `!help me` matches `help` (not a mid-text `status`) and
+ * `!helpme` matches nothing. Case-insensitive only — NO `g`/`y` flag, which would make `.exec`/`.test`
+ * stateful across calls and cause intermittent misclassification.
+ */
+const COMMAND_RE = /^!(status|cost|help|progress)\b/i;
+
+/** Classify an inbound message into a supported command form, or `"unknown"` when it is not a command. */
 export function classifyQuery(content: string): QueryKind {
-  const lower = content.toLowerCase();
-  if (PROGRESS_RE.test(lower)) {
-    return "progress";
+  const trimmed = content.trim();
+  const match = COMMAND_RE.exec(trimmed);
+  if (!match) {
+    return "unknown";
   }
-  if (lower.includes("cost")) {
-    return "cost";
+  const keyword = match[1]?.toLowerCase();
+  if (keyword === "progress") {
+    // `!progress` is the progress command only when it carries an issue number (`#N`); this preserves the
+    // "progress kind ⇔ extractable number" invariant, so `extractIssueNumber` always returns a real number.
+    return PROGRESS_RE.test(trimmed.toLowerCase()) ? "progress" : "unknown";
   }
-  if (lower.includes("status")) {
-    return "status";
-  }
-  if (lower.includes("help")) {
-    return "help";
+  if (keyword === "status" || keyword === "cost" || keyword === "help") {
+    return keyword;
   }
   return "unknown";
 }
 
 /**
- * Whether an inbound message matches the query vocabulary. The poller uses this to discriminate a query
- * from an unblock reply BEFORE the sole-blocked fallback: a query-vocabulary match wins, so the owner can
- * ask `status` even while exactly one task is blocked.
+ * Whether an inbound message is a command. The poller uses this to discriminate a query from an unblock
+ * reply BEFORE the sole-blocked fallback: a command match wins, so the owner can send `!status` even while
+ * exactly one task is blocked. The explicit `!` prefix is exactly what distinguishes a command from the
+ * free-text answer to the blocked task's question.
  */
 export function isQueryVocabulary(content: string): boolean {
   return classifyQuery(content) !== "unknown";
@@ -240,10 +253,10 @@ function formatCostResponse(safetyLayer: ISafetyLayer): string {
 function formatHelpResponse(): string {
   return [
     "I understand:",
-    "- status — active and blocked tasks",
-    "- progress #N — detail for issue N",
-    "- cost — spending vs limits",
-    "- help — this message",
+    "- !status — active and blocked tasks",
+    "- !progress #N — detail for issue N",
+    "- !cost — spending vs limits",
+    "- !help — this message",
   ].join("\n");
 }
 
@@ -253,7 +266,7 @@ function formatHelpResponse(): string {
  */
 function formatUnrecognizedResponse(options: HandleQueryOptions): string {
   if (options.reason === "unmatched_multi_blocked" && (options.blockedCount ?? 0) >= 2) {
-    return `I couldn't match this to a blocked task — ${String(options.blockedCount)} are blocked. Reply on the task's ticket, or send "status" to see them.`;
+    return `I couldn't match this to a blocked task — ${String(options.blockedCount)} are blocked. Reply on the task's ticket, or send "!status" to see them.`;
   }
   return `I didn't understand that. ${formatHelpResponse()}`;
 }

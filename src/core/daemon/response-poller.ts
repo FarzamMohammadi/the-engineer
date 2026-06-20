@@ -71,8 +71,8 @@ export type InboundRoute =
  *
  * Order of decision (the precedence is deliberate — see `docs/plugins/communication/README.md`):
  * 1. Linked via metadata (task_id / external_ref) → it explicitly names a task → reply.
- * 2. Query vocabulary (status / cost / progress #N / help) → query. This WINS over the sole-blocked reply,
- *    so the owner can ask "status" even while exactly one task is blocked.
+ * 2. Command vocabulary (!status / !cost / !progress #N / !help) → query. This WINS over the sole-blocked
+ *    reply, so the owner can send "!status" even while exactly one task is blocked.
  * 3. Exactly one task blocked → reply (the sole-blocked fallback: a free-text answer to the one question).
  * 4. Zero or 2+ tasks blocked → query. With none blocked there is nothing to reply to; with several, a
  *    token-less message cannot be matched to one, so it is routed to the handler with a diagnostic reason.
@@ -107,7 +107,7 @@ function reasonForRoute(decision: InboundRoute, blockedCount: number): string {
 function reasonForQueryRoute(reason: QueryRoutingReason, blockedCount: number): string {
   switch (reason) {
     case "query_vocabulary":
-      return "Matches the query vocabulary (status/cost/progress/help) — routed to the query handler, which wins over the sole-blocked reply";
+      return "Matches the command vocabulary (!status/!cost/!progress/!help) — routed to the query handler, which wins over the sole-blocked reply";
     case "no_blocked_task":
       return "No metadata and no task blocked — nothing to reply to, routed to the query handler";
     default:

@@ -3,14 +3,19 @@ import path from "node:path";
 import { WorkspaceNotReadyError } from "../errors.js";
 import { gatherRepoContextSafe } from "../prompts/context.js";
 import { buildRepoOverview, buildTaskBrief, section } from "../prompts/format.js";
+import { SELF_MODEL_PERSONA } from "../prompts/self-model.generated.js";
 import type { Ctx } from "./types.js";
 
 // ── Shared System Prompt ─────────────────────────────────────────────────────
 // Identity and operating standards that hold for every agent sub-phase. The
 // per-sub-phase role line is appended; the user prompt carries the concrete work.
-
-const IDENTITY =
-  "You are The Engineer — an autonomous software engineering agent. Not a code generator, not a chatbot with tools. A real engineer with judgment, taste, and the discipline to understand before acting. Every line you write earns its place; you delete more than you add.";
+//
+// SELF_MODEL_PERSONA is the agent's identity (who it is + how it works), bundled
+// from src/core/orchestrator/prompts/self-model/*.md. It is static and the same
+// for every phase, so it ships uniformly and is cacheable — no per-phase trimming.
+// The behavioral standards below (OPERATING_STANDARDS, HANDOFF_PRINCIPLE,
+// SURFACE_DECISIONS, SECURITY_BOUNDARY) are complementary to the persona, not a
+// duplicate of it; they stay as their own sections.
 
 // LOAD-BEARING distinction in GROUNDING BEFORE WORK below: "code is source of
 // truth" governs what the system DOES, never what the owner WANTS. Keep the two
@@ -67,10 +72,16 @@ The known categories:
 
 Use the category that fits; an unfamiliar one is treated as needing the owner's confirmation. \`details.decisions\` is how you ASK: every entry is checked against the owner's autonomy policy and can pause the task to confirm it with them before you continue. It is not a log or a record-for-visibility — if you would not stop and ask the owner about a choice, it does not belong here. So surface only a genuine, still-open choice: a point where two or more defensible options existed and you are making the call right now. A choice that is already settled is NOT one of these — a fact you looked up, or something the owner already decided for you in the task, in the requirements, or in an answer carried into this run. Record those in your deliverable prose and proceed; placing a settled choice here re-asks something already answered. When you do have several genuine open choices, surface them all in this one result so the owner confirms them together, rather than dripping them out one run at a time.`;
 
-/** Build the system prompt for an agent sub-phase: shared identity and standards plus this step's role line. */
-export function buildSystemPrompt(roleLine: string): string {
+/**
+ * Build the system prompt for an agent sub-phase: shared identity and standards, this run's live brief,
+ * then this step's role line. Cache order runs most-stable to least: the persona and static standards are
+ * identical across every phase and task; `brief` is the owner's live setup (the same within a run, varying
+ * by config and repo); `roleLine` is per-phase. Keeping the stable text first preserves prompt-prefix
+ * caching across phases — only the brief and role line differ run to run.
+ */
+export function buildSystemPrompt(roleLine: string, brief: string): string {
   return [
-    IDENTITY,
+    SELF_MODEL_PERSONA,
     "",
     OPERATING_STANDARDS,
     "",
@@ -79,6 +90,8 @@ export function buildSystemPrompt(roleLine: string): string {
     SURFACE_DECISIONS,
     "",
     SECURITY_BOUNDARY,
+    "",
+    brief,
     "",
     roleLine,
   ].join("\n");

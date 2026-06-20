@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { OrchestratorConfig, WorkspaceConfig } from "../../schemas/config.js";
+import type { OrchestratorConfig, SafetyConfig, WorkspaceConfig } from "../../schemas/config.js";
 import type { IActionPipeline } from "../interfaces/action-pipeline.interface.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
 import type { INotificationRouter } from "../interfaces/notification-router.interface.js";
@@ -18,6 +18,9 @@ import type { SkillsManager } from "../skills/index.js";
 export interface OrchestratorContext {
   config: OrchestratorConfig;
   workspaceConfig: WorkspaceConfig;
+  /** The owner's live safety policy (autonomy, scope, cost limits, merge, response timeouts). Rendered into
+   *  the agent's "how I am actually set up" brief so every phase carries the real settings, not placeholders. */
+  safetyConfig: SafetyConfig;
   eventBus: IEventBus;
   registry: IPluginLookup;
   taskEngine: ITaskEngine;

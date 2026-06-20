@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { ReviewLens } from "../../../../schemas/config.js";
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import {
   buildCarrySection,
@@ -51,7 +52,7 @@ export function lens(spec: LensSpec): SubPhase {
       stepName: spec.name,
       directory: dir,
       prompt: (ctx) => buildLensPrompt(ctx, spec),
-      systemPrompt: () => buildSystemPrompt(spec.role),
+      systemPrompt: (ctx) => buildSystemPrompt(spec.role, composeBrief(ctx)),
     }),
     next: lensNext,
     resultDir: dir,

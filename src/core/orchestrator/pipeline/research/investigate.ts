@@ -1,3 +1,4 @@
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import { buildResultContract, buildSystemPrompt, buildTaskContext, resultDirectory } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
@@ -23,7 +24,7 @@ export const investigate: SubPhase = {
     stepName: "investigate",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
   }),
   next: investigateNext,
   resultDir: dir,

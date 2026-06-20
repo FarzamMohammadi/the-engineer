@@ -1,3 +1,4 @@
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import { buildSkillsSection } from "../../prompts/skills.js";
 import {
@@ -29,7 +30,7 @@ export const implement: SubPhase = {
     stepName: "implement",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
   }),
   next: implementNext,
   resultDir: dir,

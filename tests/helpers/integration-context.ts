@@ -160,6 +160,7 @@ export function createIntegrationContext(options?: IntegrationContextOptions): I
   const orchestrator = new Orchestrator({
     config: OrchestratorConfigSchema.parse({}),
     workspaceConfig,
+    safetyConfig,
     eventBus,
     registry,
     taskEngine,

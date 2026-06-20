@@ -1,3 +1,4 @@
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import {
   buildCarrySection,
@@ -29,7 +30,7 @@ export const design: SubPhase = {
     stepName: "design",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
   }),
   next: designNext,
   resultDir: dir,

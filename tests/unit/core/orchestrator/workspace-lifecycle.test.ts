@@ -3,7 +3,7 @@ import type { NotificationRouter } from "../../../../src/core/daemon/notificatio
 import { Phases } from "../../../../src/core/orchestrator/pipeline/types.js";
 import type { OrchestratorContext } from "../../../../src/core/orchestrator/types.js";
 import { createWorkspaceLifecycle } from "../../../../src/core/orchestrator/workspace-lifecycle.js";
-import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
+import { OrchestratorConfigSchema, SafetyConfigSchema, WorkspaceConfigSchema } from "../../../../src/schemas/config.js";
 import type { Dispatch } from "../../../../src/schemas/ephemeral.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
 import { SubStates, TaskStates } from "../../../../src/schemas/task.js";
@@ -16,6 +16,7 @@ function createMockContext(): OrchestratorContext {
   return {
     config: OrchestratorConfigSchema.parse({}),
     workspaceConfig: WorkspaceConfigSchema.parse({}),
+    safetyConfig: SafetyConfigSchema.parse({}),
     eventBus: {
       publish: vi.fn(),
       subscribe: vi.fn(),

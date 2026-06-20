@@ -14,7 +14,7 @@ import type { AgentAdapter } from "../../src/adapters/agent.js";
 import type { Ctx } from "../../src/core/orchestrator/pipeline/types.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
 import type { AgentRunRequest, AgentRunResult } from "../../src/schemas/adapters.js";
-import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
+import { OrchestratorConfigSchema, SafetyConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import { createMockTask } from "./mock-factories.js";
 import { type RecordingObserver, createRecordingObserver, fakeAgent } from "./test-mock-pipeline.js";
 import { createTestSessionMemory } from "./test-session-memory.js";
@@ -119,6 +119,7 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
     workspaceConfig: WorkspaceConfigSchema.parse(
       options.pushOnly ? { pr: { skip_pr_creation: { default: true } } } : {},
     ),
+    safetyConfig: SafetyConfigSchema.parse({}),
     tracesDir: null,
     // Live-context collaborators the runner and agentStep touch: gate the agent run, record cost, mirror position.
     eventBus: { publish: () => undefined },

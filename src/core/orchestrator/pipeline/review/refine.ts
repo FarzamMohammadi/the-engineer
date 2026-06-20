@@ -1,6 +1,7 @@
 import path from "node:path";
 import { z } from "zod";
 
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import { buildSkillsSection } from "../../prompts/skills.js";
 import {
@@ -48,7 +49,7 @@ export const refine: SubPhase = {
     stepName: "refine",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
     detailsSchema: RefineDetailsSchema,
   }),
   next: refineNext,

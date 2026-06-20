@@ -1,4 +1,5 @@
 import type { Person } from "../../../../schemas/adapters.js";
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import {
   buildCarrySection,
@@ -33,7 +34,7 @@ export const gather: SubPhase = {
     stepName: "gather",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
     detailsSchema: GroundingSchema,
   }),
   next: gatherNext,

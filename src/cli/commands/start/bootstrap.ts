@@ -191,6 +191,7 @@ export async function bootstrap(options: BootstrapOptions): Promise<BootstrapRes
     const orchestrator = new Orchestrator({
       config: config.orchestrator,
       workspaceConfig: config.workspace,
+      safetyConfig: config.safety,
       eventBus,
       registry,
       taskEngine,

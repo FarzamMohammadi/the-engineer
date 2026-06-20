@@ -1,3 +1,4 @@
+import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
 import { buildResultContract, buildSystemPrompt, buildTaskContext, resultDirectory } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
@@ -24,7 +25,7 @@ export const prDescription: SubPhase = {
     stepName: "pr-description",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: () => buildSystemPrompt(ROLE),
+    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
   }),
   next: prDescriptionNext,
   resultDir: dir,

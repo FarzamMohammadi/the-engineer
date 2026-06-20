@@ -19,7 +19,12 @@ import type {
   SubPhaseResult,
 } from "../../src/core/orchestrator/pipeline/types.js";
 import type { AgentCapabilities, AgentRunRequest, AgentRunResult, Person } from "../../src/schemas/adapters.js";
-import { OrchestratorConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
+import {
+  OrchestratorConfigSchema,
+  type SafetyConfig,
+  SafetyConfigSchema,
+  WorkspaceConfigSchema,
+} from "../../src/schemas/config.js";
 import type { Task } from "../../src/schemas/task.js";
 import { createMockTask } from "./mock-factories.js";
 
@@ -221,6 +226,8 @@ export interface MockCtxOptions {
   readonly signal?: AbortSignal;
   readonly agent?: AgentAdapter | null;
   readonly people?: readonly Person[];
+  /** Override the owner's safety policy rendered into the agent brief. Defaults to schema defaults. */
+  readonly safetyConfig?: Partial<SafetyConfig>;
   /** Override the safety layer's autonomy verdict. Defaults to "proceed" (no escalation). */
   readonly consultJudgment?: MockConsultJudgment;
 }
@@ -259,6 +266,7 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     registry,
     config: OrchestratorConfigSchema.parse({}),
     workspaceConfig: WorkspaceConfigSchema.parse({}),
+    safetyConfig: SafetyConfigSchema.parse(options.safetyConfig ?? {}),
     tracesDir: options.tracesDir ?? null,
     // Stubs the runner and agentStep touch: gate the agent run, record its cost, mirror task position.
     eventBus: { publish: () => undefined },

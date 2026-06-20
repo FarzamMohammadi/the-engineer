@@ -37,6 +37,7 @@ export function emitAgentCost(eventBus: IEventBus, taskEngine: ITaskEngine, inpu
       output_tokens: usage?.tokens.output_tokens ?? null,
       total_tokens: usage?.tokens.total_tokens ?? null,
       cache_read_tokens: usage?.tokens.cache_read_tokens ?? null,
+      cache_creation_tokens: usage?.tokens.cache_creation_tokens ?? null,
       model_id: usage?.model_id ?? null,
     },
   } satisfies PublishInput<"cost.incurred">);

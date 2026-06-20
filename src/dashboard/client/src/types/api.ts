@@ -171,6 +171,7 @@ export interface CostMetrics {
     input: number;
     output: number;
     cache_read: number;
+    cache_creation: number;
     total: number;
   };
 }

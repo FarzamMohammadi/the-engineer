@@ -288,8 +288,8 @@ describe("agentStep", () => {
           tokens: {
             input_tokens: 1500,
             output_tokens: 300,
-            cache_read_tokens: 0,
-            cache_creation_tokens: 0,
+            cache_read_tokens: 800,
+            cache_creation_tokens: 250,
             total_tokens: 1800,
           },
           model_id: "claude",
@@ -305,7 +305,13 @@ describe("agentStep", () => {
       await step()(ctx);
 
       const span = observer.spans.find((s) => s.type === "agent_call");
-      expect(span?.output).toMatchObject({ cost_usd: 0.42, tokens_in: 1500, tokens_out: 300 });
+      expect(span?.output).toMatchObject({
+        cost_usd: 0.42,
+        tokens_in: 1500,
+        tokens_out: 300,
+        cache_read_tokens: 800,
+        cache_creation_tokens: 250,
+      });
     });
 
     it("ends the agent_call span with null spend when the run reports no usage", async () => {

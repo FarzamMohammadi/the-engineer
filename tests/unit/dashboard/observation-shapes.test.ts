@@ -178,6 +178,7 @@ describe("readAgentCall", () => {
         tokens_in: 1200,
         tokens_out: 340,
         cache_read_tokens: 800,
+        cache_creation_tokens: 150,
         result_blob: "results/def",
         transcript_blob: "transcripts/ghi",
       },
@@ -191,10 +192,16 @@ describe("readAgentCall", () => {
       tokensIn: 1200,
       tokensOut: 340,
       cacheReadTokens: 800,
+      cacheCreationTokens: 150,
       promptBlob: "prompts/abc",
       resultBlob: "results/def",
       transcriptBlob: "transcripts/ghi",
     });
+  });
+
+  it("defaults cache-write tokens to 0 when an older span omits cache_creation_tokens", () => {
+    const obs = makeAgentCall("agent_call", { step: "gather" }, { outcome: "ok", cache_read_tokens: 500 });
+    expect(readAgentCall(obs)?.cacheCreationTokens).toBe(0);
   });
 
   it("returns null for a non-agent observation", () => {

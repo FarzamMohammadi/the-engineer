@@ -185,8 +185,9 @@ export function buildSubPhaseRuns(transitions: readonly PhaseTransitionLike[], p
 
 // ── agent_call ───────────────────────────────────────────────────────────────
 // Stored in `input`: { step, prompt_blob }. Stored in `output`: { outcome, summary, cost_usd, tokens_in,
-// tokens_out, cache_read_tokens, result_blob, transcript_blob }. `metadata` is ALWAYS null — cost/tokens and
-// the blob refs live in `output` (with `input` as the observe()-path fallback the metrics aggregator uses).
+// tokens_out, cache_read_tokens, cache_creation_tokens, result_blob, transcript_blob }. `metadata` is ALWAYS
+// null — cost/tokens and the blob refs live in `output` (with `input` as the observe()-path fallback the
+// metrics aggregator uses).
 
 /** The structural slice an agent_call reader needs: the step name lives in `input`, the spend in `output`. */
 export interface AgentCallLike {
@@ -208,6 +209,8 @@ export interface AgentCallShape {
   readonly tokensIn: number;
   readonly tokensOut: number;
   readonly cacheReadTokens: number;
+  /** Cache-write (creation) tokens — the most expensive token category; 0 when the CLI didn't report it. */
+  readonly cacheCreationTokens: number;
   /** Blob ref (`prefix/hash`) for the full prompt the agent was given; empty when none. */
   readonly promptBlob: string;
   /** Blob ref for the agent's structured result (session-result.json); empty when none. */
@@ -246,6 +249,7 @@ export function readAgentCall(observation: AgentCallLike): AgentCallShape | null
     tokensIn,
     tokensOut,
     cacheReadTokens: readNumber(out, "cache_read_tokens"),
+    cacheCreationTokens: readNumber(out, "cache_creation_tokens"),
     promptBlob: asString(input["prompt_blob"]),
     resultBlob: asString(out["result_blob"]),
     transcriptBlob: asString(out["transcript_blob"]),

@@ -198,6 +198,7 @@ describe("CostIncurredPayloadSchema", () => {
       output_tokens: null,
       total_tokens: null,
       cache_read_tokens: null,
+      cache_creation_tokens: null,
       model_id: null,
     });
   });
@@ -217,6 +218,7 @@ describe("CostIncurredPayloadSchema", () => {
       output_tokens: null,
       total_tokens: null,
       cache_read_tokens: null,
+      cache_creation_tokens: null,
       model_id: null,
     });
   });

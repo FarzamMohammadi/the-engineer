@@ -68,7 +68,7 @@ describe("aggregateAgentCost", () => {
     const result = aggregateAgentCost([
       agentCall({
         output: null,
-        input: { cost_usd: 0.2, input_tokens: 70, output_tokens: 30, cache_read_tokens: 12 },
+        input: { cost_usd: 0.2, input_tokens: 70, output_tokens: 30, cache_read_tokens: 12, cache_creation_tokens: 9 },
       }),
     ]);
 
@@ -76,6 +76,15 @@ describe("aggregateAgentCost", () => {
     expect(result.tokenTotals.input).toBe(70);
     expect(result.tokenTotals.output).toBe(30);
     expect(result.tokenTotals.cache_read).toBe(12);
+    expect(result.tokenTotals.cache_creation).toBe(9);
+  });
+
+  it("sums cache-write tokens across runs and defaults a missing one to 0", () => {
+    const result = aggregateAgentCost([
+      agentCall({ output: { cost_usd: 0.1, cache_creation_tokens: 100 } }),
+      agentCall({ output: { cost_usd: 0.1, cache_read_tokens: 5 } }), // no cache_creation_tokens
+    ]);
+    expect(result.tokenTotals.cache_creation).toBe(100);
   });
 
   it("caps the per-day breakdown at 30 entries, newest first", () => {

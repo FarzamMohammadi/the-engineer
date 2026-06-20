@@ -117,6 +117,7 @@ export const CostIncurredPayloadSchema = z.object({
   output_tokens: z.number().int().nullable().default(null),
   total_tokens: z.number().int().nullable().default(null),
   cache_read_tokens: z.number().int().nullable().default(null),
+  cache_creation_tokens: z.number().int().nullable().default(null),
   model_id: z.string().nullable().default(null),
 });
 export type CostIncurredPayload = z.infer<typeof CostIncurredPayloadSchema>;

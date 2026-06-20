@@ -474,7 +474,8 @@ function AgentTraceHeader({
         <span>{formatDuration(trace.duration_ms)}</span>
         {call && call.tokensIn > 0 && <span>{formatTokens(call.tokensIn)} in</span>}
         {call && call.tokensOut > 0 && <span>{formatTokens(call.tokensOut)} out</span>}
-        {call && call.cacheReadTokens > 0 && <span>{formatTokens(call.cacheReadTokens)} cache</span>}
+        {call && call.cacheReadTokens > 0 && <span>{formatTokens(call.cacheReadTokens)} cache read</span>}
+        {call && call.cacheCreationTokens > 0 && <span>{formatTokens(call.cacheCreationTokens)} cache write</span>}
         {call?.costUsd != null && <CostDisplay amount={call.costUsd} size="sm" />}
       </div>
     </div>

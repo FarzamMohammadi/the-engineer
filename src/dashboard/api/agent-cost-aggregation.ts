@@ -26,6 +26,7 @@ export interface TokenTotals {
   readonly input: number;
   readonly output: number;
   readonly cache_read: number;
+  readonly cache_creation: number;
   readonly total: number;
 }
 
@@ -49,11 +50,12 @@ function readSpend(obs: Observation): {
   tokensIn: number;
   tokensOut: number;
   cacheRead: number;
+  cacheCreation: number;
 } {
   // observe() stores data in `input`; span.end() stores in `output`. The agent_call span ends with output.
   const out = (obs.output ?? obs.input) as Record<string, unknown> | null;
   if (!out) {
-    return { costUsd: null, tokensIn: 0, tokensOut: 0, cacheRead: 0 };
+    return { costUsd: null, tokensIn: 0, tokensOut: 0, cacheRead: 0, cacheCreation: 0 };
   }
   const costUsd = typeof out["cost_usd"] === "number" ? out["cost_usd"] : null;
   const tokensIn =
@@ -69,7 +71,8 @@ function readSpend(obs: Observation): {
         ? out["output_tokens"]
         : 0;
   const cacheRead = typeof out["cache_read_tokens"] === "number" ? out["cache_read_tokens"] : 0;
-  return { costUsd, tokensIn, tokensOut, cacheRead };
+  const cacheCreation = typeof out["cache_creation_tokens"] === "number" ? out["cache_creation_tokens"] : 0;
+  return { costUsd, tokensIn, tokensOut, cacheRead, cacheCreation };
 }
 
 /** Aggregate per-day, per-phase, total spend, and token totals from agent_call observations — the one cost source. */
@@ -83,12 +86,13 @@ export function aggregateAgentCost(observations: readonly Observation[]): AgentC
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
   let totalCacheReadTokens = 0;
+  let totalCacheCreationTokens = 0;
 
   const today = new Date().toISOString().slice(0, 10);
   const month = new Date().toISOString().slice(0, 7);
 
   for (const obs of observations) {
-    const { costUsd, tokensIn, tokensOut, cacheRead } = readSpend(obs);
+    const { costUsd, tokensIn, tokensOut, cacheRead, cacheCreation } = readSpend(obs);
     const cost = costUsd ?? 0;
     if (costUsd !== null) {
       hasNumericCost = true;
@@ -96,6 +100,7 @@ export function aggregateAgentCost(observations: readonly Observation[]): AgentC
     totalInputTokens += tokensIn;
     totalOutputTokens += tokensOut;
     totalCacheReadTokens += cacheRead;
+    totalCacheCreationTokens += cacheCreation;
 
     // A run can report zero cost (e.g. a CLI that omits pricing); it still counts as an agent call for the phase.
     const phaseName = obs.phase ?? "unknown";
@@ -142,6 +147,7 @@ export function aggregateAgentCost(observations: readonly Observation[]): AgentC
       input: totalInputTokens,
       output: totalOutputTokens,
       cache_read: totalCacheReadTokens,
+      cache_creation: totalCacheCreationTokens,
       total: totalInputTokens + totalOutputTokens,
     },
   };

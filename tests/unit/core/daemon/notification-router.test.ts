@@ -1144,6 +1144,55 @@ describe("NotificationRouter", () => {
       expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
     });
 
+    it("does not dedup different messages on the same kind and task — content keys them apart", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      // Two DISTINCT questions for the same blocked task, inside the window — the second must still reach the
+      // owner. Keying on kind+task alone would silently drop it (the blocked-task-never-asked failure).
+      router.notify({ kind: NotificationKinds.question, taskId: "t1", personId: "owner-1", message: "Which DB?" });
+      router.notify({ kind: NotificationKinds.question, taskId: "t1", personId: "owner-1", message: "Which region?" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("still dedups a byte-identical message on the same kind and task", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      router.notify({ kind: NotificationKinds.question, taskId: "t1", personId: "owner-1", message: "Which DB?" });
+      router.notify({ kind: NotificationKinds.question, taskId: "t1", personId: "owner-1", message: "Which DB?" });
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it("never dedups a status_response — a solicited command reply always delivers", async () => {
+      const clock = new FakeClock();
+      const ctx = createSuppressContext(clock);
+      const commPlugin = (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>)()[0];
+
+      const router = createNotificationRouter(ctx);
+      // The owner sent two commands and got the same answer text — both replies must arrive. This is the
+      // "chat dies after one reply" bug: identical content would otherwise dedup the second away.
+      const reply = {
+        kind: NotificationKinds.status_response,
+        taskId: null,
+        personId: "owner-1",
+        message: "No tasks.",
+      } as const;
+      router.notify(reply);
+      router.notify(reply);
+      await flush();
+
+      expect(commPlugin.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
     it("records a decision_point when it suppresses a duplicate", () => {
       const obs: TestObserverHandle = createTestObserver();
       try {

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { CommunicationAdapter } from "../../adapters/communication.js";
 import { AdapterTypes, MessageTypes } from "../../schemas/adapters.js";
 import type { MessageType } from "../../schemas/adapters.js";
@@ -88,13 +90,17 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   const retryQueue: RetryEntry[] = [];
 
   // ── Suppression (duplicate dedup) ────────────────────────────────────
-  // The single source of outbound dedup: drop an identical notification — same kind and scope
-  // (taskId, or `source` for null-task alerts) — seen within `suppressWindowMs`. This replaced the
-  // daemon's former hardcoded health-alert cooldown, so it deliberately covers ALERTS too: a trigger
-  // failing every tick must not DM the owner every tick. The window only suppresses a true duplicate;
-  // the first occurrence and any distinct kind/scope always pass through immediately. Keyed on `kind`
-  // (not the resolved messageType) so distinct events that share a type — a task_error and a cost_limit
-  // on the same task both map to `alert` — never falsely dedup each other.
+  // The single source of outbound dedup: drop an identical notification — same kind, scope, AND content
+  // (taskId, or `source` for null-task alerts; plus a digest of the message) — seen within `suppressWindowMs`.
+  // This replaced the daemon's former hardcoded health-alert cooldown, so it deliberately covers ALERTS too:
+  // a trigger failing every tick must not DM the owner every tick. The window only suppresses a true
+  // duplicate; the first occurrence and any distinct kind/scope/content pass through immediately. The content
+  // digest is load-bearing: without it, two DIFFERENT messages on the same kind+scope (e.g. a task's second,
+  // distinct question) collapse to one key and the later one is silently dropped — the blocked-task-never-asked
+  // failure. Keyed on `kind` (not the resolved messageType) so distinct events that share a type — a
+  // task_error and a cost_limit on the same task both map to `alert` — never falsely dedup each other.
+  // Solicited replies (`status_response`) bypass this entirely in `notify`: the owner asked, so each command
+  // gets its own answer even when two replies are byte-identical.
   const lastDeliveredAt = new Map<string, number>();
 
   // ── Plugin Lookup ──────────────────────────────────────────────────────
@@ -236,7 +242,29 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
    */
   function dedupKeyFor(notification: Notification): string {
     const scope = notification.taskId ?? sourceScope(notification);
-    return `${notification.kind}:${scope}`;
+    return `${notification.kind}:${scope}:${contentDigest(notification)}`;
+  }
+
+  /**
+   * A short digest of the content that determines this notification's outbound text, so two same-kind,
+   * same-scope notifications that say DIFFERENT things never collapse onto one key and silently drop the
+   * later one. Generated-text kinds (resolved from the task, e.g. `completion`/`blocked_reminder`) carry no
+   * payload here, so their (kind, scope) is already their content identity and the digest is empty.
+   */
+  function contentDigest(notification: Notification): string {
+    const content = contentOf(notification);
+    return content ? createHash("sha256").update(content, "utf-8").digest("hex").slice(0, 12) : "";
+  }
+
+  /** The variable payload behind a notification's text, or null for kinds whose text is resolved from the task. */
+  function contentOf(notification: Notification): string | null {
+    if ("message" in notification) {
+      return notification.message;
+    }
+    if (notification.kind === NotificationKinds.task_error) {
+      return notification.reason;
+    }
+    return null;
   }
 
   /** The `source` scope for the null-task kinds that carry one (alerts, plugin recoveries); "" otherwise. */
@@ -300,7 +328,12 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         return;
       }
 
-      if (isSuppressedDuplicate(notification)) {
+      // A status_response is a solicited reply to an explicit owner command (`!status` / `!progress` / ...),
+      // not a proactive push. The owner sets its cadence by asking, so it bypasses the owner-flooding dedup:
+      // every command deserves its own answer. Deduping it on the shared `status_response:` key silently
+      // dropped every reply within the window after the first — the chat appeared to "go dead" mid-use.
+      const subjectToDedup = notification.kind !== NotificationKinds.status_response;
+      if (subjectToDedup && isSuppressedDuplicate(notification)) {
         return;
       }
 

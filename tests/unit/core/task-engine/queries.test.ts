@@ -225,13 +225,16 @@ describe("TaskQueries", () => {
       expect(queries.findByIdempotencyKey("github:issue:owner/repo:42")).toBe(true);
     });
 
-    it("ignores terminal tasks — completed, failed, and cancelled all free the key (active-scoped)", () => {
+    it("frees the key for completed and cancelled tasks (re-triggerable)", () => {
       insertTask({ idempotency_key: "done:key", state: TaskStates.completed });
-      insertTask({ idempotency_key: "dead:key", state: TaskStates.failed });
       insertTask({ idempotency_key: "gone:key", state: TaskStates.cancelled });
       expect(queries.findByIdempotencyKey("done:key")).toBe(false);
-      expect(queries.findByIdempotencyKey("dead:key")).toBe(false);
       expect(queries.findByIdempotencyKey("gone:key")).toBe(false);
+    });
+
+    it("holds the key for a failed task (recoverable — retry, not re-clone)", () => {
+      insertTask({ idempotency_key: "dead:key", state: TaskStates.failed });
+      expect(queries.findByIdempotencyKey("dead:key")).toBe(true);
     });
   });
 });

@@ -413,7 +413,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 ## Trigger Reversal / Stale-Work Detection
 
-**Current state (v1):** Dedup is active-scoped — a terminal task (completed, failed, or cancelled) frees its `idempotency_key`, so a re-triggered source (a reopened issue) spawns a fresh task. This handles the *forward* case. There is no detection for the *inverse*: the signal that created a task is reversed (issue closed/resolved, or a "stop" action that does not exist yet) while the task is still in flight, so the work goes stale.
+**Current state (v1):** Dedup is scoped to the re-spawn gate — only a `completed` or `cancelled` task frees its `idempotency_key`, so a re-triggered source (a reopened issue) spawns a fresh task. A `failed` task instead HOLDS its key: it is recoverable, so a re-trigger resumes it (`engineer retry`) or the owner cancels it to start fresh, never an auto-cloned duplicate. This handles the *forward* case. There is no detection for the *inverse*: the signal that created a task is reversed (issue closed/resolved, or a "stop" action that does not exist yet) while the task is still in flight, so the work goes stale.
 
 **Scenario:** A GitHub issue triggers a task; the task opens a PR and is waiting on review (blocked with reason `pr_review_pending`). Meanwhile the issue is closed, resolved by someone else, or relabeled out of scope. Nothing notices — the task keeps living, the PR sits open and stale, and effort may continue on work nobody wants anymore.
 
@@ -423,7 +423,7 @@ Without measurement, we can't tell whether fixes to these problems actually work
 
 **Migration path:**
 1. Trigger polling only surfaces open issues, so a close is invisible to the trigger — detection needs a separate signal (issue-state poll, webhook, or a CommunicationAdapter reconciliation pass).
-2. A "stop through us" action does not exist yet; if added, it must move the task to a terminal state so active-scoped dedup frees the key for any future re-trigger.
+2. A "stop through us" action does not exist yet; if added, it must move the task to `cancelled` (or `completed`) so the dedup gate frees the key for any future re-trigger — `failed` deliberately does not free it.
 3. PR-staleness reactions belong with review polling in the Daemon.
 
 ---

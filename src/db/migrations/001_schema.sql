@@ -88,11 +88,13 @@ CREATE INDEX idx_tasks_state ON tasks(state);
 CREATE INDEX idx_tasks_session_id ON tasks(session_id);
 CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
 CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
--- Active-scoped dedup: no two non-terminal tasks may share an idempotency_key.
--- A terminal task (completed/failed/cancelled) frees its key, so a re-triggered source
--- (e.g. a reopened GitHub issue) can spawn a fresh task. Identity/dedup rides on
--- idempotency_key; external_ref is descriptive only. This terminal set is the hand-kept
--- DB sibling of TERMINAL_STATES in schemas/task.ts — keep the two in lockstep.
+-- In-play uniqueness: no two simultaneously in-play tasks (requirements_gathering/queued/active/blocked)
+-- may share an idempotency_key — a hard guard against two live tasks cloning the same source. This set is
+-- the hand-kept DB sibling of TERMINAL_STATES in schemas/task.ts (it excludes every terminal state, failed
+-- included, because a failed task is not in-play) — keep the two in lockstep. Identity/dedup rides on
+-- idempotency_key; external_ref is descriptive only.
+-- NOTE: this is NOT the re-trigger dedup gate. That gate lives in the app (findByIdempotencyKey) and uses
+-- the narrower KEY_FREEING_STATES — a failed task HOLDS its key (retry/cancel); only completed/cancelled free it.
 CREATE UNIQUE INDEX idx_tasks_idempotency_key_active
   ON tasks(idempotency_key)
   WHERE state NOT IN ('completed', 'failed', 'cancelled');

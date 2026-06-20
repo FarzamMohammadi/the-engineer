@@ -5,6 +5,7 @@ import {
   ActionClasses,
   BlockedDetailsSchema,
   ExternalRefSchema,
+  KEY_FREEING_STATES,
   PermissionTable,
   RelatedItemSchema,
   ReviewStateSchema,
@@ -58,6 +59,13 @@ describe("isTerminal / TERMINAL_STATES", () => {
     expect(isTerminal(TaskStates.queued)).toBe(false);
     expect(isTerminal(TaskStates.active)).toBe(false);
     expect(isTerminal(TaskStates.blocked)).toBe(false);
+  });
+});
+
+describe("KEY_FREEING_STATES", () => {
+  it("frees only completed and cancelled — a failed task holds its key", () => {
+    expect(KEY_FREEING_STATES).toEqual([TaskStates.completed, TaskStates.cancelled]);
+    expect(KEY_FREEING_STATES).not.toContain(TaskStates.failed);
   });
 });
 

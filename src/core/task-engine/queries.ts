@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 
 import type { BlockReason, StateTransition, Task, TaskState } from "../../schemas/task.js";
-import { TERMINAL_STATES, TaskStates } from "../../schemas/task.js";
+import { KEY_FREEING_STATES, TERMINAL_STATES, TaskStates } from "../../schemas/task.js";
 import { type StateTransitionRow, type TaskRow, rowToStateTransition, rowToTask } from "./row-mapper.js";
 
 // Terminal tasks the reaper reconciles. Derived from TERMINAL_STATES so a new terminal state is
@@ -44,13 +44,15 @@ export class TaskQueries {
 
     this.getStateHistoryStmt = db.prepare("SELECT * FROM state_transitions WHERE task_id = ? ORDER BY timestamp ASC");
 
-    // Active-scoped dedup: a terminal task frees its key. Built from TERMINAL_STATES so it stays in
-    // lockstep with the DB-level sibling (the idx_tasks_idempotency_key_active partial unique index in 001_schema.sql).
-    const terminalList = TERMINAL_STATES.map((state) => `'${state}'`).join(", ");
+    // Re-trigger dedup gate: only a completed/cancelled task frees its key. A `failed` task HOLDS its key
+    // (it is recoverable via `engineer retry`), so the trigger resumes it instead of cloning a duplicate.
+    // Built from KEY_FREEING_STATES — intentionally NARROWER than the DB idx_tasks_idempotency_key_active
+    // index (which also excludes `failed`): the index guards in-play uniqueness, this gate guards re-spawning.
+    const freeingList = KEY_FREEING_STATES.map((state) => `'${state}'`).join(", ");
     this.findByIdempotencyKeyStmt = db.prepare(`
       SELECT 1 FROM tasks
       WHERE idempotency_key = ?
-        AND state NOT IN (${terminalList})
+        AND state NOT IN (${freeingList})
       LIMIT 1
     `);
   }

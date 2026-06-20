@@ -22,9 +22,10 @@ export const TaskStates = TaskStateSchema.enum;
 /**
  * Terminal states — a task that has finished its lifecycle. `failed` is terminal yet independently
  * retryable (`failed → queued`); `completed` and `cancelled` have no exit. The single source of truth
- * for terminal-ness: the app-level `state NOT IN (…)` clauses (task-engine queries, `engineer status`)
- * derive from this. Its one hand-kept sibling is `001_schema.sql` (the `idx_tasks_idempotency_key_active`
- * dedup index plus the `state` CHECKs) — SQL a TypeScript constant cannot reach — kept in lockstep and guarded by tests.
+ * for terminal-ness — `isTerminal`, completed-at stamping, `engineer status` filtering, and the DB
+ * `idx_tasks_idempotency_key_active` partial index (a hand-kept SQL sibling in `001_schema.sql`, guarded by
+ * tests). NOTE: the trigger's re-trigger *dedup* gate does NOT use this set — it uses the narrower
+ * {@link KEY_FREEING_STATES}, because a failed task should be retried, not cloned.
  */
 export const TERMINAL_STATES = [TaskStates.completed, TaskStates.failed, TaskStates.cancelled] as const;
 
@@ -32,6 +33,18 @@ export const TERMINAL_STATES = [TaskStates.completed, TaskStates.failed, TaskSta
 export function isTerminal(state: TaskState): boolean {
   return (TERMINAL_STATES as readonly TaskState[]).includes(state);
 }
+
+/**
+ * States that RELEASE a task's idempotency key for re-triggering: `completed` and `cancelled` only.
+ * `failed` is deliberately excluded — it is recoverable (`failed → queued` via `engineer retry`), so it
+ * HOLDS its key and the trigger resumes it rather than cloning a fresh duplicate. (The owner can still
+ * force a fresh task by cancelling the failed one, which frees the key.) This is the source of truth for
+ * the app-level dedup gate (`findByIdempotencyKey`) — narrower than {@link TERMINAL_STATES} on purpose.
+ * It is kept SEPARATE from the reaper's identically-valued set and from the DB
+ * `idx_tasks_idempotency_key_active` index (which excludes `failed` for a different reason: a failed task
+ * is not *in-play*) — three distinct concerns that happen to overlap today and may diverge later.
+ */
+export const KEY_FREEING_STATES = TERMINAL_STATES.filter((state) => state !== TaskStates.failed);
 
 export const SubStateSchema = z.enum(["working"]);
 export type SubState = z.infer<typeof SubStateSchema>;

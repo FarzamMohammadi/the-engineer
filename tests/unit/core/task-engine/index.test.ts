@@ -293,9 +293,11 @@ describe("TaskEngine", () => {
       expect(engine.findByIdempotencyKey("rt:completed")).toBe(false);
     });
 
-    it("frees the key once the task is failed (active-scoped)", () => {
+    it("holds the key while the task is failed (recoverable — retry, do not clone)", () => {
       createTaskInState(engine, TaskStates.failed, null, { idempotency_key: "rt:failed" });
-      expect(engine.findByIdempotencyKey("rt:failed")).toBe(false);
+      // A failed task is retryable (failed -> queued), so it HOLDS its key: the trigger resumes it rather
+      // than cloning a duplicate. Only completed/cancelled free the key — cancel the failed task to force a fresh one.
+      expect(engine.findByIdempotencyKey("rt:failed")).toBe(true);
     });
 
     it("frees the key once the task is cancelled (active-scoped)", () => {

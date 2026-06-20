@@ -185,6 +185,50 @@ describe("CostTracker — accumulation", () => {
   });
 });
 
+// ── CostTracker — Account-Wide Summary ───────────────────────────────────────
+
+describe("CostTracker — getCostSummary", () => {
+  it("returns daily and monthly spend with their configured limits", () => {
+    const { tracker, eventBus: eb } = createTracker({
+      cost_limits: { daily: { cost_usd: 25 }, monthly: { cost_usd: 250 } },
+    });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 3.2 });
+
+    const summary = tracker.getCostSummary();
+    expect(summary.daily_usd).toBeCloseTo(3.2);
+    expect(summary.daily_limit_usd).toBe(25);
+    expect(summary.monthly_usd).toBeCloseTo(3.2);
+    expect(summary.monthly_limit_usd).toBe(250);
+    expect(summary.breached).toBe(false);
+  });
+
+  it("is account-wide: a per-task breach does not mark the summary breached", () => {
+    const { tracker, eventBus: eb } = createTracker({ cost_limits: { per_task: { cost_usd: 0.05 } } });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
+
+    expect(tracker.getCostSummary().breached).toBe(false);
+  });
+
+  it("flags breached once the daily limit is reached across tasks", () => {
+    const { tracker, eventBus: eb } = createTracker({ cost_limits: { daily: { cost_usd: 0.25 } } });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 0.1 });
+    simulateCostEvent(eb, { task_id: "task-2", spend_usd: 0.2 });
+
+    expect(tracker.getCostSummary().breached).toBe(true);
+  });
+
+  it("reports null limits for unbounded windows", () => {
+    const { tracker, eventBus: eb } = createTracker({
+      cost_limits: { daily: { cost_usd: null }, monthly: { cost_usd: null } },
+    });
+    simulateCostEvent(eb, { task_id: "task-1", spend_usd: 5.0 });
+
+    const summary = tracker.getCostSummary();
+    expect(summary.daily_limit_usd).toBeNull();
+    expect(summary.monthly_limit_usd).toBeNull();
+  });
+});
+
 // ── CostTracker — Terminal Task Cleanup ──────────────────────────────────────
 
 describe("CostTracker — per_task cleanup on terminal state", () => {

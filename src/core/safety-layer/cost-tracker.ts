@@ -7,7 +7,7 @@ import type { CostIncurredPayload, Event, TaskStateChangedPayload } from "../../
 import { isTerminal } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
-import type { CostStatus, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
+import type { CostStatus, CostSummary, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
 
 // ── Internal Types ───────────────────────────────────────────────────────────
@@ -88,6 +88,8 @@ export interface CostLimitCheckResult {
 /** Cost tracking interface — accumulates spend, checks limits, snapshots for crash recovery. */
 export interface ICostTracker {
   getCostStatus(taskId?: string): CostStatus;
+  /** Account-wide spend vs configured limits (daily + monthly), for the owner's `!cost` query. */
+  getCostSummary(): CostSummary;
   checkCostLimits(taskId: string): CostLimitCheckResult;
   isAnyLimitBreached(taskId?: string): boolean;
   flush(): void;
@@ -186,6 +188,23 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
       daily_usd: dailyUsd,
       monthly_usd: monthlyUsd,
       warnings,
+    };
+  }
+
+  /**
+   * Account-wide spend vs configured limits, daily and monthly only — no per-task scope. Backs the
+   * owner's `!cost` query, which is a status read rather than a per-action verdict; reuses the
+   * account-wide (no-taskId) reads so warning thresholds and null-limit handling stay in one place.
+   */
+  function getCostSummary(): CostSummary {
+    const status = getCostStatus();
+    return {
+      daily_usd: status.daily_usd,
+      daily_limit_usd: costLimits.daily.cost_usd,
+      monthly_usd: status.monthly_usd,
+      monthly_limit_usd: costLimits.monthly.cost_usd,
+      breached: isAnyLimitBreached(),
+      warnings: status.warnings,
     };
   }
 
@@ -710,5 +729,5 @@ export function createCostTracker(deps: CostTrackerDeps): ICostTracker {
     }
   }
 
-  return { getCostStatus, checkCostLimits, isAnyLimitBreached, flush };
+  return { getCostStatus, getCostSummary, checkCostLimits, isAnyLimitBreached, flush };
 }

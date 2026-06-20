@@ -18,10 +18,13 @@ function createMockDeps(): QueryHandlerDeps {
       getTasksByState: vi.fn().mockReturnValue([]),
     } as unknown as QueryHandlerDeps["taskEngine"],
     safetyLayer: {
-      consultJudgment: vi.fn().mockReturnValue({
-        allowed: true,
-        action: "proceed",
-        reason: "cost within limits",
+      getCostSummary: vi.fn().mockReturnValue({
+        daily_usd: 0,
+        daily_limit_usd: null,
+        monthly_usd: 0,
+        monthly_limit_usd: null,
+        breached: false,
+        warnings: [],
       }),
     } as unknown as QueryHandlerDeps["safetyLayer"],
     notifications: {
@@ -248,12 +251,14 @@ describe("handleQuery", () => {
     expect(notification.message).toContain("execution");
   });
 
-  it("surfaces the cost verdict and any percent-of-limit warnings for 'cost'", () => {
+  it("surfaces account-wide spend, limits, and percent-of-limit warnings for 'cost'", () => {
     const deps = createMockDeps();
-    (deps.safetyLayer.consultJudgment as ReturnType<typeof vi.fn>).mockReturnValue({
-      allowed: true,
-      action: "proceed",
-      reason: "cost within limits",
+    (deps.safetyLayer.getCostSummary as ReturnType<typeof vi.fn>).mockReturnValue({
+      daily_usd: 3.2,
+      daily_limit_usd: 25,
+      monthly_usd: 48,
+      monthly_limit_usd: 250,
+      breached: false,
       warnings: ["daily spend at 85% of limit"],
     });
 
@@ -261,7 +266,29 @@ describe("handleQuery", () => {
 
     const notification = lastNotification(deps);
     expect(notification.message).toContain("within limits");
+    expect(notification.message).toContain("$3.20 / $25.00");
+    expect(notification.message).toContain("$48.00 / $250.00");
     expect(notification.message).toContain("85% of limit");
+    expect(notification.message).toContain("midnight UTC");
+  });
+
+  it("reports limit reached and unbounded windows for 'cost'", () => {
+    const deps = createMockDeps();
+    (deps.safetyLayer.getCostSummary as ReturnType<typeof vi.fn>).mockReturnValue({
+      daily_usd: 30,
+      daily_limit_usd: 25,
+      monthly_usd: 30,
+      monthly_limit_usd: null,
+      breached: true,
+      warnings: [],
+    });
+
+    handleQuery(payload("!cost"), deps);
+
+    const notification = lastNotification(deps);
+    expect(notification.message).toContain("limit reached");
+    expect(notification.message).toContain("$30.00 / $25.00");
+    expect(notification.message).toContain("$30.00 (no limit set)");
   });
 
   it("enumerates the prefixed command forms for '!help'", () => {

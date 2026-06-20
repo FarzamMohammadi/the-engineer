@@ -319,16 +319,13 @@ describe("SafetyLayer — checkAutoMergeAllowed", () => {
 
 // ── Cost Accumulation ────────────────────────────────────────────────────────
 //
-// SafetyLayer exposes accumulated spend only through consultJudgment("cost_check")
-// (the live consultation path). Exact per-window USD totals are asserted directly
-// against the cost tracker in cost-tracker.test.ts; here we assert the verdicts the
-// SafetyLayer surfaces from that accumulation.
+// SafetyLayer surfaces accumulated spend two ways: through evaluateAction (Gate 2 — per-task plus the
+// daily/monthly windows) and through getCostSummary (account-wide, for the owner's `!cost` query, exercised
+// below). Exact per-window USD totals are asserted directly against the cost tracker in
+// cost-tracker.test.ts; here we assert the verdict evaluateAction yields from that accumulation.
 
 function costCheck(handle: TestSafetyLayerHandle, taskId: string): SafetyVerdict {
-  return handle.safetyLayer.consultJudgment({
-    type: "cost_check",
-    context: { task_id: taskId, repo: "owner/repo", details: {} },
-  });
+  return handle.safetyLayer.evaluateAction(taskId, ActionClasses.read, {});
 }
 
 describe("SafetyLayer — cost accumulation", () => {
@@ -375,6 +372,56 @@ describe("SafetyLayer — cost accumulation", () => {
 
     // Only the 0.05 event counts, which alone crosses the 0.04 limit.
     expect(costCheck(handle, "task-1").action).toBe("deny");
+  });
+});
+
+// ── Cost Summary (account-wide !cost query) ──────────────────────────────────
+//
+// getCostSummary backs the owner's `!cost` query: account-wide spend vs the daily/monthly limits, a breach
+// flag, and the near-ceiling warnings — no per-task scope, and no consultJudgment (so there is no task/repo
+// to validate, and blanks can never reach the validator). This is the read the `!cost` chat reply formats.
+
+describe("SafetyLayer — cost summary", () => {
+  it("reports spend and configured limits per window when within limits", () => {
+    handle = createTestSafetyLayer({ cost_limits: { daily: { cost_usd: 25 }, monthly: { cost_usd: 250 } } });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 3.2 });
+
+    const summary = handle.safetyLayer.getCostSummary();
+    expect(summary.daily_usd).toBeCloseTo(3.2);
+    expect(summary.daily_limit_usd).toBe(25);
+    expect(summary.monthly_usd).toBeCloseTo(3.2);
+    expect(summary.monthly_limit_usd).toBe(250);
+    expect(summary.breached).toBe(false);
+  });
+
+  it("flags breached once an account-wide limit is reached", () => {
+    handle = createTestSafetyLayer({ cost_limits: { daily: { cost_usd: 0.25 } } });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
+    handle.simulateCostEvent({ task_id: "task-2", spend_usd: 0.2 });
+
+    expect(handle.safetyLayer.getCostSummary().breached).toBe(true);
+  });
+
+  it("surfaces percent-of-limit warnings near a ceiling without breaching", () => {
+    handle = createTestSafetyLayer({ cost_limits: { daily: { cost_usd: 1.0 } } });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.85 });
+
+    const summary = handle.safetyLayer.getCostSummary();
+    expect(summary.breached).toBe(false);
+    expect(summary.warnings.length).toBeGreaterThan(0);
+    expect(summary.warnings[0]).toContain("85%");
+  });
+
+  it("reports null limits for unbounded windows", () => {
+    handle = createTestSafetyLayer({
+      cost_limits: { daily: { cost_usd: null }, monthly: { cost_usd: null } },
+    });
+    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 5.0 });
+
+    const summary = handle.safetyLayer.getCostSummary();
+    expect(summary.daily_limit_usd).toBeNull();
+    expect(summary.monthly_limit_usd).toBeNull();
+    expect(summary.breached).toBe(false);
   });
 });
 
@@ -490,10 +537,7 @@ describe("SafetyLayer — snapshot", () => {
   function restoredCostCheck(handle: TestSafetyLayerHandle, taskId: string): SafetyVerdict {
     const config = SafetyConfigSchema.parse({ cost_limits: { per_task: { cost_usd: 0.2 } } });
     const restored = new SafetyLayer(handle.db, handle.eventBus, config, createTestObserverFacade("safety-layer"));
-    return restored.consultJudgment({
-      type: "cost_check",
-      context: { task_id: taskId, repo: "owner/repo", details: {} },
-    });
+    return restored.evaluateAction(taskId, ActionClasses.read, {});
   }
 
   it("round-trips: a new instance restores per-task spend from the snapshot", () => {
@@ -727,36 +771,6 @@ describe("SafetyLayer — autonomy (consultJudgment)", () => {
       },
     });
     expect(overrideVerdict.action).toBe("ask_human");
-  });
-
-  it("cost_check returns status with warnings", () => {
-    handle = createTestSafetyLayer({
-      cost_limits: { per_task: { cost_usd: 1.0 } },
-    });
-    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.85 });
-
-    const verdict = handle.safetyLayer.consultJudgment({
-      type: "cost_check",
-      context: { task_id: "task-1", repo: "owner/repo", details: {} },
-    });
-    expect(verdict.allowed).toBe(true);
-    expect(verdict.action).toBe("proceed");
-    expect(verdict.warnings).toBeDefined();
-    expect(verdict.warnings?.length).toBeGreaterThan(0);
-  });
-
-  it("cost_check denies when limit is breached", () => {
-    handle = createTestSafetyLayer({
-      cost_limits: { per_task: { cost_usd: 0.05 } },
-    });
-    handle.simulateCostEvent({ task_id: "task-1", spend_usd: 0.1 });
-
-    const verdict = handle.safetyLayer.consultJudgment({
-      type: "cost_check",
-      context: { task_id: "task-1", repo: "owner/repo", details: {} },
-    });
-    expect(verdict.allowed).toBe(false);
-    expect(verdict.action).toBe("deny");
   });
 
   it("can_i delegates to evaluateAction", () => {

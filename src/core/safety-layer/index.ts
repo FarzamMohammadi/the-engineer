@@ -8,7 +8,7 @@ import { ActionClassSchema, ActionClasses } from "../../schemas/task.js";
 import type { ActionClass } from "../../schemas/task.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus } from "../interfaces/event-bus.interface.js";
-import type { ISafetyLayer, SafetyQuery, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
+import type { CostSummary, ISafetyLayer, SafetyQuery, SafetyVerdict } from "../interfaces/safety-layer.interface.js";
 import type { IObserver } from "../observer/index.js";
 import { type ICostTracker, createCostTracker } from "./cost-tracker.js";
 import { PolicyEngine } from "./policy-engine.js";
@@ -22,7 +22,7 @@ const EvaluateActionInputSchema = z.object({
 });
 
 const SafetyQueryInputSchema = z.object({
-  type: z.enum(["can_i", "should_i_ask", "cost_check"]),
+  type: z.enum(["can_i", "should_i_ask"]),
   context: z.object({
     task_id: z.string().min(1),
     repo: z.string().min(1),
@@ -37,7 +37,7 @@ const SafetyQueryInputSchema = z.object({
 // The safety-layer module's exported surface. Consumers import from here;
 // internal files import from the sub-modules directly.
 
-export type { SafetyQuery, SafetyVerdict, CostStatus } from "../interfaces/safety-layer.interface.js";
+export type { SafetyQuery, SafetyVerdict, CostStatus, CostSummary } from "../interfaces/safety-layer.interface.js";
 
 export type { ParsedThreshold, ThresholdOutcome } from "./policy-engine.js";
 export { matchesPathPattern, parseThreshold, evaluateThreshold } from "./policy-engine.js";
@@ -69,11 +69,13 @@ export const EVENTS: EventDeclaration[] = [
  * Thin facade that delegates to CostTracker (cost accumulation, limit checks)
  * and PolicyEngine (scope boundaries, autonomy decisions, merge policy).
  *
- * Operates in two modes:
+ * Operates in three modes:
  * - **Gate 2 (evaluateAction):** Called by the Action Pipeline before every
  *   side-effect action. Checks scope boundaries and cost limits.
  * - **Passive consultation (consultJudgment):** Called by the Orchestrator for
- *   autonomy decisions, cost status checks, and ad-hoc scope queries.
+ *   autonomy decisions and ad-hoc scope queries — always task- and repo-scoped.
+ * - **Cost summary (getCostSummary):** Account-wide spend vs limits for the
+ *   owner's `!cost` query — a status read, with no task or repo scope.
  */
 export class SafetyLayer implements ISafetyLayer {
   private readonly costTracker: ICostTracker;
@@ -150,7 +152,7 @@ export class SafetyLayer implements ISafetyLayer {
 
   // ── Passive Consultation ───────────────────────────────────────────────────
 
-  /** Passive consultation for autonomy decisions, cost status, and scope queries. */
+  /** Passive consultation for autonomy decisions and scope queries. Cost status is read via getCostSummary. */
   consultJudgment(query: SafetyQuery): SafetyVerdict {
     // Input validation: deny on invalid input (never throw)
     const validationDeny = validateQueryInput(query);
@@ -188,12 +190,14 @@ export class SafetyLayer implements ISafetyLayer {
         return verdict;
       }
 
-      case "cost_check":
-        return this.evaluateCostStatus(query.context.task_id);
-
       default:
         return { allowed: false, action: "deny", reason: "unknown query type" };
     }
+  }
+
+  /** Account-wide spend vs limits for the owner's `!cost` query. A status read — no task/repo scope. */
+  getCostSummary(): CostSummary {
+    return this.costTracker.getCostSummary();
   }
 
   // ── Timeout Policy ─────────────────────────────────────────────────────────
@@ -220,22 +224,6 @@ export class SafetyLayer implements ISafetyLayer {
 
   shouldExcludeThoughtsOnMerge(): boolean {
     return this.policyEngine.shouldExcludeThoughtsOnMerge();
-  }
-
-  // ── Private ────────────────────────────────────────────────────────────────
-
-  private evaluateCostStatus(taskId: string): SafetyVerdict {
-    const status = this.costTracker.getCostStatus(taskId);
-    const anyLimitBreached = this.costTracker.isAnyLimitBreached(taskId);
-
-    const result: SafetyVerdict = anyLimitBreached
-      ? { allowed: false, action: "deny", reason: "cost limit breached" }
-      : { allowed: true, action: "proceed", reason: "cost within limits" };
-
-    if (status.warnings.length > 0) {
-      result.warnings = status.warnings;
-    }
-    return result;
   }
 }
 

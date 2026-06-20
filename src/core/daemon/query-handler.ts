@@ -254,18 +254,27 @@ function findTaskByIssueNumber(taskEngine: ITaskEngine, issueNumber: string): Ta
 }
 
 /**
- * Surface the cost verdict plus the per-window percent-of-limit warnings the safety layer raises near a
- * ceiling (e.g. "daily spend at 85% of limit"), so a `cost` query carries real spend-vs-limit signal.
+ * Surface account-wide spend against the daily and monthly limits, plus the per-window percent-of-limit
+ * warnings the safety layer raises near a ceiling (e.g. "daily spend at 85% of limit"). A `!cost` query is
+ * account-wide (no task or repo), so it reads the cost summary directly rather than issuing a scope- and
+ * injection-validated judgment query — which has no task/repo to validate and would (rightly) reject blanks.
+ *
+ * The windows are UTC (the cost tracker keys both on the UTC day/month), so the reply spells that out: a
+ * $0.00 daily right after a burst of local-evening use is the UTC day having already rolled over, not a bug.
  */
 function formatCostResponse(safetyLayer: ISafetyLayer): string {
-  const verdict = safetyLayer.consultJudgment({
-    type: "cost_check",
-    context: { task_id: "", repo: "", details: {} },
-  });
-  const headline = verdict.allowed ? "within limits" : "limit reached";
-  const detail = verdict.reason ? ` — ${verdict.reason}` : "";
-  const warnings = verdict.warnings && verdict.warnings.length > 0 ? `\n${verdict.warnings.join("\n")}` : "";
-  return `Cost: ${headline}${detail}${warnings}`;
+  const summary = safetyLayer.getCostSummary();
+  const headline = summary.breached ? "limit reached" : "within limits";
+  const daily = formatSpend(summary.daily_usd, summary.daily_limit_usd);
+  const monthly = formatSpend(summary.monthly_usd, summary.monthly_limit_usd);
+  const warnings = summary.warnings.length > 0 ? `\n${summary.warnings.join("\n")}` : "";
+  return `Cost: ${headline}\nDaily ${daily} · Monthly ${monthly}${warnings}\nWindows reset at midnight UTC.`;
+}
+
+/** One window's spend against its limit; "(no limit set)" when the window is unbounded (`null` limit). */
+function formatSpend(spentUsd: number, limitUsd: number | null): string {
+  const spent = `$${spentUsd.toFixed(2)}`;
+  return limitUsd === null ? `${spent} (no limit set)` : `${spent} / $${limitUsd.toFixed(2)}`;
 }
 
 function formatHelpResponse(): string {

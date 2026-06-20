@@ -124,7 +124,7 @@ describe("classifyInbound", () => {
     // Exactly one task blocked, but the content is "!status" — query wins (the owner can ask mid-block).
     expect(classifyInbound(false, "!status", 1)).toEqual({
       route: "query",
-      reason: "query_vocabulary",
+      reason: "command",
       blockedCount: 1,
     });
   });

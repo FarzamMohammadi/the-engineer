@@ -56,7 +56,7 @@ export function classifyQuery(content: string): QueryKind {
  * exactly one task is blocked. The explicit `!` prefix is exactly what distinguishes a command from the
  * free-text answer to the blocked task's question.
  */
-export function isQueryVocabulary(content: string): boolean {
+export function isCommand(content: string): boolean {
   return classifyQuery(content) !== "unknown";
 }
 
@@ -75,7 +75,7 @@ export interface QueryHandlerDeps {
  * `unmatched_multi_blocked` is the diagnostic case: a non-query message arrived while 2+ tasks were blocked,
  * so it could not be matched to one — the owner gets a "couldn't match" notice instead of a generic help.
  */
-export type QueryRoutingReason = "query_vocabulary" | "no_blocked_task" | "unmatched_multi_blocked";
+export type QueryRoutingReason = "command" | "no_blocked_task" | "unmatched_multi_blocked";
 
 export interface HandleQueryOptions {
   /** Number of tasks blocked when the message arrived — drives the `unmatched_multi_blocked` notice. */
@@ -125,7 +125,7 @@ export function handleQuery(
     "inbound_query_handled",
     {
       query_kind: kind,
-      routing_reason: options.reason ?? "query_vocabulary",
+      routing_reason: options.reason ?? "command",
       source: payload.source,
       response_summary: response,
     },

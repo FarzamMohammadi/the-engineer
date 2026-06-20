@@ -5,7 +5,7 @@ import type { CommMessageReceivedPayload } from "../../schemas/events.js";
 import type { ExternalRef } from "../../schemas/task.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
-import { type QueryHandlerDeps, type QueryRoutingReason, handleQuery, isQueryVocabulary } from "./query-handler.js";
+import { type QueryHandlerDeps, type QueryRoutingReason, handleQuery, isCommand } from "./query-handler.js";
 import type { ResponsePollerContext } from "./types.js";
 import type { UnblockInput, UnblockResolver } from "./unblock-resolver.js";
 
@@ -81,8 +81,8 @@ export function classifyInbound(hasLinkedTask: boolean, content: string, blocked
   if (hasLinkedTask) {
     return { route: "linked_reply" };
   }
-  if (isQueryVocabulary(content)) {
-    return { route: "query", reason: "query_vocabulary", blockedCount };
+  if (isCommand(content)) {
+    return { route: "query", reason: "command", blockedCount };
   }
   if (blockedCount === 1) {
     return { route: "sole_blocked_reply" };
@@ -106,7 +106,7 @@ function reasonForRoute(decision: InboundRoute, blockedCount: number): string {
 /** Why a message was routed to the query handler rather than treated as an unblock reply. */
 function reasonForQueryRoute(reason: QueryRoutingReason, blockedCount: number): string {
   switch (reason) {
-    case "query_vocabulary":
+    case "command":
       return "Matches the command vocabulary (!status/!cost/!progress/!help) — routed to the query handler, which wins over the sole-blocked reply";
     case "no_blocked_task":
       return "No metadata and no task blocked — nothing to reply to, routed to the query handler";

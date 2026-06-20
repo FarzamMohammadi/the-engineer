@@ -3,7 +3,7 @@ import {
   type QueryHandlerDeps,
   classifyQuery,
   handleQuery,
-  isQueryVocabulary,
+  isCommand,
 } from "../../../../src/core/daemon/query-handler.js";
 import type { CommMessageReceivedPayload } from "../../../../src/schemas/events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
@@ -96,18 +96,18 @@ describe("classifyQuery", () => {
   });
 });
 
-describe("isQueryVocabulary", () => {
+describe("isCommand", () => {
   it("is true for any prefixed command form", () => {
-    expect(isQueryVocabulary("!status")).toBe(true);
-    expect(isQueryVocabulary("!cost")).toBe(true);
-    expect(isQueryVocabulary("!progress #1")).toBe(true);
-    expect(isQueryVocabulary("!help")).toBe(true);
+    expect(isCommand("!status")).toBe(true);
+    expect(isCommand("!cost")).toBe(true);
+    expect(isCommand("!progress #1")).toBe(true);
+    expect(isCommand("!help")).toBe(true);
   });
 
   it("is false for free text and prefix-without-known-keyword", () => {
-    expect(isQueryVocabulary("use the second option")).toBe(false);
-    expect(isQueryVocabulary("the desc should help capture why")).toBe(false);
-    expect(isQueryVocabulary("!foo")).toBe(false);
+    expect(isCommand("use the second option")).toBe(false);
+    expect(isCommand("the desc should help capture why")).toBe(false);
+    expect(isCommand("!foo")).toBe(false);
   });
 });
 

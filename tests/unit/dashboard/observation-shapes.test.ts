@@ -4,10 +4,14 @@ import {
   type AgentCallLike,
   type ObservationLike,
   type PhaseTransitionLike,
+  type StepObservationLike,
+  buildStepFeed,
+  buildStepRuns,
   buildSubPhaseRuns,
   readAgentActivity,
   readAgentCall,
   readDecision,
+  readGate,
   readPhaseTransition,
   readVerdict,
 } from "../../../src/dashboard/client/src/lib/observation-shapes.js";
@@ -400,5 +404,312 @@ describe("buildSubPhaseRuns", () => {
     expect(buildSubPhaseRuns(transitions, "execution")).toEqual([
       { subPhase: "implement", outcome: "", summary: "", status: "pending" },
     ]);
+  });
+});
+
+// ── step feed (buildStepRuns / buildStepFeed / readGate) ──────────────────────────
+//
+// The feed reconstructs every sub-phase run across the whole task (LLM and non-LLM) and correlates each run's
+// enriching observations to it by (phase, trace_id) + the half-open time window [run.start, nextRun.start).
+// The canonical target is the execution loop implement → verify → implement → verify: the verify steps must be
+// visible between the implements, each owning ONLY its own gates/verdict/route — that is the bug this fixes.
+
+/** A fixed-width, lexicographically-orderable timestamp — string `<`/`>=` then matches the real store order. */
+function at(tick: number): string {
+  return tick.toString().padStart(4, "0");
+}
+
+function makeStepObs(
+  partial: Partial<StepObservationLike> & Pick<StepObservationLike, "id" | "type" | "name" | "start_time">,
+): StepObservationLike {
+  return { phase: "execution", trace_id: "t1", input: null, output: null, ...partial };
+}
+
+function transition(
+  name: "sub_phase_started" | "sub_phase_result",
+  subPhase: string,
+  tick: number,
+  extra: Record<string, unknown> = {},
+  over: Partial<StepObservationLike> = {},
+): StepObservationLike {
+  return makeStepObs({
+    id: `${name}-${subPhase}-${String(tick)}`,
+    type: "phase_transition",
+    name,
+    start_time: at(tick),
+    input: { phase: over.phase ?? "execution", subPhase, ...extra },
+    ...over,
+  });
+}
+
+describe("buildStepRuns", () => {
+  it("reconstructs runs across multiple phases in order, carrying timing/trace and result data", () => {
+    const transitions = [
+      transition("sub_phase_started", "implement", 1, {}, { phase: "execution", trace_id: "t1" }),
+      transition("sub_phase_result", "implement", 2, { outcome: "ok", summary: "Done." }),
+      transition("sub_phase_started", "self-review", 3, {}, { phase: "review", trace_id: "t1" }),
+      transition(
+        "sub_phase_result",
+        "self-review",
+        4,
+        { outcome: "ok", summary: "Clean.", data: { findings: 0 } },
+        { phase: "review" },
+      ),
+    ];
+
+    expect(buildStepRuns(transitions)).toEqual([
+      {
+        phase: "execution",
+        subPhase: "implement",
+        status: "ok",
+        outcome: "ok",
+        summary: "Done.",
+        startTime: "0001",
+        traceId: "t1",
+        data: null,
+      },
+      {
+        phase: "review",
+        subPhase: "self-review",
+        status: "ok",
+        outcome: "ok",
+        summary: "Clean.",
+        startTime: "0003",
+        traceId: "t1",
+        data: { findings: 0 },
+      },
+    ]);
+  });
+
+  it("leaves a started-without-result run pending (the step running now)", () => {
+    const runs = buildStepRuns([transition("sub_phase_started", "verify", 1)]);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]?.status).toBe("pending");
+    expect(runs[0]?.startTime).toBe("0001");
+  });
+
+  it("marks an error outcome as error", () => {
+    const runs = buildStepRuns([
+      transition("sub_phase_started", "verify", 1),
+      transition("sub_phase_result", "verify", 2, { outcome: "error", summary: "A gate failed." }),
+    ]);
+    expect(runs[0]?.status).toBe("error");
+  });
+
+  it("emits a result with no matching start as its own resolved run rather than dropping it", () => {
+    const runs = buildStepRuns([transition("sub_phase_result", "push", 1, { outcome: "ok", summary: "Pushed." })]);
+    expect(runs).toEqual([
+      {
+        phase: "execution",
+        subPhase: "push",
+        status: "ok",
+        outcome: "ok",
+        summary: "Pushed.",
+        startTime: "0001",
+        traceId: "t1",
+        data: null,
+      },
+    ]);
+  });
+});
+
+describe("buildStepFeed", () => {
+  // The canonical execution loop: implement → verify(repeat) → implement → verify(advance).
+  function loopTransitions(): StepObservationLike[] {
+    return [
+      transition("sub_phase_started", "implement", 1),
+      transition("sub_phase_result", "implement", 3, { outcome: "ok", summary: "First pass." }),
+      transition("sub_phase_started", "verify", 4),
+      transition("sub_phase_result", "verify", 7, { outcome: "ok", summary: "Gates failed.", data: { passed: false } }),
+      transition("sub_phase_started", "implement", 8),
+      transition("sub_phase_result", "implement", 9, { outcome: "ok", summary: "Second pass." }),
+      transition("sub_phase_started", "verify", 10),
+      transition("sub_phase_result", "verify", 13, { outcome: "ok", summary: "Gates passed.", data: { passed: true } }),
+    ];
+  }
+  const agentCalls = [
+    makeStepObs({ id: "ac1", type: "agent_call", name: "implement", start_time: at(1), input: { step: "implement" } }),
+    makeStepObs({ id: "ac2", type: "agent_call", name: "implement", start_time: at(8), input: { step: "implement" } }),
+  ];
+  const verdicts = [
+    makeStepObs({
+      id: "v1",
+      type: "safety_verdict",
+      name: "verify_gates",
+      start_time: at(6),
+      input: { passed: false },
+    }),
+    makeStepObs({
+      id: "v2",
+      type: "safety_verdict",
+      name: "verify_gates",
+      start_time: at(12),
+      input: { passed: true },
+    }),
+  ];
+  const tools = [
+    makeStepObs({
+      id: "lint1",
+      type: "tool_execution",
+      name: "gate:lint",
+      start_time: at(5),
+      output: { passed: false },
+    }),
+    makeStepObs({
+      id: "test1",
+      type: "tool_execution",
+      name: "gate:test",
+      start_time: at(5),
+      output: { passed: true },
+    }),
+    makeStepObs({
+      id: "lint2",
+      type: "tool_execution",
+      name: "gate:lint",
+      start_time: at(11),
+      output: { passed: true },
+    }),
+    makeStepObs({
+      id: "test2",
+      type: "tool_execution",
+      name: "gate:test",
+      start_time: at(11),
+      output: { passed: true },
+    }),
+  ];
+  const decisions = [
+    makeStepObs({
+      id: "ri1",
+      type: "decision_point",
+      name: "route:implement",
+      start_time: at(3),
+      input: { chosen: "advance" },
+    }),
+    makeStepObs({
+      id: "rv1",
+      type: "decision_point",
+      name: "route:verify",
+      start_time: at(7),
+      input: { chosen: "repeat" },
+    }),
+    makeStepObs({ id: "lr1", type: "decision_point", name: "loop_repeat", start_time: at(7), input: { count: 1 } }),
+    makeStepObs({
+      id: "ri2",
+      type: "decision_point",
+      name: "route:implement",
+      start_time: at(9),
+      input: { chosen: "advance" },
+    }),
+    makeStepObs({
+      id: "rv2",
+      type: "decision_point",
+      name: "route:verify",
+      start_time: at(13),
+      input: { chosen: "advance" },
+    }),
+  ];
+
+  it("emits the verify steps between the implements, in true executed order", () => {
+    const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
+    expect(feed.map((step) => step.subPhase)).toEqual(["implement", "verify", "implement", "verify"]);
+    expect(feed.map((step) => step.kind)).toEqual(["llm", "nonllm", "llm", "nonllm"]);
+  });
+
+  it("attaches each implement's own agent_call and nothing it does not own", () => {
+    const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
+    expect(feed[0]?.agentCall?.id).toBe("ac1");
+    expect(feed[2]?.agentCall?.id).toBe("ac2");
+    expect(feed[0]?.verdict).toBeNull();
+    expect(feed[0]?.tools).toEqual([]);
+  });
+
+  it("gives each verify only its own gates and verdict", () => {
+    const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
+    expect(feed[1]?.agentCall).toBeNull();
+    expect(feed[1]?.verdict?.id).toBe("v1");
+    expect(feed[1]?.tools.map((tool) => tool.id)).toEqual(["lint1", "test1"]);
+    expect(feed[3]?.verdict?.id).toBe("v2");
+    expect(feed[3]?.tools.map((tool) => tool.id)).toEqual(["lint2", "test2"]);
+  });
+
+  it("carries each verify's own routing decision — first repeat (the loop), then advance", () => {
+    const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
+    const firstRoute = feed[1]?.decisions.find((d) => d.name === "route:verify");
+    const secondRoute = feed[3]?.decisions.find((d) => d.name === "route:verify");
+    expect(firstRoute?.input?.["chosen"]).toBe("repeat");
+    expect(secondRoute?.input?.["chosen"]).toBe("advance");
+    // The loop counter sits under the verify that drove the loop, not the next step.
+    expect(feed[1]?.decisions.some((d) => d.name === "loop_repeat")).toBe(true);
+    expect(feed[3]?.decisions.some((d) => d.name === "loop_repeat")).toBe(false);
+  });
+
+  it("attaches an agent_call sharing its sub_phase_started's instant to its own run, not the previous one", () => {
+    const transitions = [
+      transition("sub_phase_started", "verify", 1),
+      transition("sub_phase_result", "verify", 2, { outcome: "ok", summary: "ok", data: { passed: true } }),
+      transition("sub_phase_started", "implement", 3),
+    ];
+    // The agent_call opens in the same millisecond the runner recorded the sub_phase_started.
+    const sameInstant = [
+      makeStepObs({ id: "ac", type: "agent_call", name: "implement", start_time: at(3), input: { step: "implement" } }),
+    ];
+    const feed = buildStepFeed(transitions, sameInstant, [], [], []);
+    expect(feed[0]?.subPhase).toBe("verify");
+    expect(feed[0]?.agentCall).toBeNull(); // the inclusive lower bound keeps it OUT of the prior verify run
+    expect(feed[1]?.subPhase).toBe("implement");
+    expect(feed[1]?.agentCall?.id).toBe("ac"); // and IN its own implement run
+  });
+
+  it("ignores skip: decisions and observations from a different trace", () => {
+    const transitions = [
+      transition("sub_phase_started", "verify", 1),
+      transition("sub_phase_result", "verify", 5, { outcome: "ok", summary: "ok", data: { passed: true } }),
+    ];
+    const otherTrace = [
+      makeStepObs({
+        id: "v-other",
+        type: "safety_verdict",
+        name: "verify_gates",
+        start_time: at(2),
+        input: { passed: true },
+        trace_id: "t2",
+      }),
+    ];
+    const mixedDecisions = [
+      makeStepObs({
+        id: "skip",
+        type: "decision_point",
+        name: "skip:research",
+        start_time: at(2),
+        input: { chosen: "skip" },
+      }),
+      makeStepObs({
+        id: "route",
+        type: "decision_point",
+        name: "route:verify",
+        start_time: at(2),
+        input: { chosen: "advance" },
+      }),
+    ];
+    const feed = buildStepFeed(transitions, [], otherTrace, [], mixedDecisions);
+    expect(feed[0]?.verdict).toBeNull(); // the other-trace verdict does not attach
+    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["route"]); // skip: is dropped, route: kept
+  });
+});
+
+describe("readGate", () => {
+  it("narrows a gate: tool_execution, stripping the prefix and reading pass/output", () => {
+    const obs = { type: "tool_execution", name: "gate:lint", output: { passed: false, output: "1 error" } };
+    expect(readGate(obs)).toEqual({ name: "lint", passed: false, output: "1 error" });
+  });
+
+  it("treats a missing pass flag as not-passed and a missing output as empty", () => {
+    const obs = { type: "tool_execution", name: "gate:typecheck", output: null };
+    expect(readGate(obs)).toEqual({ name: "typecheck", passed: false, output: "" });
+  });
+
+  it("returns null for a non-gate tool_execution and for a non-tool observation", () => {
+    expect(readGate({ type: "tool_execution", name: "git_push", output: { pushed: true } })).toBeNull();
+    expect(readGate({ type: "safety_verdict", name: "gate:lint", output: { passed: true } })).toBeNull();
   });
 });

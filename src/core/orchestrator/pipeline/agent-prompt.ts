@@ -3,16 +3,17 @@ import path from "node:path";
 import { WorkspaceNotReadyError } from "../errors.js";
 import { gatherRepoContextSafe } from "../prompts/context.js";
 import { buildRepoOverview, buildTaskBrief, section } from "../prompts/format.js";
-import { SELF_MODEL_PERSONA } from "../prompts/self-model.generated.js";
+import { PERSONA } from "../prompts/self-model/index.js";
 import type { Ctx } from "./types.js";
 
 // ── Shared System Prompt ─────────────────────────────────────────────────────
 // Identity and operating standards that hold for every agent sub-phase. The
 // per-sub-phase role line is appended; the user prompt carries the concrete work.
 //
-// SELF_MODEL_PERSONA is the agent's identity (who it is + how it works), bundled
-// from src/core/orchestrator/prompts/self-model/*.md. It is static and the same
-// for every phase, so it ships uniformly and is cacheable — no per-phase trimming.
+// PERSONA is the agent's identity (who it is + how it works), composed from the
+// self-model prose modules in src/core/orchestrator/prompts/self-model/. It is
+// static and the same for every phase, so it ships uniformly and is cacheable — no
+// per-phase trimming.
 // The behavioral standards below (OPERATING_STANDARDS, HANDOFF_PRINCIPLE,
 // SURFACE_DECISIONS, SECURITY_BOUNDARY) are complementary to the persona, not a
 // duplicate of it; they stay as their own sections.
@@ -81,7 +82,7 @@ Use the category that fits; an unfamiliar one is treated as needing the owner's 
  */
 export function buildSystemPrompt(roleLine: string, brief: string): string {
   return [
-    SELF_MODEL_PERSONA,
+    PERSONA,
     "",
     OPERATING_STANDARDS,
     "",

@@ -12,11 +12,11 @@ import type {
 import { AutonomyLevels } from "../../../schemas/config.js";
 import type { Ctx } from "../pipeline/types.js";
 import { section } from "./format.js";
-import { SELF_MODEL_BRIEF } from "./self-model.generated.js";
+import { MY_ASSIGNMENT } from "./self-model/index.js";
 
 // ── The Live Brief ────────────────────────────────────────────────────────────
 //
-// `SELF_MODEL_BRIEF` is the static "my assignment" doc — the SHAPE of what my
+// `MY_ASSIGNMENT` is the static "my assignment" doc — the SHAPE of what my
 // manager decided, in handoff voice but with the specifics left as placeholders
 // ("a point past which", "whatever my manager set them to be"). composeBrief
 // fills those placeholders with this run's ACTUAL settings, so every phase opens
@@ -25,7 +25,7 @@ import { SELF_MODEL_BRIEF } from "./self-model.generated.js";
 // Voice discipline: this stays a manager's brief, not a config dump. We render
 // only the behavior-shaping settings as real values, in the first person, and we
 // leave machinery out entirely (poll intervals, stuck thresholds, concurrency,
-// retries, telemetry, db). The fixed prose in SELF_MODEL_BRIEF already carries
+// retries, telemetry, db). The fixed prose in MY_ASSIGNMENT already carries
 // the pace beat and the section-4 invariants (reversibility, secrets sealed, no
 // swallowed failures); we do not re-interpolate those — they never vary.
 //
@@ -63,7 +63,7 @@ export function composeBrief(ctx: Ctx): string {
       renderThinkingTrail(ctx.safetyConfig.merge),
     ].join("\n"),
   );
-  return [SELF_MODEL_BRIEF, liveSetup].join("\n\n");
+  return [MY_ASSIGNMENT, liveSetup].join("\n\n");
 }
 
 // ── Who I answer to ────────────────────────────────────────────────────────────

@@ -5,8 +5,8 @@
 // channel once slipped into Core.
 //
 // ── Two-tier detection (and why) ─────────────────────────────────────────────
-// Core surface is not just code values; it is also PROSE. The agent's self-model is markdown baked into a
-// Core .ts module (self-model.generated.ts, generated from self-model/*.md). A vendor name sitting in the
+// Core surface is not just code values; it is also PROSE. The agent's self-model is prose held in Core .ts
+// modules (src/core/orchestrator/prompts/self-model/*.ts). A vendor name sitting in the
 // MIDDLE of a prose string ("...take a GitHub issue and ship it...") is a real opacity leak, yet a guard
 // that only looks for a quote IMMEDIATELY followed by the name (a value like `channel === "github"`) walks
 // right past it. That is the exact class of leak this guard now closes. But widening every name to "match
@@ -15,7 +15,7 @@
 //
 //   • UNAMBIGUOUS — github, gitlab, bitbucket, gitea, telegram, jira. Never legitimate English words, so a
 //     whole-word match ANYWHERE in Core source (a code value OR prose) is always a leak. This tier is what
-//     catches the baked self-model case.
+//     catches the self-model prose case.
 //   • COMMON-WORD — linear, slack, discord. Legitimate English in ordinary prose, so matching them anywhere
 //     would misfire. They keep the narrower "used as a value" match: a quote opening the string literal
 //     immediately followed by the name (`channel === "slack"`). A value is a hardcode; the bare word in
@@ -41,7 +41,7 @@ const QUOTE_CLASS = "[\"'`]";
 // platform value (a channel, an id, a token) from plugin metadata or the registry by adapter type.
 //
 // UNAMBIGUOUS_PLATFORMS are not real English words, so they are forbidden as a whole word ANYWHERE in Core —
-// in a code value or in prose (the baked self-model). COMMON_WORD_PLATFORMS double as ordinary English, so
+// in a code value or in prose (the self-model modules). COMMON_WORD_PLATFORMS double as ordinary English, so
 // they are forbidden only when used as a value (quote-anchored), never as a bare prose word.
 const UNAMBIGUOUS_PLATFORMS = ["github", "gitlab", "bitbucket", "gitea", "telegram", "jira"] as const;
 const COMMON_WORD_PLATFORMS = ["linear", "slack", "discord"] as const;

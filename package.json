@@ -46,7 +46,6 @@
     "dev": "tsx src/index.ts",
     "dev:dashboard": "vite --config src/dashboard/client/vite.config.ts",
     "docs:bundle": "tsx scripts/gen-bundled-docs.ts && biome format --write src/cli/bundled/plugin-docs.ts",
-    "self-model:bundle": "tsx scripts/gen-self-model.ts && biome format --write src/core/orchestrator/prompts/self-model.generated.ts",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildSystemPrompt } from "../../../../../src/core/orchestrator/pipeline/agent-prompt.js";
-import { SELF_MODEL_PERSONA } from "../../../../../src/core/orchestrator/prompts/self-model.generated.js";
+import { PERSONA } from "../../../../../src/core/orchestrator/prompts/self-model/index.js";
 
 describe("buildSystemPrompt", () => {
   const roleLine = "ROLE: investigate the codebase and report findings.";
@@ -9,7 +9,7 @@ describe("buildSystemPrompt", () => {
   it("injects the bundled self-model persona", () => {
     const prompt = buildSystemPrompt(roleLine, brief);
     // The whole persona is injected verbatim, not a summary of it.
-    expect(prompt).toContain(SELF_MODEL_PERSONA);
+    expect(prompt).toContain(PERSONA);
     // A distinctive persona line — present only in the self-model, never in the
     // old one-line IDENTITY stub — locks that the persona is what reached the prompt.
     expect(prompt).toContain("you architect realities");

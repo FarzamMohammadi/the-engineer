@@ -3,7 +3,7 @@ import type { z } from "zod";
 
 import type { Ctx } from "../../../../../src/core/orchestrator/pipeline/types.js";
 import { composeBrief } from "../../../../../src/core/orchestrator/prompts/brief.js";
-import { SELF_MODEL_BRIEF } from "../../../../../src/core/orchestrator/prompts/self-model.generated.js";
+import { MY_ASSIGNMENT } from "../../../../../src/core/orchestrator/prompts/self-model/index.js";
 import type { Person } from "../../../../../src/schemas/adapters.js";
 import { SafetyConfigSchema, WorkspaceConfigSchema } from "../../../../../src/schemas/config.js";
 
@@ -44,13 +44,13 @@ function defaultOwner(): Person {
 // ── Static framing preserved ─────────────────────────────────────────────────────
 
 describe("composeBrief", () => {
-  it("keeps the static SELF_MODEL_BRIEF framing verbatim, then appends the live setup", () => {
+  it("keeps the static MY_ASSIGNMENT framing verbatim, then appends the live setup", () => {
     const brief = composeBrief(briefCtx());
     // The whole static brief is preserved — composeBrief fills placeholders by APPENDING a live
     // section, it never rewrites the framing doc.
-    expect(brief).toContain(SELF_MODEL_BRIEF);
+    expect(brief).toContain(MY_ASSIGNMENT);
     expect(brief).toContain("How I am actually set up");
-    expect(brief.indexOf(SELF_MODEL_BRIEF)).toBeLessThan(brief.indexOf("How I am actually set up"));
+    expect(brief.indexOf(MY_ASSIGNMENT)).toBeLessThan(brief.indexOf("How I am actually set up"));
   });
 
   // ── Who I answer to ──────────────────────────────────────────────────────────

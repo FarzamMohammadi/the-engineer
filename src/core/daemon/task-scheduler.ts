@@ -72,6 +72,12 @@ export function createTaskScheduler(
   callbacks: SchedulerCallbacks,
   retryPolicy: RetryPolicy,
   dispatchTracker: DispatchTracker,
+  /**
+   * Eagerly reconcile a just-completed task (the workspace reaper's `reapNow`, voided by the caller). Lets a
+   * merged branch with `branch_retention_days: 0` be deleted the moment the task completes instead of waiting
+   * for the next interval sweep. Hardened to never throw; the interval sweep stays the backstop.
+   */
+  reapNow: (taskId: string) => void,
   evaluationManager?: EvaluationManager | null,
 ): TaskScheduler {
   const { config, eventBus, taskEngine, orchestrator, clock, observer } = ctx;
@@ -226,6 +232,11 @@ export function createTaskScheduler(
       title: completedTask?.title,
       prNumber: completedTask?.review?.pr_number,
     });
+    // Front-run the interval sweep: reap this task now so a merged branch (branch_retention_days: 0) is deleted
+    // immediately rather than up to one sweep later. Runs last — after the completion notifications — so the
+    // owner is told the task is done before the (network-bound) branch delete. `reapNow` swallows its own
+    // errors and leaves an unreaped task for the sweep to retry, so it can never disrupt completion.
+    reapNow(taskId);
   }
 
   function handlePrReviewPendingBlocked(taskId: string): void {

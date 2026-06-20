@@ -221,6 +221,16 @@ export function createDaemon(ctx: DaemonContext): Daemon {
     },
     retryPolicy,
     dispatchTracker,
+    // Eager reap on completion: the completion handler does not await the branch delete. `reapNow` is hardened
+    // to never reject; the `.catch` is a belt-and-suspenders guard so a future change can never leak an
+    // unhandled rejection into the daemon. The interval sweep remains the backstop on any failure.
+    (taskId) =>
+      workspaceReaper.reapNow(taskId).catch((error: unknown) => {
+        observer.error("Eager reap rejected unexpectedly — the interval sweep will reclaim the branch", {
+          taskId,
+          error: sanitizeErrorMessage(error),
+        });
+      }),
     evaluation,
   );
 

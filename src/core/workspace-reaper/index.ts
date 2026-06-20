@@ -73,6 +73,13 @@ export interface WorkspaceReaper {
   start(): void;
   stop(): void;
   runOnce(): Promise<void>;
+  /**
+   * Eagerly reconcile a single terminal task the instant it finishes, instead of waiting up to one sweep
+   * interval. The completion path calls this so a merged branch with `branch_retention_days: 0` is deleted
+   * immediately. Reuses the same per-task path as the sweep, so the reaper stays the single branch deleter;
+   * never throws (a failure leaves the task unreaped for the next sweep to retry).
+   */
+  reapNow(taskId: string): Promise<void>;
   getLastRun(): ReapStats | null;
 }
 
@@ -197,18 +204,31 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
     }
   }
 
-  /** Fold one task's outcome into the running stats, updating the failure counter and escalating at the threshold. */
+  /** Fold one task's outcome into the running sweep stats, then track its failure streak via {@link trackReapOutcome}. */
   function applyOutcome(taskId: string, outcome: ReapOutcome, stats: ReapStats): void {
     if (outcome === "reaped") {
       stats.reaped++;
+    } else if (outcome === "deferred") {
+      stats.deferred++;
+    } else {
+      stats.failed++;
+    }
+    trackReapOutcome(taskId, outcome);
+  }
+
+  /**
+   * Maintain the cross-pass consecutive-failure streak and escalate at the threshold. Shared by the interval
+   * sweep and the eager {@link reapNow} so a persistently-failing reap escalates regardless of which path ran it.
+   */
+  function trackReapOutcome(taskId: string, outcome: ReapOutcome): void {
+    if (outcome === "reaped") {
       consecutiveFailures.delete(taskId);
       return;
     }
     if (outcome === "deferred") {
-      stats.deferred++;
+      // A deferral is neither success nor failure — leave any prior streak untouched.
       return;
     }
-    stats.failed++;
     const count = (consecutiveFailures.get(taskId) ?? 0) + 1;
     consecutiveFailures.set(taskId, count);
     // Escalate exactly once at the crossing (not every sweep) — the absence of git.branch_deleted is not an alert,
@@ -218,6 +238,47 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
         kind: NotificationKinds.alert,
         taskId,
         message: `The workspace reaper has failed to clean up task ${taskId} ${String(count)} times in a row. Its branch may be orphaned — check the git hosting plugin (token, branch protection).`,
+      });
+    }
+  }
+
+  // ── Eager Single-Task Reconciliation ──────────────────────────────────────
+
+  /**
+   * Front-run the sweep for one task the moment it reaches a terminal state (called by the scheduler's
+   * completion path). It reuses {@link reapTask}, so the retention math is identical: `branch_retention_days`
+   * 0 deletes the branch now, N defers it to the interval sweep, null keeps it. The reaper stays the single
+   * branch deleter and the single `git.branch_deleted` emitter.
+   *
+   * Hardened to never throw into the completion handler: `reapTask` already swallows its own step errors
+   * (leaving `reaped_at` NULL so the sweep retries), and this wrapper catches anything unexpected. A failure
+   * here is therefore invisible to the caller — the interval sweep remains the backstop and the escalation path.
+   */
+  async function reapNow(taskId: string): Promise<void> {
+    try {
+      const task = taskEngine.getTask(taskId);
+      if (!task) {
+        observer.debug("Eager reap skipped — task not found", { taskId });
+        return;
+      }
+      if (task.state !== TaskStates.completed && task.state !== TaskStates.cancelled) {
+        observer.debug("Eager reap skipped — task is not terminal", { taskId, state: task.state });
+        return;
+      }
+      if (task.reaped_at) {
+        observer.debug("Eager reap skipped — task already reconciled", { taskId });
+        return;
+      }
+      if (dispatchTracker.isInFlight(taskId)) {
+        // Mirror the sweep's invariant: never reap a workspace out from under an in-flight dispatch.
+        observer.debug("Eager reap skipped — dispatch still in flight", { taskId });
+        return;
+      }
+      trackReapOutcome(taskId, await reapTask(task));
+    } catch (err) {
+      observer.warn("Eager reap failed — the interval sweep will retry", {
+        taskId,
+        error: sanitizeErrorMessage(err),
       });
     }
   }
@@ -508,5 +569,5 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
     return lastRun;
   }
 
-  return { start, stop, runOnce, getLastRun };
+  return { start, stop, runOnce, reapNow, getLastRun };
 }

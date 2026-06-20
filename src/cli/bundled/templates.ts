@@ -201,7 +201,7 @@ export const WORKSPACE_TEMPLATE = `# Workspace configuration for The Engineer
 # --- PR settings ---
 # pr:
 #   default_merge_strategy: squash           # squash | merge | rebase
-#   branch_retention_days: 0                 # Days to keep a merged branch before the reaper deletes it. null = keep forever; 0 = next sweep; N = after N days.
+#   branch_retention_days: 0                 # Days to keep a merged branch before deletion. null = keep forever; 0 = delete immediately on completion; N = after N days.
 
 # --- Multi-repo ---
 # multi_repo:
@@ -530,7 +530,7 @@ default_base_branch: main                 # Default base branch for PRs (default
 # ── PR Settings ──────────────────────────────────────────────────────────────
 pr:
   default_merge_strategy: squash          # squash | merge | rebase (default: squash)
-  branch_retention_days: 0                # Days to keep a merged branch before the reaper deletes it: null = keep forever, 0 = next sweep, N = after N days (default: 0)
+  branch_retention_days: 0                # Days to keep a merged branch before deletion: null = keep forever, 0 = delete immediately on completion, N = after N days (default: 0)
 
 # ── Multi-Repo ───────────────────────────────────────────────────────────────
 multi_repo:

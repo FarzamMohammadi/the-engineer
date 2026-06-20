@@ -37,6 +37,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
   const tasks = opts.tasks ?? [];
   const clock = new FakeClock();
   const getUnreaped = vi.fn(() => tasks);
+  const getTask = vi.fn((id: string) => tasks.find((t) => t.id === id) ?? null);
   const updateTaskField = vi.fn();
   const cleanupWorkspace = vi.fn();
   const deleteRemoteBranch = vi.fn();
@@ -67,6 +68,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     branchRetentionDays: opts.branchRetentionDays === undefined ? 0 : opts.branchRetentionDays,
     taskEngine: {
       getUnreapedTerminalTasks: getUnreaped,
+      getTask,
       updateTaskField,
     } as unknown as WorkspaceReaperDeps["taskEngine"],
     workspaceManager: {
@@ -92,6 +94,7 @@ function makeReaper(opts: MakeReaperOptions = {}) {
     reaper,
     clock,
     getUnreaped,
+    getTask,
     updateTaskField,
     cleanupWorkspace,
     deleteRemoteBranch,
@@ -508,5 +511,74 @@ describe("workspace reaper — lifecycle", () => {
     await vi.advanceTimersByTimeAsync(3_600_000 * 2);
 
     expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace reaper — eager reapNow", () => {
+  it("deletes a merged branch immediately when retention is 0 (front-running the sweep)", async () => {
+    const h = makeReaper({ branchRetentionDays: 0, tasks: [mergedTask(MERGED_AT)] });
+
+    await h.reaper.reapNow("t1");
+
+    expect(h.cleanupWorkspace).toHaveBeenCalledWith("t1", false);
+    expect(h.deleteRemoteBranch).toHaveBeenCalledWith("t1");
+    expect(h.branchDeletedPublished()).toBe(true);
+    expect(h.updateTaskField).toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("respects retention — defers without deleting when the window has not elapsed", async () => {
+    const h = makeReaper({ branchRetentionDays: 7, tasks: [mergedTask(MERGED_AT)] });
+    h.clock.set(Date.parse(MERGED_AT) + 7 * MS_PER_DAY - 1);
+
+    await h.reaper.reapNow("t1");
+
+    // The eager path must not bypass a non-zero retention window; the interval sweep deletes it later.
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.updateTaskField).not.toHaveBeenCalled(); // reaped_at stays NULL
+  });
+
+  it("no-ops when the task is not found", async () => {
+    const h = makeReaper({ tasks: [] });
+
+    await expect(h.reaper.reapNow("missing")).resolves.toBeUndefined();
+
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.updateTaskField).not.toHaveBeenCalled();
+  });
+
+  it("skips a task whose dispatch is still in flight", async () => {
+    const h = makeReaper({ branchRetentionDays: 0, tasks: [mergedTask(MERGED_AT)] });
+    h.isInFlight.mockReturnValue(true);
+
+    await h.reaper.reapNow("t1");
+
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.updateTaskField).not.toHaveBeenCalled();
+  });
+
+  it("never throws and leaves the task unreaped when the remote delete fails", async () => {
+    const h = makeReaper({ branchRetentionDays: 0, tasks: [mergedTask(MERGED_AT)] });
+    h.deleteRemoteBranch.mockImplementation(() => {
+      throw new Error("remote delete failed (network)");
+    });
+
+    await expect(h.reaper.reapNow("t1")).resolves.toBeUndefined();
+
+    // All-or-nothing: reaped_at is not stamped, so the interval sweep retries.
+    expect(h.updateTaskField).not.toHaveBeenCalledWith("t1", "reaped_at", expect.any(String));
+  });
+
+  it("escalates to an owner alert after repeated eager-reap failures (shared failure streak)", async () => {
+    const h = makeReaper({ branchRetentionDays: 0, tasks: [mergedTask(MERGED_AT)] });
+    h.deleteRemoteBranch.mockImplementation(() => {
+      throw new Error("remote delete failed (network)");
+    });
+
+    await h.reaper.reapNow("t1");
+    await h.reaper.reapNow("t1");
+    await h.reaper.reapNow("t1");
+
+    const alerts = h.notify.mock.calls.map((call) => call[0] as { kind: string }).filter((n) => n.kind === "alert");
+    expect(alerts).toHaveLength(1);
   });
 });

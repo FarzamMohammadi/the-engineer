@@ -21,11 +21,11 @@ The Engineer delivers one of two ways. By default it opens a **pull request** an
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `pr.default_merge_strategy` | `"squash"` \| `"merge"` \| `"rebase"` | `"squash"` | How PRs are merged. Squash creates a single commit, merge creates a merge commit, rebase replays commits. |
-| `pr.branch_retention_days` | integer \| null | `0` | How long to keep a **merged** branch before the reaper deletes it: `null` = keep forever, `0` = delete on the next reaper sweep, `N` = delete `N` days after the merge. Push-only branches are the deliverable and are never deleted. |
+| `pr.branch_retention_days` | integer \| null | `0` | How long to keep a **merged** branch before deletion: `null` = keep forever, `0` = delete immediately when the task completes, `N` = delete `N` days after the merge. Push-only branches are the deliverable and are never deleted. |
 | `pr.skip_pr_creation.default` | boolean | `false` | **Push-only mode.** Skip PR creation after pushing — code lands on the remote branch with no pull request and no review gate, and the task completes once the branch is pushed. |
 | `pr.skip_pr_creation.repos` | Record<string, boolean> | `{}` | Per-repo overrides for push-only mode (e.g., `"owner/repo": true`). A repo entry takes precedence over `default`. |
 
-Branch deletion is performed by the daemon's **workspace reaper**, not at merge time — auto-merge only records the merge, and the reaper deletes the branch once `branch_retention_days` has elapsed (so deletion can lag up to one sweep interval). See `workspace_reaper` in [daemon.yaml](daemon.md). Failed-task branches are always preserved (debug evidence + retry source).
+Branch deletion is performed by the daemon's **workspace reaper** (the sole branch deleter), not by auto-merge — auto-merge only records the merge. The task-completion path invokes the reaper eagerly, so `branch_retention_days: 0` deletes the branch the moment the task completes. A longer retention is honored by the reaper's interval sweep, which is also the backstop when an eager deletion fails or the PR was merged while the daemon was down. See `workspace_reaper` in [daemon.yaml](daemon.md). Failed-task branches are always preserved (debug evidence + retry source).
 
 ## Multi-Repo
 
@@ -43,7 +43,7 @@ default_base_branch: main
 
 pr:
   default_merge_strategy: squash
-  branch_retention_days: 0   # null = keep forever, 0 = next reaper sweep, N = N days after merge
+  branch_retention_days: 0   # null = keep forever, 0 = delete immediately on completion, N = N days after merge
   skip_pr_creation:
     default: false           # set true for push-only delivery (no PR)
 ```

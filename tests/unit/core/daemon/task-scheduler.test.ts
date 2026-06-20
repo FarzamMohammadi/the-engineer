@@ -148,6 +148,7 @@ function makeScheduler(
   ctx: TaskSchedulerContext,
   notifications: NotificationRouter,
   callbacks: SchedulerCallbacks,
+  reapNow: (taskId: string) => void = vi.fn(),
 ): ReturnType<typeof createTaskScheduler> {
   const retryPolicy = createRetryPolicy({
     config: ctx.config,
@@ -156,7 +157,7 @@ function makeScheduler(
     observer: ctx.observer,
   });
   const dispatchTracker = createDispatchTracker({ observer: ctx.observer });
-  return createTaskScheduler(ctx, notifications, callbacks, retryPolicy, dispatchTracker);
+  return createTaskScheduler(ctx, notifications, callbacks, retryPolicy, dispatchTracker, reapNow);
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -292,6 +293,48 @@ describe("TaskScheduler", () => {
       }),
     );
     expect(scheduler.getTasksCompleted()).toBe(1);
+  });
+
+  // 5a-i. A completed task is eagerly reaped — front-running the interval sweep so a merged branch is deleted
+  // immediately — and the reap fires only after the owner has been notified the task completed.
+  it("handleTaskCompletion eagerly reaps the completed task after its completion notifications", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+    const reapNow = vi.fn();
+
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", title: "Done task" }));
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks, reapNow);
+    scheduler.dispatchTask(makeMockTask({ id: "t1", title: "Done task" }));
+    scheduler.handleTaskCompletion("t1", { outcome: "completed" });
+
+    expect(reapNow).toHaveBeenCalledWith("t1");
+    expect(reapNow).toHaveBeenCalledTimes(1);
+    // Ordering: the eager reap (a potentially network-bound branch delete) runs strictly after both
+    // completion notifications, so the owner hears "done" before the delete blocks.
+    const lastNotifyOrder = Math.max(...vi.mocked(notifications.notify).mock.invocationCallOrder);
+    expect(reapNow.mock.invocationCallOrder[0]).toBeGreaterThan(lastNotifyOrder);
+  });
+
+  // 5a-ii. When the completed transition loses to a concurrent cancel, the eager reap is skipped — the
+  // cancelled task is left for the reaper's cancel path on the next sweep, not reaped as a completed one.
+  it("handleTaskCompletion skips the eager reap when the completed transition fails", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+    const reapNow = vi.fn();
+
+    taskEngine.requestTransition.mockReturnValue({
+      success: false,
+      reason: "Invalid transition from cancelled to completed",
+    });
+    taskEngine.getTask.mockReturnValue(makeMockTask({ id: "t1", state: TaskStates.cancelled }));
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks, reapNow);
+    scheduler.handleTaskCompletion("t1", { outcome: "completed" });
+
+    expect(reapNow).not.toHaveBeenCalled();
   });
 
   // 5b. A completed outcome resets both retry counters; a blocked outcome resets only crash,

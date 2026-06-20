@@ -74,7 +74,7 @@ graph LR
 | **PeopleDirectory** | Config-driven contact resolution for notifications and escalations |
 | **Observer** | Structured tracing facade — spans, observations, blob storage for the dashboard |
 | **DataLifecycleManager** | Retention cleanup, blob orphan pruning, incremental vacuum |
-| **WorkspaceReaper** | Reconciliation sweep over terminal tasks — deletes merged branches once retention elapses, reaps cancelled tasks (closes any open PR, removes the branch). The sole branch deleter; all-or-nothing per task. Sibling of DataLifecycleManager but does git + plugin (network) work |
+| **WorkspaceReaper** | Reconciliation sweep over terminal tasks — deletes merged branches once retention elapses (invoked eagerly by the completion path, so retention 0 is immediate; the sweep is the backstop), reaps cancelled tasks (closes any open PR, removes the branch). The sole branch deleter; all-or-nothing per task. Sibling of DataLifecycleManager but does git + plugin (network) work |
 
 ## Task Lifecycle
 

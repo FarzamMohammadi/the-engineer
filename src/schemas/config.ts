@@ -344,8 +344,9 @@ export const PrConfigSchema = z.object({
     .enum(["squash", "merge", "rebase"])
     .default("squash")
     .describe("How PRs are merged: squash (single commit), merge (merge commit), or rebase. Default: squash."),
-  // The single knob governing merged-branch deletion, honored by the workspace reaper. The reaper is
-  // the sole branch deleter (auto-merge only records the merge), so deletion lags up to one sweep.
+  // The single knob governing merged-branch deletion, honored by the workspace reaper (auto-merge only
+  // records the merge). The reaper is the sole branch deleter; the task-completion path invokes it eagerly,
+  // so retention 0 deletes immediately on completion, and the interval sweep is the backstop.
   branch_retention_days: z
     .number()
     .int()
@@ -353,7 +354,7 @@ export const PrConfigSchema = z.object({
     .nullable()
     .default(0)
     .describe(
-      "Days to retain a merged branch before the reaper deletes it. null = keep forever; 0 = delete on the next sweep; N = delete N days after merge. Default: 0.",
+      "Days to retain a merged branch before deletion. null = keep forever; 0 = delete immediately when the task completes; N = delete N days after merge. Default: 0.",
     ),
   skip_pr_creation: z
     .object({

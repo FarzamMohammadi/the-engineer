@@ -364,6 +364,7 @@ describe("Daemon", () => {
           state: TaskStates.active,
           sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
+          last_transition_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
 
@@ -401,6 +402,7 @@ describe("Daemon", () => {
           state: TaskStates.active,
           sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
+          last_transition_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
 
@@ -435,6 +437,7 @@ describe("Daemon", () => {
           state: TaskStates.active,
           sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
+          last_transition_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
 
@@ -479,6 +482,7 @@ describe("Daemon", () => {
           state: TaskStates.active,
           sub_state: SubStates.working,
           started_at: new Date(handle.clock.now()).toISOString(),
+          last_transition_at: new Date(handle.clock.now()).toISOString(),
         }),
       );
 

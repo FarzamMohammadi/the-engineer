@@ -165,8 +165,8 @@ describe("DaemonHealthMonitor", () => {
         stuck_threshold_ms: 1_800_000,
       });
 
-      const now = 1_000_000 + 2_000_000; // 2_000_000ms after started_at (> 1_800_000 threshold)
-      const task = makeTask({ started_at: new Date(1_000_000).toISOString() });
+      const now = 1_000_000 + 2_000_000; // 2_000_000ms into the active stint (> 1_800_000 threshold)
+      const task = makeTask({ last_transition_at: new Date(1_000_000).toISOString() });
       taskEngine.getTask.mockReturnValue(task);
       sessionMemory.journal.getLatestTimestamp.mockReturnValue(null);
 
@@ -197,10 +197,10 @@ describe("DaemonHealthMonitor", () => {
         max_active_duration_ms: 28_800_000,
       });
 
-      const startedAt = 1_000_000;
-      const now = startedAt + 2_000_000; // past the stuck threshold, under max active duration
-      const staleEntryAt = new Date(startedAt + 50_000).toISOString(); // a journal entry that then went stale
-      taskEngine.getTask.mockReturnValue(makeTask({ started_at: new Date(startedAt).toISOString() }));
+      const stintStart = 1_000_000;
+      const now = stintStart + 2_000_000; // past the stuck threshold, under max active duration
+      const staleEntryAt = new Date(stintStart + 50_000).toISOString(); // a journal entry that then went stale
+      taskEngine.getTask.mockReturnValue(makeTask({ last_transition_at: new Date(stintStart).toISOString() }));
       sessionMemory.journal.getLatestTimestamp.mockReturnValue(staleEntryAt);
 
       const hm = createDaemonHealthMonitor(
@@ -228,11 +228,11 @@ describe("DaemonHealthMonitor", () => {
         max_active_duration_ms: 28_800_000,
       });
 
-      const startedAt = 1_000_000;
-      const now = startedAt + 30_000_000; // 30M ms > 28_800_000 max active duration
-      const task = makeTask({ started_at: new Date(startedAt).toISOString() });
+      const stintStart = 1_000_000;
+      const now = stintStart + 30_000_000; // 30M ms > 28_800_000 max active duration
+      const task = makeTask({ last_transition_at: new Date(stintStart).toISOString() });
       taskEngine.getTask.mockReturnValue(task);
-      // Recent journal timestamp (not stale), but total duration exceeded
+      // Recent journal timestamp (not stale), but the active stint exceeded the cap
       sessionMemory.journal.getLatestTimestamp.mockReturnValue(new Date(now - 100_000).toISOString());
 
       const notifications = makeNotifications();
@@ -248,7 +248,7 @@ describe("DaemonHealthMonitor", () => {
           payload: expect.objectContaining({
             condition: "no_state_transition",
             threshold_ms: 28_800_000,
-            // Stuck on total runtime, not journal staleness, so last_activity is not reported.
+            // Stuck on the active-stint duration, not journal staleness, so last_activity is not reported.
             last_activity: null,
           }),
         }),
@@ -261,15 +261,44 @@ describe("DaemonHealthMonitor", () => {
         max_active_duration_ms: 28_800_000,
       });
 
-      const startedAt = 1_000_000;
-      const now = startedAt + 1_000_000; // 1M ms < 1_800_000 threshold
-      const task = makeTask({ started_at: new Date(startedAt).toISOString() });
+      const stintStart = 1_000_000;
+      const now = stintStart + 1_000_000; // 1M ms < 1_800_000 threshold
+      const task = makeTask({ last_transition_at: new Date(stintStart).toISOString() });
       taskEngine.getTask.mockReturnValue(task);
 
       const notifications = makeNotifications();
       const getActiveTaskIds = vi.fn(() => ["task-1"]);
 
       const hm = createDaemonHealthMonitor(ctx, notifications, getActiveTaskIds);
+      hm.checkStuckTasks(now);
+
+      expect(eventBus.publish).not.toHaveBeenCalled();
+    });
+
+    it("does not hard-cap a long-lived task that just resumed (short active stint)", () => {
+      // Regression: a task can sit blocked awaiting review far longer than the cap. The duration that
+      // matters is the CURRENT active stint (last_transition_at), not wall-clock since birth (started_at).
+      // Anchoring to started_at hard-capped a healthy task the instant it resumed after a long block.
+      const { ctx, eventBus, taskEngine, sessionMemory } = makeContext({
+        stuck_threshold_ms: 1_800_000,
+        max_active_duration_ms: 28_800_000,
+      });
+
+      const bornAt = 1_000_000;
+      const resumedAt = bornAt + 40_000_000; // resumed long after birth — > the cap since birth
+      const now = resumedAt + 60_000; // only one minute into the new active stint
+      const task = makeTask({
+        started_at: new Date(bornAt).toISOString(),
+        last_transition_at: new Date(resumedAt).toISOString(),
+      });
+      taskEngine.getTask.mockReturnValue(task);
+      sessionMemory.journal.getLatestTimestamp.mockReturnValue(new Date(now - 1_000).toISOString());
+
+      const hm = createDaemonHealthMonitor(
+        ctx,
+        makeNotifications(),
+        vi.fn(() => ["task-1"]),
+      );
       hm.checkStuckTasks(now);
 
       expect(eventBus.publish).not.toHaveBeenCalled();

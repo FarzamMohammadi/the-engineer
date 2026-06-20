@@ -87,11 +87,17 @@ export function createDaemonHealthMonitor(
 
   function checkSingleTaskStuck(taskId: string, now: number): void {
     const task = taskEngine.getTask(taskId);
-    if (!task?.started_at) {
+    if (!task) {
       return;
     }
 
-    const activeElapsed = now - Date.parse(task.started_at);
+    // Measure the CURRENT active stint, not wall-clock since the task was born. `last_transition_at` is
+    // when this task last entered active — it has one active sub-state and no active→active transition, so
+    // it stays frozen for the whole stint. This is the same "time in current state" anchor the blocked
+    // escalation and review-reminder checks below already use. Anchoring to `started_at` instead would
+    // count every hour a task spent blocked awaiting review as "active" and hard-cap a healthy task the
+    // instant it resumed.
+    const activeElapsed = now - Date.parse(task.last_transition_at);
     const latestTimestampStr =
       activeElapsed > config.stuck_threshold_ms ? sessionMemory.journal.getLatestTimestamp(taskId) : null;
     const latestTimestamp = latestTimestampStr ? Date.parse(latestTimestampStr) : null;
@@ -117,8 +123,8 @@ export function createDaemonHealthMonitor(
     }
     stuckLatch.set(taskId, result.condition);
     // last_activity is meaningful only for stale_journal — the timestamp of the last journal entry that went
-    // stale. no_journal_entries has no activity to point at, and no_state_transition fires on total runtime,
-    // not journal staleness, so both stay null rather than report a misleading time.
+    // stale. no_journal_entries has no activity to point at, and no_state_transition fires on the active-stint
+    // duration, not journal staleness, so both stay null rather than report a misleading time.
     const lastActivity = result.condition === "stale_journal" ? latestTimestampStr : null;
     emitStuckDetected(taskId, result.condition, result.elapsedMs, lastActivity);
   }

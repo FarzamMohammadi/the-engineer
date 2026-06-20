@@ -2,7 +2,8 @@ import { AdapterMethodError } from "../../adapters/errors.js";
 import type { TriggerAdapter } from "../../adapters/trigger.js";
 import { AdapterTypes, type TriggerEvent } from "../../schemas/adapters.js";
 import { EventTypes } from "../../schemas/events.js";
-import { TaskStates } from "../../schemas/task.js";
+import { ObservationTypes } from "../../schemas/observer.js";
+import { type TaskState, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { extractEventVariables } from "./event-variables.js";
@@ -137,9 +138,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     // suppresses duplicates — the crash-safe guarantee for all trigger plugins.
     if (taskEngine.findByIdempotencyKey(event.idempotency_key)) {
       seenTriggerKeys.set(event.idempotency_key, now + config.seen_keys_ttl_ms);
-      observer.debug("Duplicate trigger suppressed by DB dedup", {
-        idempotencyKey: event.idempotency_key,
-      });
+      emitRetriggerSuppressed(event.idempotency_key, taskEngine.findKeyHolder(event.idempotency_key));
       return;
     }
 
@@ -182,6 +181,27 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
 
     taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     observer.info("Task created from trigger event", { taskId: task.id, title: event.title });
+  }
+
+  // A re-trigger was suppressed because a task already holds the key. Surface it (instead of a silent
+  // debug log) on the holder's timeline, so a failed holder silently blocking re-triggers is visible.
+  function emitRetriggerSuppressed(idempotencyKey: string, holder: { id: string; state: TaskState } | null): void {
+    if (!holder) {
+      // The gate found a holder; this sync follow-up did not (effectively never — better-sqlite3 is
+      // synchronous, so nothing transitions between the two reads). Fall back to a quiet note.
+      observer.debug("Re-trigger suppressed; holder no longer present", { idempotencyKey });
+      return;
+    }
+    const failed = holder.state === TaskStates.failed;
+    const hint = failed
+      ? "A failed task holds this key. Run `engineer retry` to resume it, or `engineer cancel` to start fresh."
+      : "A live task already holds this key — nothing to do until it finishes.";
+    observer.observe(
+      ObservationTypes.state_transition,
+      "retrigger_suppressed",
+      { idempotency_key: idempotencyKey, holder_task_id: holder.id, holder_state: holder.state, hint },
+      { task_id: holder.id, level: failed ? "warn" : "info" },
+    );
   }
 
   // ── Health Events ───────────────────────────────────────────────────────

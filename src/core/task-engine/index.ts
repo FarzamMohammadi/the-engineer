@@ -401,4 +401,9 @@ export class TaskEngine implements ITaskEngine {
   findByIdempotencyKey(key: string): boolean {
     return this.queries.findByIdempotencyKey(key);
   }
+
+  /** The task holding an idempotency key (id + state), or null. Explains a suppressed re-trigger. */
+  findKeyHolder(key: string): { id: string; state: TaskState } | null {
+    return this.queries.findKeyHolder(key);
+  }
 }

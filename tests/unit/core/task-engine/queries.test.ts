@@ -237,4 +237,18 @@ describe("TaskQueries", () => {
       expect(queries.findByIdempotencyKey("dead:key")).toBe(true);
     });
   });
+
+  describe("findKeyHolder", () => {
+    it("returns the holder's id and state for a key held by a failed task", () => {
+      insertTask({ idempotency_key: "hold:key", state: TaskStates.failed });
+      const holder = queries.findKeyHolder("hold:key");
+      expect(holder?.state).toBe(TaskStates.failed);
+      expect(typeof holder?.id).toBe("string");
+    });
+
+    it("returns null once the key is freed (completed/cancelled)", () => {
+      insertTask({ idempotency_key: "free:key", state: TaskStates.completed });
+      expect(queries.findKeyHolder("free:key")).toBeNull();
+    });
+  });
 });

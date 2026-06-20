@@ -81,6 +81,7 @@ function createMockContext(overrides?: Partial<TriggerPollerContext>): TriggerPo
       getTasksByState: vi.fn().mockReturnValue([]),
       updateTaskField: vi.fn(),
       findByIdempotencyKey: vi.fn().mockReturnValue(false),
+      findKeyHolder: vi.fn().mockReturnValue(null),
     },
     clock: { now: () => 1000 },
     observer: createTestObserverFacade("daemon"),
@@ -156,12 +157,21 @@ describe("TriggerPoller", () => {
     const trigger = makeTriggerPlugin([event]);
     (ctx.registry.getPluginsByType as ReturnType<typeof vi.fn>).mockReturnValue([trigger]);
     (ctx.taskEngine.findByIdempotencyKey as ReturnType<typeof vi.fn>).mockReturnValue(true);
+    (ctx.taskEngine.findKeyHolder as ReturnType<typeof vi.fn>).mockReturnValue({ id: "held-task", state: "failed" });
+    const observeSpy = vi.spyOn(ctx.observer, "observe");
 
     const poller = createTriggerPoller(ctx);
     await poller.poll(100_000);
 
     expect(ctx.taskEngine.findByIdempotencyKey).toHaveBeenCalledWith("persisted-key");
     expect(ctx.taskEngine.createTask).not.toHaveBeenCalled();
+    // Suppression is surfaced on the holder's timeline (not swallowed), with a retry/cancel hint.
+    expect(observeSpy).toHaveBeenCalledWith(
+      "state_transition",
+      "retrigger_suppressed",
+      expect.objectContaining({ holder_task_id: "held-task", holder_state: "failed" }),
+      expect.objectContaining({ task_id: "held-task", level: "warn" }),
+    );
   });
 
   it("deduplicates events by idempotency_key within TTL", async () => {

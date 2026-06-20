@@ -92,4 +92,6 @@ export interface ITaskEngine {
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;
   /** Check if a non-terminal task exists with the given idempotency key (durable dedup). */
   findByIdempotencyKey(key: string): boolean;
+  /** The task holding an idempotency key (id + state), or null. Explains a suppressed re-trigger. */
+  findKeyHolder(key: string): { id: string; state: TaskState } | null;
 }

@@ -21,6 +21,7 @@ export class TaskQueries {
   private readonly getUnreapedTerminalStmt: Database.Statement;
   private readonly getStateHistoryStmt: Database.Statement;
   private readonly findByIdempotencyKeyStmt: Database.Statement;
+  private readonly findKeyHolderStmt: Database.Statement;
 
   constructor(db: Database.Database) {
     this.getTaskStmt = db.prepare("SELECT * FROM tasks WHERE id = ?");
@@ -51,6 +52,15 @@ export class TaskQueries {
     const freeingList = KEY_FREEING_STATES.map((state) => `'${state}'`).join(", ");
     this.findByIdempotencyKeyStmt = db.prepare(`
       SELECT 1 FROM tasks
+      WHERE idempotency_key = ?
+        AND state NOT IN (${freeingList})
+      LIMIT 1
+    `);
+
+    // Same gate as findByIdempotencyKey, but returns WHO holds the key — used only to explain a suppressed
+    // re-trigger (a failed holder means "retry or cancel"), never on the hot dedup path.
+    this.findKeyHolderStmt = db.prepare(`
+      SELECT id, state FROM tasks
       WHERE idempotency_key = ?
         AND state NOT IN (${freeingList})
       LIMIT 1
@@ -104,5 +114,15 @@ export class TaskQueries {
   findByIdempotencyKey(key: string): boolean {
     const row = this.findByIdempotencyKeyStmt.get(key);
     return row !== undefined;
+  }
+
+  /**
+   * The task currently holding an idempotency key — its id and state — or null if the key is free.
+   * Mirrors findByIdempotencyKey's gate (same KEY_FREEING_STATES) but returns who holds it, so a
+   * suppressed re-trigger can be surfaced on the holder's timeline instead of swallowed.
+   */
+  findKeyHolder(key: string): { id: string; state: TaskState } | null {
+    const row = this.findKeyHolderStmt.get(key) as { id: string; state: string } | undefined;
+    return row ? { id: row.id, state: row.state as TaskState } : null;
   }
 }

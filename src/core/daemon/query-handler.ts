@@ -39,12 +39,9 @@ export function classifyQuery(content: string): QueryKind {
     return "unknown";
   }
   const keyword = match[1]?.toLowerCase();
-  if (keyword === "progress") {
-    // `!progress` is the progress command only when it carries an issue number (`#N`); this preserves the
-    // "progress kind ⇔ extractable number" invariant, so `extractIssueNumber` always returns a real number.
-    return PROGRESS_RE.test(trimmed.toLowerCase()) ? "progress" : "unknown";
-  }
-  if (keyword === "status" || keyword === "cost" || keyword === "help") {
+  // `!progress` is a command with or without a `#N`: bare `!progress` lists the tasks (so the owner can
+  // discover the number), `!progress #N` drills into one. The handler branches on the extracted number.
+  if (keyword === "progress" || keyword === "status" || keyword === "cost" || keyword === "help") {
     return keyword;
   }
   return "unknown";
@@ -155,11 +152,12 @@ function formatResponse(kind: QueryKind, content: string, deps: FormatterDeps, o
   }
 }
 
-function extractIssueNumber(content: string): string {
+function extractIssueNumber(content: string): string | null {
   // Match against the original content (not lowercased) so a case-sensitive tracker id like "PROJ-123"
   // is preserved for display and lookup; the regex's `i` flag already handles the "progress" keyword casing.
+  // Null when `!progress` carries no `#N` — the handler then lists the tasks instead of resolving one.
   const match = PROGRESS_RE.exec(content);
-  return (match?.[1] ?? match?.[2]) as string;
+  return match?.[1] ?? match?.[2] ?? null;
 }
 
 /**
@@ -204,13 +202,17 @@ function countOtherStates(taskEngine: ITaskEngine): string[] {
 }
 
 /**
- * Resolve a "progress #N" query, where N is the external issue number (e.g. issue 42), not the internal
- * task id (a ULID). Tasks carry the issue number on `external_ref.id`, so match against that across states.
+ * Resolve a `!progress` query. Bare `!progress` (no `#N`) lists the tasks so the owner can discover the
+ * number to ask about; `!progress #N` resolves that one issue. N is the external issue number (e.g. issue
+ * 42), not the internal task id (a ULID): tasks carry it on `external_ref.id`, matched across states.
  */
-function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string): string {
+function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string | null): string {
+  if (issueNumber === null) {
+    return formatProgressMenu(taskEngine);
+  }
   const task = findTaskByIssueNumber(taskEngine, issueNumber);
   if (!task) {
-    return `Issue #${issueNumber} not found.`;
+    return `Issue #${issueNumber} not found. Send !progress to list the tasks you can ask about.`;
   }
   return [
     `Issue #${issueNumber}: ${task.title}`,
@@ -221,6 +223,22 @@ function formatProgressResponse(taskEngine: ITaskEngine, issueNumber: string): s
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * The `!progress` menu: every active or blocked task with the `#N` to drill into it. This is the owner's
+ * one place to discover the issue number `!progress #N` needs — it is surfaced nowhere else in chat.
+ */
+function formatProgressMenu(taskEngine: ITaskEngine): string {
+  const tasks = [...taskEngine.getTasksByState(TaskStates.active), ...taskEngine.getTasksByState(TaskStates.blocked)];
+  if (tasks.length === 0) {
+    return "No active or blocked tasks right now.";
+  }
+  const lines = tasks.map((task) => {
+    const ref = task.external_ref ? `#${task.external_ref.id}` : "(no issue number)";
+    return `${ref}: ${task.title} (${task.state})`;
+  });
+  return ["Which task? Send !progress #N for one of:", ...lines].join("\n");
 }
 
 /** Find the task whose external reference matches the given issue number, scanning all states. */
@@ -254,7 +272,7 @@ function formatHelpResponse(): string {
   return [
     "I understand:",
     "- !status — active and blocked tasks",
-    "- !progress #N — detail for issue N",
+    "- !progress — list tasks; !progress #N — detail for issue N",
     "- !cost — spending vs limits",
     "- !help — this message",
   ].join("\n");

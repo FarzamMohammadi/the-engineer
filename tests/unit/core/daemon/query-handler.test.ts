@@ -62,6 +62,8 @@ describe("classifyQuery", () => {
     // The id after `#` is an opaque tracker ref — non-numeric and case-insensitive (Jira, Linear).
     expect(classifyQuery("!progress #PROJ-123")).toBe("progress");
     expect(classifyQuery("!PROGRESS #ENG-512")).toBe("progress");
+    // Bare `!progress` (no `#N`) is still a command — it lists the tasks to choose from.
+    expect(classifyQuery("!progress")).toBe("progress");
     expect(classifyQuery("!help")).toBe("help");
   });
 
@@ -92,7 +94,6 @@ describe("classifyQuery", () => {
     expect(classifyQuery("!statuses")).toBe("unknown");
     expect(classifyQuery("!foo")).toBe("unknown");
     expect(classifyQuery("! status")).toBe("unknown");
-    expect(classifyQuery("!progress")).toBe("unknown");
   });
 });
 
@@ -183,6 +184,41 @@ describe("handleQuery", () => {
     expect(notification.message).toContain("Fix login bug");
     expect(notification.message).toContain("active");
     expect(notification.message).toContain("execution");
+  });
+
+  it("lists active and blocked tasks with their issue numbers for bare '!progress'", () => {
+    const deps = createMockDeps();
+    (deps.taskEngine.getTasksByState as ReturnType<typeof vi.fn>).mockImplementation((state: string) => {
+      if (state === TaskStates.active) {
+        return [
+          {
+            id: "01ACTIVE0000000000000000AA",
+            external_ref: { type: "issue", repo: "owner/repo", id: "42" },
+            title: "Fix login bug",
+            state: TaskStates.active,
+          },
+        ];
+      }
+      if (state === TaskStates.blocked) {
+        return [
+          {
+            id: "01BLOCKED000000000000000BB",
+            external_ref: { type: "issue", repo: "owner/repo", id: "25" },
+            title: "Require an explicit prefix",
+            state: TaskStates.blocked,
+          },
+        ];
+      }
+      return [];
+    });
+
+    handleQuery(payload("!progress"), deps);
+
+    const notification = lastNotification(deps);
+    // The menu surfaces the issue number — the one place the owner can discover what to pass to !progress #N.
+    expect(notification.message).toContain("#42: Fix login bug");
+    expect(notification.message).toContain("#25: Require an explicit prefix");
+    expect(notification.message).toContain("!progress #N");
   });
 
   it("matches a non-numeric tracker key like 'progress #PROJ-123', case-insensitively", () => {

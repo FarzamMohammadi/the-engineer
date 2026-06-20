@@ -76,6 +76,7 @@ When a plugin has the `receive` capability, Core polls it for inbound messages a
 | Query | Response |
 |-------|----------|
 | `!status` | Active and blocked tasks by id and title (blocked tasks show their block reason), plus a one-line count of every other state. |
+| `!progress` | The active and blocked tasks with their issue numbers, so you can pick one to ask about — this is where you discover the `N` for `!progress #N`. |
 | `!progress #N` | Detail for the task tracking issue `N`: title, state, priority, phase, block reason. |
 | `!cost` | Whether spending is within limits, plus any per-window percent-of-limit warnings. |
 | `!help` | The list of supported queries. |

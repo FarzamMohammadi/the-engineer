@@ -13,8 +13,9 @@ import type {
 } from "../types/api";
 
 /** Poll cadence for an actively-running task — keeps `end_time`/state fresh so live UI (the agent
- *  conversation's streaming indicator) stops on its own when a span closes, without waiting for a refresh. */
-const LIVE_REFETCH_MS = 2500;
+ *  conversation's streaming indicator) stops on its own when a span closes, without waiting for a refresh.
+ *  Exported as the single source of this cadence; the generic observations hook reuses it for its live mode. */
+export const LIVE_REFETCH_MS = 2500;
 const LIVE_TASK_STATES: ReadonlySet<string> = new Set(["active", "requirements_gathering"]);
 
 /** Whether a task state means work is in flight (so its detail/traces should keep polling for changes). */

@@ -1,5 +1,6 @@
 import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
+import { PR_DESCRIPTION_ROLE, prDescriptionInstructions } from "../../prompts/pipeline/delivery/index.js";
 import { buildResultContract, buildSystemPrompt, buildTaskContext, resultDirectory } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
 import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPhase } from "../types.js";
@@ -10,9 +11,6 @@ import { skipWhenPushOnly } from "./deliverable.js";
 const PHASE_DIR = "delivery";
 const DELIVERABLE = "pr-description.md";
 const TITLE_DELIVERABLE = "pr-title.md";
-
-const ROLE =
-  "Your role is to write the pull request presentation — title and body — the narrative a human reviewer reads to understand what changed and why, and to trust it. Write the presentation only — do not change code.";
 
 /** Absolute directory holding delivery's deliverable, result file, and any `outreach/` questions. */
 const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
@@ -25,7 +23,7 @@ export const prDescription: SubPhase = {
     stepName: "pr-description",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
+    systemPrompt: (ctx) => buildSystemPrompt(PR_DESCRIPTION_ROLE, composeBrief(ctx)),
   }),
   next: prDescriptionNext,
   resultDir: dir,
@@ -47,9 +45,10 @@ export function prDescriptionNext(result: RoutableResult): Route {
 
 function buildPrompt(ctx: Ctx): string {
   const directory = resultDirectory(ctx, PHASE_DIR);
+  const titleFile = `${directory}/${TITLE_DELIVERABLE}`;
   return [
     buildPriorWork(ctx),
-    buildInstructions(directory),
+    section("What To Do", prDescriptionInstructions(titleFile)),
     buildResultContract({ directory, deliverable: DELIVERABLE }),
     buildTaskContext(ctx),
   ].join("\n\n");
@@ -66,26 +65,6 @@ function buildPriorWork(ctx: Ctx): string {
       "- Run `git log` and `git diff` against the base branch to see exactly what ships.",
       `- \`${requirements}/requirements.md\` — what the task asked for and why.`,
       `- \`${review}/refine/refinements.md\` — what review found and how it was resolved.`,
-    ].join("\n"),
-  );
-}
-
-function buildInstructions(directory: string): string {
-  const titleFile = `${directory}/${TITLE_DELIVERABLE}`;
-  return section(
-    "What To Do",
-    [
-      "Write the PR title and body a busy reviewer can act on. Both are drawn from the full diff against base, so both describe the **whole** PR as it now stands — the original work plus every later round of changes — written as if every change landed at once. Never describe the work round-by-round.",
-      "",
-      "**Body** — lead with the answer; put detail underneath:",
-      "- **What and why.** One short paragraph: what this change does and the problem it solves. No filler.",
-      "- **How.** The approach in a few bullets — the decisions a reviewer needs to follow the diff, not a line-by-line replay.",
-      "- **Verification.** How it was checked: which gates ran, what was tested, anything a reviewer should verify themselves.",
-      "- **Risks and follow-ups.** Anything out of scope, deferred, or worth a second look. Honesty here earns trust.",
-      "",
-      `**Title** — also write \`${titleFile}\` containing a **single line**: a concise, imperative PR title (aim for ~50–70 characters) describing the whole PR as it now stands, not just the original task. No issue numbers or prefixes — those are added automatically. No trailing period.`,
-      "",
-      "Keep it scannable and truthful. Do not claim work that was not done. Report `needs_human` only if you genuinely cannot describe the change without an answer.",
     ].join("\n"),
   );
 }

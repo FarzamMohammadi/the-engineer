@@ -1,5 +1,6 @@
 import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
+import { PLANNING_INSTRUCTIONS, PLANNING_ROLE } from "../../prompts/pipeline/planning/index.js";
 import {
   buildCarrySection,
   buildResultContract,
@@ -16,9 +17,6 @@ import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPha
 const PHASE_DIR = "planning";
 const DELIVERABLE = "plan.md";
 
-const ROLE =
-  "Your role is planning: choose the simplest approach that fully meets the requirements, then stress-test it yourself before committing. Do not write code — produce the plan execution will follow.";
-
 /** Absolute directory holding planning's deliverable, result file, and any `outreach/` questions. */
 const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
 
@@ -30,7 +28,7 @@ export const design: SubPhase = {
     stepName: "design",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
+    systemPrompt: (ctx) => buildSystemPrompt(PLANNING_ROLE, composeBrief(ctx)),
   }),
   next: designNext,
   resultDir: dir,
@@ -57,7 +55,11 @@ function buildPrompt(ctx: Ctx): string {
   if (carry) {
     parts.push(carry);
   }
-  parts.push(buildInstructions(), buildResultContract({ directory, deliverable: DELIVERABLE }), buildTaskContext(ctx));
+  parts.push(
+    section("What To Do", PLANNING_INSTRUCTIONS),
+    buildResultContract({ directory, deliverable: DELIVERABLE }),
+    buildTaskContext(ctx),
+  );
   return parts.join("\n\n");
 }
 
@@ -73,33 +75,6 @@ function buildPriorWork(ctx: Ctx): string {
       `- \`${research}/research.md\` — codebase analysis, relevant files, patterns, the simplest viable approach, and the assumptions research left open.`,
       "",
       "These are inputs, not conclusions.",
-    ].join("\n"),
-  );
-}
-
-function buildInstructions(): string {
-  return section(
-    "What To Do",
-    [
-      "You own this plan. Earlier phases did their best, but you are the last check before code is written — verify their conclusions, fill the gaps they missed, and resolve every open question now. A plan that defers an ambiguity into implementation is not finished. Its value is the decisions it records, not its length.",
-      "",
-      "1. Evaluate at least two approaches before committing:",
-      "   - **Simplest** — the minimum change that fully meets the requirements. Fewest new files and abstractions. This is your baseline.",
-      "   - **Alternative** — a different path worth considering only if it buys something concrete the simplest lacks.",
-      "   Choose one and justify it. Complexity must earn its place; if the simplest path works, take it.",
-      "",
-      "2. Stress-test your chosen plan before detailing it — this is the same session, no separate review:",
-      "   - **Plugin Opacity:** if it touches Core or an adapter boundary, would Core still compile with every plugin deleted?",
-      "   - **Isolation:** does it add shared mutable state or bleed across task boundaries?",
-      "   - **Boundaries:** are you working through contracts, not reaching into a module's internals?",
-      "   - **Reversibility:** which decisions are hard to undo (new interfaces, schema changes)? Name them.",
-      "   If a check fails, redesign before going further.",
-      "",
-      "3. Pre-mortem: assume the implementation ships with a subtle flaw. Name the two or three most likely failure modes — concurrency, crash recovery, unbounded growth, stale state. Mitigate each in the plan, or say why it is acceptable.",
-      "",
-      "4. Write a precise, ordered plan with concrete file paths and a verification step per part. Use checkboxes so execution can track progress. Record each meaningful decision — what you chose, what you rejected, and what it locks in — so execution inherits the reasoning, not just the result. Do not write code.",
-      "",
-      "Report `needs_human` only if a decision the plan genuinely depends on is not yours to make.",
     ].join("\n"),
   );
 }

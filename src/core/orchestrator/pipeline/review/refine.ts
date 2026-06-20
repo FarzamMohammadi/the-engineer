@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { composeBrief } from "../../prompts/brief.js";
 import { section } from "../../prompts/format.js";
+import { REFINE_INSTRUCTIONS, REFINE_ROLE } from "../../prompts/pipeline/review/index.js";
 import { buildSkillsSection } from "../../prompts/skills.js";
 import {
   buildCarrySection,
@@ -27,9 +28,6 @@ const REVIEW_DIR = "review";
 const PHASE_DIR = path.join(REVIEW_DIR, "refine");
 const DELIVERABLE = "refinements.md";
 
-const ROLE =
-  "Your role is refine: the last hands on the change before it ships. Consolidate the review lenses' findings, fix what you can directly in the code, and judge honestly whether the result is ready or whether the real problem lives in an earlier phase.";
-
 /** refine's verdicts — the routing vocabulary it reports in `details.verdict`. */
 const VERDICTS = ["ship", "revise", "rework_execution", "rework_planning", "rework_requirements"] as const;
 type RefineVerdict = (typeof VERDICTS)[number];
@@ -49,7 +47,7 @@ export const refine: SubPhase = {
     stepName: "refine",
     directory: dir,
     prompt: buildPrompt,
-    systemPrompt: (ctx) => buildSystemPrompt(ROLE, composeBrief(ctx)),
+    systemPrompt: (ctx) => buildSystemPrompt(REFINE_ROLE, composeBrief(ctx)),
     detailsSchema: RefineDetailsSchema,
   }),
   next: refineNext,
@@ -106,7 +104,7 @@ function buildPrompt(ctx: Ctx): string {
     parts.push(carry);
   }
   parts.push(
-    buildInstructions(),
+    section("What To Do", REFINE_INSTRUCTIONS),
     buildResultContract({ directory, deliverable: DELIVERABLE, detailsHint: DETAILS_HINT }),
     buildTaskContext(ctx),
   );
@@ -130,29 +128,6 @@ function buildPriorWork(ctx: Ctx): string {
       ...lensFindings,
       "",
       "Run `git diff` against the base branch to see the current state of the change.",
-    ].join("\n"),
-  );
-}
-
-function buildInstructions(): string {
-  return section(
-    "What To Do",
-    [
-      "You are the final quality gate before delivery. Assume issues exist until you have proven otherwise.",
-      "",
-      "1. Consolidate the lenses' findings. Group them; drop duplicates and anything that does not hold up when you look at the actual code.",
-      "2. Fix what you can directly in the code — security issues without exception, requirement gaps, clarity and simplicity problems. Commit your fixes with the project's checks passing, using the commit skill below.",
-      "3. Run the project's gates again after fixing. A fix that breaks a gate is not a fix.",
-      "4. Then judge the result honestly and record one verdict in `details.verdict`:",
-      "",
-      "   - **ship** — the change is correct, complete, and clean; nothing material remains. Deliver it.",
-      "   - **revise** — you fixed issues in place and want the lenses to look again at the changed code. The review re-runs (this is capped — if it cannot converge in a few passes, the task is escalated to a person).",
-      "   - **rework_execution** — the change needs a substantial re-implementation that is better done fresh in execution than patched here.",
-      "   - **rework_planning** — the approach itself is wrong; the plan needs rethinking before more code is written.",
-      "   - **rework_requirements** — the requirements are unclear or wrong, and no amount of code fixes that until a person resolves them.",
-      "",
-      "Prefer fixing in place and shipping. Reach for a rework verdict only when the root cause genuinely lives in an earlier phase — not to avoid the work.",
-      "Report `needs_human` only if a question blocks you that is not yours to answer.",
     ].join("\n"),
   );
 }

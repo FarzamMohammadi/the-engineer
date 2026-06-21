@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { type Mock, describe, expect, it, vi } from "vitest";
 
+import type { CreateCheckpointInput } from "../../../../../src/core/interfaces/session-memory.interface.js";
 import { traceScope } from "../../../../../src/core/orchestrator/pipeline/observability.js";
 import { InvalidRouteError, runPipeline } from "../../../../../src/core/orchestrator/pipeline/runner.js";
 import type { Route, SubPhase, SubPhaseResult } from "../../../../../src/core/orchestrator/pipeline/types.js";
@@ -458,6 +459,107 @@ describe("runPipeline", () => {
       await runPipeline(pipeline, ctx);
 
       expect(sessionMemory.checkpoints.create).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe("checkpoint carry-forward", () => {
+    /** The checkpoint input from the most recent `create` call — what the sub-phase carried forward. */
+    function lastCheckpoint(create: Mock): CreateCheckpointInput {
+      return create.mock.lastCall?.[0] as CreateCheckpointInput;
+    }
+
+    it("carries the sub-phase summary into the checkpoint context", async () => {
+      const order: string[] = [];
+      const { ctx, sessionMemory } = createMockPipeline();
+
+      await runPipeline([mockPhase("execution", [recording("implement", order)])], ctx);
+
+      expect(lastCheckpoint(sessionMemory.checkpoints.create).contextSummary).toBe("implement ok");
+    });
+
+    it("derives key findings from the discretionary decisions a sub-phase surfaced", async () => {
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "built it",
+            data: {
+              decisions: [
+                {
+                  category: "architecture",
+                  summary: "Split the parser into its own module.",
+                  chosen: "extract module",
+                  reasoning: "it had two reasons to change",
+                },
+              ],
+            },
+          }),
+        next: () => ({ go: "done" }) satisfies Route,
+      });
+      const { ctx, sessionMemory } = createMockPipeline({
+        consultJudgment: () => ({ action: "proceed", reason: "architecture is always_decide" }),
+      });
+
+      await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      const checkpoint = lastCheckpoint(sessionMemory.checkpoints.create);
+      expect(checkpoint.keyFindings).toEqual([
+        'Decided "architecture": Split the parser into its own module. Chose "extract module" because it had two reasons to change.',
+      ]);
+      expect(checkpoint.openQuestions).toEqual([]);
+      expect(checkpoint.nextAction).toBe("Continue the pipeline past execution/implement");
+    });
+
+    it("carries a needs_human report as an open question with a concrete resume action", async () => {
+      const sub = mockSubPhase("gather", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "needs_human",
+            summary: "Which auth provider should the login flow use?",
+          }),
+        next: () => ({ go: "done" }) satisfies Route,
+      });
+      const { ctx, sessionMemory } = createMockPipeline({ people: [mockOwner()] });
+
+      await runPipeline([mockPhase("requirements", [sub])], ctx);
+
+      const checkpoint = lastCheckpoint(sessionMemory.checkpoints.create);
+      expect(checkpoint.openQuestions).toEqual(["Which auth provider should the login flow use?"]);
+      expect(checkpoint.nextAction).toBe("Resume requirements/gather once the open questions are answered");
+    });
+
+    it("names the failure as the next action on a failed result", async () => {
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "failed",
+            summary: "no result",
+            category: "no_result",
+            detail: "the agent wrote no session-result.json",
+          }),
+      });
+      const { ctx, sessionMemory } = createMockPipeline();
+
+      await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      const checkpoint = lastCheckpoint(sessionMemory.checkpoints.create);
+      expect(checkpoint.keyFindings).toEqual([]);
+      expect(checkpoint.openQuestions).toEqual([]);
+      expect(checkpoint.nextAction).toBe(
+        "Resolve the failure at execution/implement: the agent wrote no session-result.json",
+      );
+    });
+
+    it("leaves findings empty when a clean sub-phase surfaced nothing to carry", async () => {
+      const order: string[] = [];
+      const { ctx, sessionMemory } = createMockPipeline();
+
+      await runPipeline([mockPhase("research", [recording("investigate", order)])], ctx);
+
+      const checkpoint = lastCheckpoint(sessionMemory.checkpoints.create);
+      expect(checkpoint.keyFindings).toEqual([]);
+      expect(checkpoint.openQuestions).toEqual([]);
+      expect(checkpoint.nextAction).toBe("Continue the pipeline past research/investigate");
     });
   });
 

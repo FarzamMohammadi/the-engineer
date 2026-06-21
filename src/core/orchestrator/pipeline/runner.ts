@@ -347,7 +347,9 @@ function planRoute(
 
 /**
  * Checkpoint after a sub-phase so a crash or preempt resumes at the right cursor with its caps intact.
- * Position and counters ride in their own typed columns; `phase_progress` is the human one-liner.
+ * Position and counters ride in their own typed columns; `phase_progress` is the human one-liner. The
+ * carry-forward fields (findings, questions, next action) are derived from the result by
+ * {@link deriveCarryForward} so resume and the dashboard read real substance, not empty shells.
  */
 function writeCheckpoint(
   ctx: Ctx,
@@ -357,6 +359,7 @@ function writeCheckpoint(
   totalReworks: number,
   result: SubPhaseResult,
 ): void {
+  const carryForward = deriveCarryForward(phase, subPhase, result);
   ctx.sessionMemory.checkpoints.create({
     sessionId: ctx.sessionId,
     taskId: ctx.task.id,
@@ -366,14 +369,61 @@ function writeCheckpoint(
     totalReworks,
     phaseProgress: `${phase}/${subPhase}`,
     contextSummary: result.summary,
-    keyFindings: [],
-    openQuestions: [],
-    nextAction: `After ${phase}/${subPhase}`,
+    keyFindings: carryForward.keyFindings,
+    openQuestions: carryForward.openQuestions,
+    nextAction: carryForward.nextAction,
     lastEventId: "",
     workspaceRef: null,
     reason: CheckpointReasons.phase_transition,
     journalOffset: 0,
   });
+}
+
+/** The carry-forward a checkpoint records beyond its position: what was learned, what is open, what comes next. */
+interface CarryForward {
+  readonly keyFindings: string[];
+  readonly openQuestions: string[];
+  readonly nextAction: string;
+}
+
+/**
+ * Derive the carry-forward fields purely from a sub-phase result — the substance resume and the
+ * dashboard's "what happened / now / next" view read. The result's `summary` already rides in
+ * `context_summary`, so it is not repeated here; these fields capture what the summary does not.
+ *
+ * - `keyFindings` come from the discretionary decisions the sub-phase surfaced (the one cross-phase
+ *   structured signal in a result), each rendered as a concrete decision-with-reason. Empty when the
+ *   sub-phase surfaced none — honestly nothing to carry, not a false "nothing happened".
+ * - `openQuestions` carry the agent's own report when it reported `needs_human`: that summary *is* the
+ *   thing a human must answer. Empty for `ok`/`failed`, which raise no question for the owner here.
+ * - `nextAction` is the concrete next step the result implies, never templated boilerplate: continue
+ *   past a clean sub-phase, answer the open questions on a `needs_human`, or resolve the failure on a
+ *   `failed` (which the runner blocks on immediately after this checkpoint).
+ */
+function deriveCarryForward(phase: Phase, subPhase: string, result: SubPhaseResult): CarryForward {
+  const position = `${phase}/${subPhase}`;
+  const keyFindings = readSurfacedDecisions(result).map(renderFinding);
+
+  if (result.outcome === "needs_human") {
+    return {
+      keyFindings,
+      openQuestions: [result.summary],
+      nextAction: `Resume ${position} once the open questions are answered`,
+    };
+  }
+  if (result.outcome === "failed") {
+    return {
+      keyFindings,
+      openQuestions: [],
+      nextAction: `Resolve the failure at ${position}: ${result.detail}`,
+    };
+  }
+  return { keyFindings, openQuestions: [], nextAction: `Continue the pipeline past ${position}` };
+}
+
+/** Render one surfaced decision as a key finding — what was decided, the choice made, and why. */
+function renderFinding(decision: SurfacedDecision): string {
+  return `Decided "${decision.category}": ${decision.summary} Chose "${decision.chosen}" because ${decision.reasoning}.`;
 }
 
 /**

@@ -484,6 +484,8 @@ autonomy:
     public_api: { level: always_ask, description: "Changing a public interface or contract" }
     destructive: { level: always_ask, description: "Deleting data, files, or history" }
     security: { level: always_ask, description: "Anything touching auth, secrets, or permissions" }
+    # Intake-only — research/requirements ask before building if they find the premise wrong or already solved.
+    premise_conflict: { level: always_ask, description: "Intake found the premise wrong or already satisfied — reconfirm before building" }
   repo_overrides: {}                      # Per-repo autonomy overrides (default: {})
 
 # ── Response Timeouts ────────────────────────────────────────────────────────

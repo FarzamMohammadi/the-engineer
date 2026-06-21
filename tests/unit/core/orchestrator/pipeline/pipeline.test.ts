@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { PIPELINE } from "../../../../../src/core/orchestrator/pipeline/pipeline.js";
-import { type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
+import { PREMISE_CONFLICT_CATEGORY, type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
 
 // The pipeline map is the heart of the system — folders are phases, files are sub-phases.
 // This pins the shape so an accidental reorder or a dropped sub-phase is caught.
@@ -39,5 +39,18 @@ describe("PIPELINE", () => {
     expect(capOf(Phases.execution)).toBe(3);
     expect(capOf(Phases.review)).toBe(3);
     expect(capOf(Phases.requirements)).toBe(1);
+  });
+
+  it("exempts the intent-forming phases from gating, but escalates a premise_conflict from each", () => {
+    // requirements and research do not gate ordinary decisions (consultsDecisions: false), yet they still
+    // escalate the one signal no later phase recovers — a wrong-or-already-solved premise — to the owner.
+    const intake = (phase: Phase) => PIPELINE.find((p) => p.phase === phase);
+    for (const phase of [Phases.requirements, Phases.research]) {
+      expect(intake(phase)?.consultsDecisions).toBe(false);
+      expect(intake(phase)?.escalatedCategories).toEqual([PREMISE_CONFLICT_CATEGORY]);
+    }
+    // The build phases gate every decision the normal way — no escalatedCategories carve-out.
+    expect(intake(Phases.planning)?.escalatedCategories).toBeUndefined();
+    expect(intake(Phases.execution)?.escalatedCategories).toBeUndefined();
   });
 });

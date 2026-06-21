@@ -164,10 +164,27 @@ export async function runPipeline(
     // Intent-forming phases (consultsDecisions === false) do not gate: a decision raised while the agent
     // is still understanding the task is premature, so it is recorded for the trail, not asked — this is
     // what stops requirements' ask-biased intake from re-surfacing a settled choice each resume.
+    //
+    // The ONE exception: such a phase may still escalate the categories it lists in `escalatedCategories`
+    // (only `premise_conflict` today — its own investigation found the premise wrong or already solved,
+    // which no later phase recovers, so the owner must decide proceed/redirect/drop before any build).
+    // That gating fires only on a genuine first pass — when this sub-phase ran with NO carry — so a
+    // resume carrying the owner's answer cannot re-derive the same conflict and re-ask it. This is the
+    // mechanical guarantee that the reconfirm is asked at most once, never the loop the exemption closes.
+    const decisions = readSurfacedDecisions(result);
     if (phaseDef.consultsDecisions === false) {
-      noteUnconsultedDecisions(ctx, phaseDef.phase, subPhase.name, result);
+      const escalated = phaseDef.escalatedCategories ?? [];
+      const gateNow = carry === undefined && escalated.length > 0;
+      const toConsult = gateNow ? decisions.filter((decision) => escalated.includes(decision.category)) : [];
+      const toNote = gateNow ? decisions.filter((decision) => !escalated.includes(decision.category)) : decisions;
+      // Note the ungated ones first — they happened, and must leave a trail even if a conflict then blocks.
+      noteUnconsultedDecisions(ctx, phaseDef.phase, subPhase.name, toNote);
+      const ask = consultSurfacedDecisions(ctx, phaseDef.phase, subPhase.name, toConsult);
+      if (ask) {
+        return emitBlock(ctx, phaseDef.phase, ask);
+      }
     } else {
-      const ask = consultDecisions(ctx, phaseDef.phase, subPhase.name, result);
+      const ask = consultSurfacedDecisions(ctx, phaseDef.phase, subPhase.name, decisions);
       if (ask) {
         return emitBlock(ctx, phaseDef.phase, ask);
       }
@@ -452,19 +469,28 @@ function persistTaskPosition(
 // ── Effects: autonomy escalation ─────────────────────────────────────────────
 
 /**
- * Consult the owner's autonomy policy for every discretionary decision the sub-phase surfaced in
- * `result.data.decisions`, and collect the ones the owner must confirm into ONE block — asked together,
- * so the owner answers them in a single reply rather than one per resume. The safety layer records each
- * verdict as an `autonomy_policy` decision nested in the dispatch trace. Returns null when there are no
- * decisions or the policy lets the agent decide every one.
+ * Consult the owner's autonomy policy for each of the given discretionary decisions, and collect the
+ * ones the owner must confirm into ONE block — asked together, so the owner answers them in a single
+ * reply rather than one per resume. The safety layer records each verdict as an `autonomy_policy`
+ * decision nested in the dispatch trace. Returns null when the list is empty or the policy lets the
+ * agent decide every one.
+ *
+ * Takes an explicit decision list (rather than reading the whole result) so the caller controls WHICH
+ * decisions are consulted: a consulting phase passes them all, while an intent-forming phase passes only
+ * the escalated subset and notes the rest. An empty list returns null immediately, keeping the policy
+ * consult off the path entirely for the common case of no decisions to ask.
  *
  * No-owner edge: if the policy escalates but no owner is configured, blocking would strand the task
  * forever with no one to answer. So the runner proceeds autonomously instead and records a loud,
  * sub-full-confidence decision naming exactly what was decided without the owner. The `getOwner()`
  * check lives HERE in the runner — the safety layer stays owner-agnostic (it only judges the policy).
  */
-function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): BlockDetail | null {
-  const decisions = readSurfacedDecisions(result);
+function consultSurfacedDecisions(
+  ctx: Ctx,
+  phase: Phase,
+  subPhase: string,
+  decisions: readonly SurfacedDecision[],
+): BlockDetail | null {
   if (decisions.length === 0) {
     return null;
   }
@@ -511,14 +537,19 @@ function consultDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubP
 }
 
 /**
- * Record — without gating — the decisions a sub-phase surfaced in an intent-forming phase (one whose
- * `consultsDecisions` is false). The dashboard observer sees only what is emitted, so a choice noted but
- * not asked must still leave a trail: one info line plus a full-confidence decision per choice, naming
- * what was recorded and why it was not put to the owner here (the call is consulted in the phase that
- * makes it). Silent when the sub-phase surfaced none.
+ * Record — without gating — the given decisions a sub-phase surfaced in an intent-forming phase (one
+ * whose `consultsDecisions` is false). The dashboard observer sees only what is emitted, so a choice
+ * noted but not asked must still leave a trail: one info line plus a full-confidence decision per choice,
+ * naming what was recorded and why it was not put to the owner here (the call is consulted in the phase
+ * that makes it). Silent when the list is empty. The caller passes only the decisions it chose not to
+ * gate — an escalated `premise_conflict` is consulted instead, not noted here.
  */
-function noteUnconsultedDecisions(ctx: Ctx, phase: Phase, subPhase: string, result: SubPhaseResult): void {
-  const decisions = readSurfacedDecisions(result);
+function noteUnconsultedDecisions(
+  ctx: Ctx,
+  phase: Phase,
+  subPhase: string,
+  decisions: readonly SurfacedDecision[],
+): void {
   if (decisions.length === 0) {
     return;
   }

@@ -173,13 +173,16 @@ function resolveReentry(type: PrEventType, task: Task): ResumeState | undefined 
 }
 
 /**
- * The rework context a requirements re-run opens with after the owner answered a question it raised.
- * Exported for direct unit testing, mirroring the PR-event sibling `reentryCarry` in pr-events.ts.
+ * The rework context a re-run opens with after the owner answered a question it raised — used for every
+ * `pending_response` resume, whichever phase owns the ask: a requirements scope question, a research
+ * `premise_conflict` reconfirm, or any later phase's discretionary decision. Phase-neutral wording so it
+ * reads correctly wherever the question came from. Exported for direct unit testing, mirroring the
+ * PR-event sibling `reentryCarry` in pr-events.ts.
  */
 export function responseCarry(answer: string): Carry {
   return {
     summary: [
-      "The owner answered the question(s) you raised while gathering requirements. Their answer is authoritative: it defines the scope of this task. Do exactly what they asked and nothing more — it overrides any broader reading you might otherwise infer from the task title or from repo artifacts (asset specs, existing files). If the answer makes the task trivial, say so and scope it as trivial.",
+      "The owner answered the question(s) you raised. Their answer is authoritative: it defines the scope of this task. Do exactly what they asked and nothing more — it overrides any broader reading you might otherwise infer from the task title or from repo artifacts (asset specs, existing files). If the answer makes the task trivial, say so and scope it as trivial.",
       "",
       "Their answer:",
       answer,

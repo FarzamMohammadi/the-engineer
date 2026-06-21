@@ -66,6 +66,16 @@ export type SurfacedDecision = z.infer<typeof SurfacedDecisionSchema>;
 /** The contract for the `details.decisions` array any agent sub-phase may surface. */
 export const DecisionsSchema = z.array(SurfacedDecisionSchema);
 
+/**
+ * The one surfaced-decision category an intent-forming phase still escalates to the owner. An intake
+ * phase that finds material evidence the task's stated premise is wrong, or that the need is already
+ * satisfied elsewhere, surfaces this — and the runner asks the owner proceed/redirect/drop before any
+ * build, rather than letting the agent silently narrow scope and proceed. Keyed by the owner's autonomy
+ * policy like every other category (see {@link PhaseDefinition.escalatedCategories} and
+ * `DEFAULT_AUTONOMY_DECISIONS`); its value is the policy vocabulary's single source of truth.
+ */
+export const PREMISE_CONFLICT_CATEGORY = "premise_conflict";
+
 // ── Results & Routing ────────────────────────────────────────────────────────
 
 /**
@@ -198,6 +208,16 @@ export interface PhaseDefinition {
    * a settled choice on every resume and looping the owner.
    */
   readonly consultsDecisions?: boolean;
+  /**
+   * Categories this phase escalates to the owner **even though** {@link consultsDecisions} is false —
+   * the one signal an intent-forming phase must not swallow. Its sole member is
+   * {@link PREMISE_CONFLICT_CATEGORY}: the agent's own investigation contradicts the task's premise (or
+   * shows the need already met), which no later phase recovers — so the owner is asked proceed/redirect/
+   * drop before any build. Suppressed on a resume that carries the owner's answer, so it is asked at most
+   * once and never loops. Inert on a consulting phase (those gate every category already). Absent means
+   * none.
+   */
+  readonly escalatedCategories?: readonly string[];
 }
 
 /**

@@ -109,6 +109,13 @@ surfaces is premature. It is recorded for the trail, not asked, and the call is 
 phase that actually makes it. This keeps requirements' deliberately ask-biased intake from re-surfacing
 a choice you have already settled on every resume.
 
+**One signal escapes that exemption: a wrong premise.** If intake's own investigation finds the task's
+stated premise is factually wrong, or that the need is already satisfied elsewhere in the codebase, it
+surfaces a `premise_conflict` — and that one category *is* escalated, asking you to **proceed / redirect
+/ drop** before any build, rather than the agent silently narrowing scope to engineer around what it
+found. It is asked once: a resume carrying your answer does not re-ask it. With no owner configured it
+degrades the same way as any other escalation — proceed and record the call loudly.
+
 If several decisions need confirming at once, they are asked **together** in one reach-out — answer
 them all in a single reply rather than one per round.
 
@@ -152,6 +159,7 @@ to `always_ask`**, so an unfamiliar decision always reaches you.
 | `public_api` | `always_ask` | Changing a public interface or contract |
 | `destructive` | `always_ask` | Deleting data, files, or history |
 | `security` | `always_ask` | Anything touching auth, secrets, or permissions |
+| `premise_conflict` | `always_ask` | Intake found the task's premise wrong or already satisfied — reconfirm before building |
 
 These defaults apply with no `safety.yaml` at all. Override any category to widen or tighten the agent's
 latitude:

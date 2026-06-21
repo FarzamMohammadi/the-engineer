@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { PIPELINE } from "../../src/core/orchestrator/pipeline/pipeline.js";
 import { runPipeline } from "../../src/core/orchestrator/pipeline/runner.js";
+import { mockOwner } from "../helpers/test-mock-pipeline.js";
 import {
   type FakeResult,
   type PipelineHarness,
@@ -96,5 +97,78 @@ describe("upstream pipeline (integration)", () => {
     // First pass leaves the gate red → repeat → second pass writes MARKER → gate green → advance.
     expect(implementCalls).toBe(2);
     expect(harness.observer.observations.some((observation) => observation.name === "loop_repeat")).toBe(true);
+  });
+
+  // The #27→#37 case end-to-end: research's own investigation contradicts the premise (the reported
+  // "hidden" step is already visible elsewhere). The full session-result → mapResult → runner path must
+  // turn that into an owner reconfirm BEFORE planning, not a silently narrowed build.
+  function conflictResult(phaseDir: string): FakeResult {
+    if (phaseDir === "requirements") {
+      return groundingResult("moderate", PASSING_GATE);
+    }
+    if (phaseDir === "research") {
+      return {
+        status: "ok",
+        summary: "the reported need is already met elsewhere",
+        details: {
+          decisions: [
+            {
+              category: "premise_conflict",
+              summary: "verify already shows on the Phases and Timeline tabs",
+              chosen: "narrow the goal to a combined feed",
+              reasoning: "the bug's 'verify is hidden' premise is contradicted by those tabs",
+            },
+          ],
+        },
+      };
+    }
+    return { status: "ok", summary: `${phaseDir} done` };
+  }
+
+  it("reconfirms a research premise_conflict with the owner before planning runs", async () => {
+    const ran: string[] = [];
+    const agent = newShapeAgent((phaseDir) => {
+      ran.push(phaseDir);
+      return conflictResult(phaseDir);
+    });
+    harness = createPipelineHarness(agent, {
+      people: [mockOwner()],
+      consultJudgment: () => ({ action: "ask_human", reason: "premise_conflict always asks" }),
+    });
+
+    const outcome = await runPipeline(UPSTREAM, harness.ctx);
+
+    expect(outcome).toMatchObject({
+      kind: "blocked",
+      detail: { category: "awaiting_human_decision", sub_phase: "investigate" },
+    });
+    // Stopped at research — planning and execution never ran.
+    expect(ran).toEqual(["requirements", "research"]);
+    if (outcome.kind === "blocked") {
+      expect(outcome.detail.needed).toContain("premise_conflict");
+      expect(outcome.detail.needed).toContain("combined feed");
+    }
+  });
+
+  it("proceeds past a research premise_conflict with no owner, recording the call loudly", async () => {
+    const ran: string[] = [];
+    const agent = newShapeAgent((phaseDir) => {
+      ran.push(phaseDir);
+      return conflictResult(phaseDir);
+    });
+    // No `people` → getOwner() is null. The consult still escalates, but blocking would strand the task,
+    // so the runner proceeds and records an autonomy_no_owner decision (the AC#5 no-owner edge).
+    harness = createPipelineHarness(agent, {
+      consultJudgment: () => ({ action: "ask_human", reason: "premise_conflict always asks" }),
+    });
+
+    const outcome = await runPipeline(UPSTREAM, harness.ctx);
+
+    expect(outcome).toEqual({ kind: "completed" });
+    // Advanced through planning and execution despite the conflict.
+    expect(ran).toEqual(["requirements", "research", "planning", "execution"]);
+    const ownerless = harness.observer.decisions.find((decision) => decision.name === "autonomy_no_owner");
+    expect(ownerless?.chosen).toBe("proceed_without_owner");
+    expect(ownerless?.reasoning).toContain("combined feed");
   });
 });

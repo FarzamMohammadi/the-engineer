@@ -241,7 +241,7 @@ engineer cancel 01HXYZ12                 # Works with ID prefix
 engineer cancel <task-id> --json         # Machine-readable JSON output
 ```
 
-Cancellable states are `requirements_gathering`, `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled. A `failed` task is retryable, and a `cancelled` task is resumable while its work survives — both via [retry](#retry). Cancel abandons work; retry resumes it.
+Cancellable states are `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled. A `failed` task is retryable, and a `cancelled` task is resumable while its work survives — both via [retry](#retry). Cancel abandons work; retry resumes it.
 
 Source: [`src/cli/commands/cancel.ts`](../src/cli/commands/cancel.ts)
 

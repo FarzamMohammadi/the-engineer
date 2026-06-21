@@ -123,7 +123,7 @@ The Engineer runs CLI agents as subprocesses inside isolated git worktrees. Core
 
 Autonomous operation requires the CLI to skip its own permission prompts — Claude Code launches with `--dangerously-skip-permissions`, for example. The worktree is the containment boundary, not in-CLI prompts.
 
-**State machine.** Every agent invocation passes through the Task Engine, which permits or denies it based on the task's current state. A task in `requirements_gathering` can't trigger execution; a `failed` task can't run until you `engineer retry`.
+**State machine.** Every agent invocation passes through the Task Engine, which permits or denies it based on the task's current state. A `queued` task can't perform write actions until it's scheduled to `active`; a `failed` task can't run until you `engineer retry`.
 
 **Cost ceilings.** Every agent call emits a `cost.incurred` event. Spending accumulates per task, per day, per month, plus per-provider request budgets. At 80% of any limit, The Engineer warns. At 100%, it terminates the in-flight work and notifies you immediately — before the next agent call can accrue more spend. A per-task or per-provider breach terminates that one task and DMs you about it; a global daily or monthly breach terminates every in-flight task at once and sends a single alert naming the limit and how many tasks it stopped — never one DM per task.
 

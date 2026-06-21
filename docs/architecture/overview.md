@@ -114,9 +114,7 @@ Tasks follow a CPU-derived state machine. The authoritative definitions live in 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> requirements_gathering
-    requirements_gathering --> queued : Requirements gathered
-    requirements_gathering --> failed : Cannot proceed
+    [*] --> queued
     queued --> active : Scheduled
     active --> blocked : Needs a human, or awaiting PR review
     active --> queued : Preempted
@@ -128,7 +126,6 @@ stateDiagram-v2
     blocked --> failed : Escalation timeout
     failed --> queued : engineer retry
     cancelled --> queued : engineer retry (resume, pre-reap)
-    requirements_gathering --> cancelled : engineer cancel
     queued --> cancelled : engineer cancel
     active --> cancelled : engineer cancel
     blocked --> cancelled : engineer cancel
@@ -138,8 +135,7 @@ stateDiagram-v2
 
 | State | Sub-states | Description |
 |-------|------------|-------------|
-| `requirements_gathering` | — | Initial state. Clarifying intent before scheduling. |
-| `queued` | — | Ready for execution, waiting to be scheduled |
+| `queued` | — | Birth state. A new task is admitted directly into the queue, ready for the scheduler to dispatch. The requirements-gathering work itself runs later, in the pipeline, once the task is `active` |
 | `active` | `working` | Currently being worked on by the Orchestrator |
 | `blocked` | — | Waiting — either on a human (a question or decision) or on an external PR event (review, CI, approval, merge). The block reason distinguishes them. |
 | `completed` | — | Successfully completed (PR merged, or branch pushed in push-only mode) |

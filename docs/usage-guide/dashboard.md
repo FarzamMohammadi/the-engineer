@@ -38,7 +38,7 @@ The home page — a grid of status cards for a glance-and-go health check.
 
 ### Tasks
 
-The full task list, with filter chips across the top to narrow by state — `active`, `blocked`, `queued`, `requirements_gathering`, `completed`, `failed`, `cancelled`. When you are looking at blocked tasks, a second row of chips lets you narrow further by *why* they are blocked: needs info, agent unavailable, pipeline failed, or PR review pending. Click any row to open that task's detail page.
+The full task list, with filter chips across the top to narrow by state — `active`, `blocked`, `queued`, `completed`, `failed`, `cancelled`. When you are looking at blocked tasks, a second row of chips lets you narrow further by *why* they are blocked: needs info, agent unavailable, pipeline failed, or PR review pending. Click any row to open that task's detail page.
 
 #### Task detail
 

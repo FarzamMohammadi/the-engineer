@@ -125,7 +125,7 @@ or network), and deliberately kept independent.
 | `data_lifecycle.retention.checkpoints.max_age_days` | integer | `90` | Days to retain checkpoint records. |
 
 **Active-task protection.** A sweep prunes by age, but never prunes a row belonging to a task that is still
-live (`requirements_gathering`, `queued`, `active`, `blocked`) — that task may still need its own events,
+live (`queued`, `active`, `blocked`) — that task may still need its own events,
 observations, journal, and checkpoints. System rows with no owning task (the cost, health, trigger, and
 cleanup audit trail, stored with `task_id` NULL) and rows of terminal tasks (`completed`, `failed`,
 `cancelled`) prune by age like everything else. This protection is deterministic: a system row prunes the

@@ -43,7 +43,7 @@ Biome automates what it can: formatting, import ordering, file naming, complexit
 
 ### Rules
 
-- **Full names, no abbreviations.** `CommunicationAdapter` not `CommAdapter`. `requirements_gathering` not `req_gathering`.
+- **Full names, no abbreviations.** `CommunicationAdapter` not `CommAdapter`. `acceptance_criteria` not `accept_criteria`.
 - **Acronyms as words.** `XmlParser`, `loadHttpUrl`, `parseJsonBody` — not `XMLParser`, `loadHTTPURL`.
 - **Boolean prefixes preferred.** Use `is`, `has`, `can`, `should`, `was`, `will` when the bare word is ambiguous. `isActive`, `hasChildren`, `shouldRetry`. Exception: obvious adjectives that can only be boolean — `enabled`, `blocked`, `active` (on a clearly boolean field).
 - **No vague -ER suffixes.** `TaskManager` (manages how?) and `DataProcessor` (processes into what?) are banned. `ConfigLoader` and `EventHandler` are fine when precise. The test: if you can't describe what it does without repeating the suffix, rename it.

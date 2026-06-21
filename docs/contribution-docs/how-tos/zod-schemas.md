@@ -32,8 +32,8 @@ Every enum-like value follows a three-part export:
 ```typescript
 // 1. Zod schema (source of truth)
 export const TaskStateSchema = z.enum([
-  "requirements_gathering", "queued", "active",
-  "blocked", "completed", "failed", "cancelled",
+  "queued", "active", "blocked",
+  "completed", "failed", "cancelled",
 ]);
 
 // 2. TypeScript type (inferred, never manual)
@@ -152,8 +152,8 @@ For structured constant data that must match a type constraint:
 ```typescript
 // src/schemas/task.ts — State machine transitions
 export const ValidTransitions = [
-  { from: "requirements_gathering", to: "queued" },
   { from: "queued", to: "active", to_sub: "working" },
+  { from: "active", from_sub: "working", to: "blocked" },
   // ...
 ] as const satisfies ReadonlyArray<{
   readonly from: TaskState;
@@ -164,7 +164,7 @@ export const ValidTransitions = [
 ```
 
 This gives you:
-- **Compile-time literal types** — `ValidTransitions[0].from` is `"requirements_gathering"`, not `string`
+- **Compile-time literal types** — `ValidTransitions[0].from` is `"queued"`, not `string`
 - **Type safety** — a typo in `from`/`to` values is a compile error
 - **Runtime data** — iterable at runtime for validation logic
 

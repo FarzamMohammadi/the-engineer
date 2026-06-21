@@ -32,7 +32,7 @@ const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
   "blocked",
 ]);
 
-/** Single task detail page with tabbed views for overview, timeline, phases, decisions, agent calls, and tools. */
+/** Single task detail page with tabbed views for overview, timeline, phases, decisions, steps, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
   const navigate = useNavigate();
@@ -138,7 +138,7 @@ export function TaskDetailPage(): React.JSX.Element {
           <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="phases">Phases</TabsTrigger>
           <TabsTrigger value="decisions">Decisions</TabsTrigger>
-          <TabsTrigger value="agent">Agent Calls</TabsTrigger>
+          <TabsTrigger value="agent">Steps</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">

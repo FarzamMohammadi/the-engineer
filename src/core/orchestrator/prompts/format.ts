@@ -7,6 +7,8 @@ export interface TaskBriefInput {
   title: string;
   description: string | null;
   external_ref?: { type: string; repo: string; id: string } | null;
+  /** The structured acceptance criteria requirements settled — the end-state every later phase is judged against. */
+  acceptance_criteria?: readonly string[];
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -38,6 +40,13 @@ export function buildTaskBrief(task: TaskBriefInput): string {
   if (task.external_ref) {
     const ref = task.external_ref;
     lines.push("", `Source: ${ref.type} ${ref.repo}#${ref.id}`);
+  }
+
+  if (task.acceptance_criteria && task.acceptance_criteria.length > 0) {
+    lines.push("", "Acceptance criteria (the end-state this task is judged against):");
+    for (const criterion of task.acceptance_criteria) {
+      lines.push(`- ${criterion}`);
+    }
   }
 
   return section("Task", lines.join("\n"));

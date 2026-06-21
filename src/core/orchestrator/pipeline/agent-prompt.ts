@@ -11,6 +11,7 @@ import {
   SECURITY_BOUNDARY,
   SURFACE_DECISIONS,
 } from "../prompts/standards/index.js";
+import { acceptanceCriteria } from "./grounding.js";
 import type { Ctx } from "./types.js";
 
 // ── Shared System Prompt ─────────────────────────────────────────────────────
@@ -70,8 +71,21 @@ export function buildTaskContext(ctx: Ctx): string {
     title: ctx.task.title,
     description: ctx.task.description,
     external_ref: ctx.task.external_ref,
+    acceptance_criteria: resolveAcceptanceCriteria(ctx),
   });
   return [brief, buildRepoOverview(repoContext)].join("\n\n");
+}
+
+/**
+ * The acceptance criteria to put in front of a later phase. Prefer the grounding handoff requirements
+ * wrote to the worktree (current within this dispatch, the moment gather records them), and fall back to
+ * the persisted `task.acceptance_criteria` field — the queryable snapshot a fresh re-entry dispatch loads
+ * before its worktree handoff is in view. Reads the live source so the review gates on the same criteria
+ * the dashboard shows, not a stale dispatch-start copy.
+ */
+function resolveAcceptanceCriteria(ctx: Ctx): readonly string[] {
+  const fromGrounding = acceptanceCriteria(ctx);
+  return fromGrounding.length > 0 ? fromGrounding : ctx.task.acceptance_criteria;
 }
 
 /** Absolute directory for a phase's deliverable and result file. Fails loud when no worktree exists. */

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  acceptanceCriteria,
   isTrivial,
   readGrounding,
   verificationCommands,
@@ -39,6 +40,11 @@ describe("grounding", () => {
       expect(readGrounding(ctxWithDetails({ complexity: "trivial" }))?.complexity).toBe("trivial");
     });
 
+    it("reads the acceptance criteria requirements recorded", () => {
+      const ctx = ctxWithDetails({ acceptance_criteria: ["A passes", "B is green"] });
+      expect(readGrounding(ctx)?.acceptance_criteria).toEqual(["A passes", "B is green"]);
+    });
+
     it("reads the verification commands requirements recorded", () => {
       const ctx = ctxWithDetails({
         verification: { commands: [{ name: "typecheck", command: "pnpm", args: ["run", "typecheck"] }] },
@@ -48,8 +54,12 @@ describe("grounding", () => {
       ]);
     });
 
-    it("defaults to moderate with no gates when details are empty", () => {
-      expect(readGrounding(ctxWithDetails({}))).toEqual({ complexity: "moderate", verification: { commands: [] } });
+    it("defaults to moderate with no criteria and no gates when details are empty", () => {
+      expect(readGrounding(ctxWithDetails({}))).toEqual({
+        complexity: "moderate",
+        acceptance_criteria: [],
+        verification: { commands: [] },
+      });
     });
 
     it("returns null when there is no workspace", () => {
@@ -73,6 +83,14 @@ describe("grounding", () => {
       expect(isTrivial(ctxWithDetails({ complexity: "trivial" }))).toBe(true);
       expect(isTrivial(ctxWithDetails({ complexity: "moderate" }))).toBe(false);
       expect(isTrivial(createMockPipeline().ctx)).toBe(false);
+    });
+  });
+
+  describe("acceptanceCriteria", () => {
+    it("returns the recorded criteria, or an empty list when none", () => {
+      expect(acceptanceCriteria(ctxWithDetails({ acceptance_criteria: ["A passes"] }))).toEqual(["A passes"]);
+      expect(acceptanceCriteria(ctxWithDetails({}))).toEqual([]);
+      expect(acceptanceCriteria(createMockPipeline().ctx)).toEqual([]);
     });
   });
 

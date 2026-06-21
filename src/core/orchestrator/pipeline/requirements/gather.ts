@@ -12,7 +12,14 @@ import {
 } from "../agent-prompt.js";
 import { agentStep } from "../agent-step.js";
 import { GroundingSchema } from "../grounding.js";
-import { BlockCategories, type Ctx, type RoutableResult, type Route, type SubPhase } from "../types.js";
+import {
+  BlockCategories,
+  type Ctx,
+  type RoutableResult,
+  type Route,
+  type SubPhase,
+  type SubPhaseResult,
+} from "../types.js";
 
 // ── The Sub-Phase ────────────────────────────────────────────────────────────
 
@@ -20,24 +27,60 @@ const PHASE_DIR = "requirements";
 const DELIVERABLE = "requirements.md";
 
 const DETAILS_HINT =
-  '"complexity": "trivial" | "moderate" | "complex", "verification": { "commands": [ { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] } ] }';
+  '"complexity": "trivial" | "moderate" | "complex", "acceptance_criteria": ["each checkable condition that means done"], "verification": { "commands": [ { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] } ] }';
 
 /** Absolute directory holding requirements' deliverable, result file, and any `outreach/` questions. */
 const dir = (ctx: Ctx): string => resultDirectory(ctx, PHASE_DIR);
 
-/** Requirements: ground in the project, understand the task, batch any human questions, assess complexity. */
+const runGather = agentStep({
+  stepName: "gather",
+  directory: dir,
+  prompt: buildPrompt,
+  systemPrompt: (ctx) => buildSystemPrompt(GATHER_ROLE, composeBrief(ctx)),
+  detailsSchema: GroundingSchema,
+});
+
+/** Requirements: ground in the project, understand the task, settle and persist acceptance criteria, batch any human questions, assess complexity. */
 export const gather: SubPhase = {
   name: "gather",
-  run: agentStep({
-    stepName: "gather",
-    directory: dir,
-    prompt: buildPrompt,
-    systemPrompt: (ctx) => buildSystemPrompt(GATHER_ROLE, composeBrief(ctx)),
-    detailsSchema: GroundingSchema,
-  }),
+  run: runWithCriteriaPersisted,
   next: gatherNext,
   resultDir: dir,
 };
+
+/**
+ * Run the gather agent step, then persist the acceptance criteria it recorded onto the task row.
+ * The agent writes the criteria into `details.acceptance_criteria` (already validated against
+ * GroundingSchema by agentStep); this is the one place that promotes them from the session-result
+ * handoff into the queryable `task.acceptance_criteria` field — so the review gates on a structured
+ * field and the dashboard can show the exact conditions the task is judged against. Persisted only
+ * on an `ok` result: a `needs_human` or `failed` run has not settled the end-state yet.
+ */
+async function runWithCriteriaPersisted(ctx: Ctx): Promise<SubPhaseResult> {
+  const result = await runGather(ctx);
+  if (result.outcome === "ok") {
+    persistAcceptanceCriteria(ctx, result.data);
+  }
+  return result;
+}
+
+/**
+ * Mirror the acceptance criteria from gather's validated `details` onto `task.acceptance_criteria`.
+ * Reads the field back through GroundingSchema so it honors the same default (an empty list) the
+ * handoff does — a gather run that recorded none leaves the task's criteria empty rather than throwing.
+ */
+function persistAcceptanceCriteria(ctx: Ctx, data: Record<string, unknown> | undefined): void {
+  const grounding = GroundingSchema.safeParse(data ?? {});
+  if (!grounding.success) {
+    return;
+  }
+  const criteria = grounding.data.acceptance_criteria;
+  ctx.taskEngine.updateTaskField(ctx.task.id, "acceptance_criteria", criteria);
+  ctx.observer.info("Persisted acceptance criteria from requirements", {
+    taskId: ctx.task.id,
+    count: criteria.length,
+  });
+}
 
 /** `needs_human` blocks the task for an answer; otherwise advance to the next phase. */
 export function gatherNext(result: RoutableResult): Route {

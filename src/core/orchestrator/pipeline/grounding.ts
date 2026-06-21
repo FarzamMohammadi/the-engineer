@@ -8,10 +8,13 @@ import type { Ctx, SkipReason } from "./types.js";
 // ── The Grounding Handoff ────────────────────────────────────────────────────
 //
 // What requirements learns by acclimating to the project — how complex the task
-// is, and how the project verifies work — recorded in its session-result details
-// and consumed downstream: complexity gates research/planning skip, the
-// verification commands are what `verify` runs. Grounding happens once, up front,
-// in the always-present first phase; later steps read it rather than re-deriving.
+// is, the concrete conditions that mean it is done, and how the project verifies
+// work — recorded in its session-result details and consumed downstream:
+// complexity gates research/planning skip, the acceptance criteria are the
+// queryable end-state the review gates on (and are mirrored onto the task row so
+// the dashboard can show them), and the verification commands are what `verify`
+// runs. Grounding happens once, up front, in the always-present first phase;
+// later steps read it rather than re-deriving.
 
 const REQUIREMENTS_DIR = "requirements";
 const RESULT_FILE = "session-result.json";
@@ -30,6 +33,8 @@ export type GateCommand = z.infer<typeof GateCommandSchema>;
 /** The project knowledge requirements records by grounding — the contract its `details` payload satisfies. */
 export const GroundingSchema = z.object({
   complexity: ComplexitySchema.default("moderate"),
+  /** The concrete, checkable conditions that mean the task is done — the end-state the review gates on. */
+  acceptance_criteria: z.array(z.string()).default([]),
   verification: z.object({ commands: z.array(GateCommandSchema).default([]) }).default({ commands: [] }),
 });
 export type Grounding = z.infer<typeof GroundingSchema>;
@@ -82,4 +87,9 @@ export function skipIfTrivial(reason: string): (ctx: Ctx) => SkipReason | null {
 /** The verification commands requirements learned, or an empty list when none were recorded. */
 export function verificationCommands(ctx: Ctx): readonly GateCommand[] {
   return readGrounding(ctx)?.verification.commands ?? [];
+}
+
+/** The acceptance criteria requirements recorded — the end-state the review gates on, or an empty list when none. */
+export function acceptanceCriteria(ctx: Ctx): readonly string[] {
+  return readGrounding(ctx)?.acceptance_criteria ?? [];
 }

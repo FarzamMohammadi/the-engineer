@@ -25,6 +25,7 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
     last_transition_at: "2026-01-15T10:30:00Z",
     blocked: null as string | null,
     reaped_at: null as string | null,
+    idempotency_key: `test:${id}`,
     ...overrides,
   };
   db.prepare(
@@ -33,7 +34,7 @@ function insertTask(db: Database.Database, id: string, overrides: Record<string,
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
-    `test:${id}`,
+    defaults.idempotency_key,
     defaults.state,
     defaults.sub_state,
     defaults.phase,
@@ -244,6 +245,27 @@ describe("taskRoutes — POST /:id/retry", () => {
     expect(task.state).toBe(TaskStates.cancelled);
   });
 
+  it("returns 409 when a newer task already holds the source's idempotency key", async () => {
+    // Cancel freed the key; a fresh task was triggered from the same source and is live.
+    insertTask(handle.db, "task-old", {
+      state: TaskStates.cancelled,
+      sub_state: null,
+      reaped_at: null,
+      idempotency_key: "github:issue-7",
+    });
+    insertTask(handle.db, "task-new", { state: TaskStates.queued, sub_state: null, idempotency_key: "github:issue-7" });
+
+    const res = await app.request("/task-old/retry", { method: "POST" });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { error: string }).toMatchObject({
+      error: expect.stringContaining("task-new"),
+    });
+    // The cancelled task is untouched; the live clone stands.
+    const task = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-old") as { state: string };
+    expect(task.state).toBe(TaskStates.cancelled);
+  });
+
   it("returns 400 for a task in a non-retryable state", async () => {
     insertTask(handle.db, "task-active", { state: TaskStates.active, sub_state: SubStates.working });
 
@@ -299,6 +321,17 @@ describe("taskRoutes — POST /:id/rerun", () => {
     expect(event.type).toBe("task.rerun_requested");
     expect(event.source).toBe("dashboard");
     expect(JSON.parse(event.payload)).toEqual({ task_id: "task-reaped" });
+  });
+
+  it("returns 409 and writes no event for a cancelled task that is not yet reaped (still resumable)", async () => {
+    insertTask(handle.db, "task-unreaped", { state: TaskStates.cancelled, sub_state: null, reaped_at: null });
+
+    const res = await app.request("/task-unreaped/rerun", { method: "POST" });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { error: string }).toMatchObject({ error: expect.stringContaining("resumed") });
+    const count = handle.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number };
+    expect(count.n).toBe(0);
   });
 
   it("returns 400 and writes no event when the task is not cancelled", async () => {

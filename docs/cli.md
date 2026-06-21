@@ -247,7 +247,9 @@ Source: [`src/cli/commands/cancel.ts`](../src/cli/commands/cancel.ts)
 
 ### rerun
 
-Re-runs a `cancelled` task as a **fresh task** cloned from its source — for when its work was already cleaned up, so [retry](#retry) can no longer resume it. The new task starts from scratch (a new ID, a new workspace, the full pipeline) and links back to the cancelled one as a previous attempt. The original cancelled task is left untouched.
+Re-runs a `cancelled` task as a **fresh task** cloned from its source — for when its work was already cleaned up by the [workspace reaper](architecture/scheduling-dispatch.md), so [retry](#retry) can no longer resume it. The new task starts from scratch (a new ID, a new workspace, the full pipeline) and links back to the cancelled one as a previous attempt. The original cancelled task is left untouched.
+
+Re-run only applies once the work is gone. If the cancelled task has **not** been reaped yet, its worktree and branch still exist, so it is resumable in place — `rerun` refuses and points you to [`retry`](#retry) rather than discard recoverable progress.
 
 ```bash
 engineer rerun <task-id>                 # Re-run a cancelled task as a fresh clone

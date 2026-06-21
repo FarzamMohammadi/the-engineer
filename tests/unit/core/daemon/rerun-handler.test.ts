@@ -13,6 +13,7 @@ function makeCancelledTask(overrides: Partial<Task> = {}): Task {
   return {
     id: "old-1",
     state: TaskStates.cancelled,
+    reaped_at: "2026-01-16T09:00:00Z",
     idempotency_key: "github:issue-42",
     title: "Fix the bug",
     description: "desc",
@@ -74,6 +75,14 @@ describe("handleRerunRequest", () => {
 
   it("skips when the source task is not cancelled", () => {
     const { deps, taskEngine } = makeDeps(makeCancelledTask({ state: TaskStates.completed }));
+
+    handleRerunRequest(deps, "old-1");
+
+    expect(taskEngine.createTask).not.toHaveBeenCalled();
+  });
+
+  it("skips when the source task is not yet reaped (still resumable in place)", () => {
+    const { deps, taskEngine } = makeDeps(makeCancelledTask({ reaped_at: null }));
 
     handleRerunRequest(deps, "old-1");
 

@@ -52,16 +52,18 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     consecutive_crash_count: 3,
     consecutive_agent_unavailable_count: 2,
     not_before: "2026-06-01T00:00:00Z",
+    reaped_at: null as string | null,
+    idempotency_key: `test:${id}`,
     ...overrides,
   };
   db.prepare(
     `INSERT INTO tasks (id, idempotency_key, state, sub_state, priority, title, description, repo,
        created_at, last_transition_at, agent_tokens, agent_cost_usd,
-       consecutive_crash_count, consecutive_agent_unavailable_count, not_before)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       consecutive_crash_count, consecutive_agent_unavailable_count, not_before, reaped_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
-    `test:${id}`,
+    defaults.idempotency_key,
     defaults.state,
     defaults.sub_state ?? null,
     defaults.priority,
@@ -75,6 +77,7 @@ function insertTask(db: import("better-sqlite3").Database, id: string, overrides
     defaults.consecutive_crash_count,
     defaults.consecutive_agent_unavailable_count,
     defaults.not_before,
+    defaults.reaped_at,
   );
 }
 
@@ -192,6 +195,34 @@ describe("runRetry", () => {
     >;
     expect(row["state"]).toBe(TaskStates.queued);
     expect(stdoutWrites.join("")).toContain("resumed — moved from cancelled to queued");
+    handle.close();
+  });
+
+  it("refuses to resume a reaped cancelled task and points to re-run", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "task-reaped", { state: TaskStates.cancelled, reaped_at: "2026-01-16T09:00:00Z" });
+
+    const code = runRetry(tempDir, "task-reaped");
+    expect(code).toBe(1);
+    expect(stderrWrites.join("")).toContain("can no longer be resumed");
+    // Untouched.
+    const row = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-reaped") as Record<string, unknown>;
+    expect(row["state"]).toBe(TaskStates.cancelled);
+    handle.close();
+  });
+
+  it("refuses to resume a cancelled task whose key a newer task holds, naming the holder", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "task-old", { state: TaskStates.cancelled, idempotency_key: "github:issue-9" });
+    insertTask(handle.db, "task-new", { state: TaskStates.queued, idempotency_key: "github:issue-9" });
+
+    const code = runRetry(tempDir, "task-old");
+    expect(code).toBe(1);
+    expect(stderrWrites.join("")).toContain("task-new");
+    const row = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-old") as Record<string, unknown>;
+    expect(row["state"]).toBe(TaskStates.cancelled);
     handle.close();
   });
 

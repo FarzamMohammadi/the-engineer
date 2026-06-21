@@ -62,13 +62,23 @@ function requestRerun(db: BetterSqlite3.Database, taskIdInput: string): number {
     return 1;
   }
 
-  const task = db.prepare("SELECT state FROM tasks WHERE id = ?").get(taskId) as { state: string } | undefined;
+  const task = db.prepare("SELECT state, reaped_at FROM tasks WHERE id = ?").get(taskId) as
+    | { state: string; reaped_at: string | null }
+    | undefined;
   if (!task) {
     out.error(`Task not found: ${taskId}`);
     return 1;
   }
   if (task.state !== TaskStates.cancelled) {
     out.error(`Task is in state "${task.state}". Only a cancelled task can be re-run.`);
+    return 1;
+  }
+  // Re-run is for a cancelled task whose work was already cleaned up. While the work still exists, the task
+  // can be resumed in place — cloning would discard that progress — so point the owner at retry instead.
+  if (task.reaped_at === null) {
+    out.error(
+      `Task ${taskId} can still be resumed — its work was not cleaned up. Use 'engineer retry ${taskId}' to resume it in place. Re-run is for cancelled tasks whose workspace was already reaped.`,
+    );
     return 1;
   }
 

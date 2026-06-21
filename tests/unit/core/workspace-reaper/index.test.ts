@@ -614,4 +614,22 @@ describe("workspace reaper — resume race (snapshot re-read guard)", () => {
     expect(h.cleanupWorkspace).not.toHaveBeenCalled();
     expect(h.updateTaskField).not.toHaveBeenCalled();
   });
+
+  it("aborts the cancelled reap before deleting the worktree when a resume lands during the PR close", async () => {
+    const cancelled = cancelledTask(42); // an open PR, so closeOpenPr runs and opens the resume window
+    const h = makeReaper({ tasks: [cancelled] });
+    // The top-of-reapTask re-read still sees `cancelled`; the second re-read (just before the local delete,
+    // after the network PR close) sees the task already resumed to `queued`.
+    h.getTask
+      .mockReturnValueOnce({ ...cancelled } as Task)
+      .mockReturnValue({ ...cancelled, state: TaskStates.queued } as Task);
+
+    await h.reaper.runOnce();
+
+    // The PR may have been closed (the documented residual), but the live task's worktree/branch are preserved.
+    expect(h.cleanupWorkspace).not.toHaveBeenCalled();
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.branchDeletedPublished()).toBe(false);
+    expect(h.updateTaskField).not.toHaveBeenCalled();
+  });
 });

@@ -36,6 +36,14 @@ export function handleRerunRequest(deps: RerunHandlerDeps, sourceTaskId: string)
     observer.warn("Re-run ignored — source task is not cancelled", { sourceTaskId, state: source.state });
     return;
   }
+  // Re-run is for a cancelled task whose work was already cleaned up. While the work still exists
+  // (`reaped_at` null) the task is resumable in place — cloning instead would throw away recoverable
+  // progress — so re-run refuses and the owner should resume via retry. The request paths (the CLI and the
+  // dashboard endpoint) enforce this too; this is the final guard at the point the clone is actually made.
+  if (!source.reaped_at) {
+    observer.warn("Re-run ignored — source task is not reaped yet, so it can still be resumed", { sourceTaskId });
+    return;
+  }
   if (!source.repo) {
     observer.warn("Re-run ignored — source task has no repo to clone into", { sourceTaskId });
     return;

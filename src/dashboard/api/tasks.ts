@@ -501,14 +501,19 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
    */
   app.post("/:id/rerun", (c) => {
     const taskId = c.req.param("id");
-    const row = deps.writeDb.prepare("SELECT state FROM tasks WHERE id = ?").get(taskId) as
-      | { state: string }
+    const row = deps.writeDb.prepare("SELECT state, reaped_at FROM tasks WHERE id = ?").get(taskId) as
+      | { state: string; reaped_at: string | null }
       | undefined;
     if (!row) {
       return c.json({ error: "Task not found" }, 404);
     }
     if (row.state !== TaskStates.cancelled) {
       return c.json({ error: `Only a cancelled task can be re-run; this one is "${row.state}"` }, 400);
+    }
+    // Re-run is for a cancelled task whose work was already cleaned up. While the work survives the task is
+    // resumable in place via retry, so re-run (a fresh clone) is refused to avoid discarding recoverable work.
+    if (row.reaped_at === null) {
+      return c.json({ error: "This task can still be resumed (its work was not cleaned up); use retry instead" }, 409);
     }
     try {
       deps.writeDb

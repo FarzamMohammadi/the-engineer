@@ -362,6 +362,7 @@ describe("ResponsePoller", () => {
     taskEngine.getTask = vi.fn(() => ({
       id: "old-1",
       state: "cancelled",
+      reaped_at: "2026-01-16T09:00:00Z",
       idempotency_key: "github:issue-42",
       title: "Fix the bug",
       repo: "acme/app",

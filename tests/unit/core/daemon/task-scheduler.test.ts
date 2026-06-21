@@ -831,6 +831,28 @@ describe("TaskScheduler", () => {
     expect(resumeComments).toHaveLength(0);
   });
 
+  it("does not re-announce a resume when a resumed task is re-dispatched after a preemption", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    // The task was resumed (cancelled→queued), dispatched (queued→active), then preempted (active→queued).
+    // The LATEST transition is the preemption, so this re-dispatch must NOT re-announce the resume.
+    taskEngine.getStateHistory.mockReturnValue([
+      { from_state: TaskStates.cancelled, to_state: TaskStates.queued },
+      { from_state: TaskStates.queued, to_state: TaskStates.active },
+      { from_state: TaskStates.active, to_state: TaskStates.queued },
+    ]);
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+    scheduler.dispatchTask(makeMockTask({ id: "t1" }) as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    const resumeComments = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) => (c[0] as { message?: string }).message === "Task resumed by the owner.",
+    );
+    expect(resumeComments).toHaveLength(0);
+  });
+
   // 26. F2: unknown outcome transitions task to blocked instead of silently dropping it
   it("handleTaskCompletion on unknown outcome transitions task to blocked", () => {
     const { ctx, taskEngine } = makeContext();

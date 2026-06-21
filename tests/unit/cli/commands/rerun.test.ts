@@ -43,13 +43,21 @@ function markDaemonRunning(): void {
   writeFileSync(join(tempDir, "run", "engineer.pid"), String(process.pid));
 }
 
-function insertTask(db: import("better-sqlite3").Database, id: string, state: string): void {
+function insertTask(
+  db: import("better-sqlite3").Database,
+  id: string,
+  state: string,
+  reapedAt: string | null = null,
+): void {
   db.prepare(
     `INSERT INTO tasks (id, idempotency_key, state, priority, title, description, created_at, last_transition_at,
-       agent_tokens, agent_cost_usd)
-     VALUES (?, ?, ?, 50, 'Test task', '', '2026-01-15T10:30:00Z', '2026-01-15T10:30:00Z', 0, 0)`,
-  ).run(id, `test:${id}`, state);
+       agent_tokens, agent_cost_usd, reaped_at)
+     VALUES (?, ?, ?, 50, 'Test task', '', '2026-01-15T10:30:00Z', '2026-01-15T10:30:00Z', 0, 0, ?)`,
+  ).run(id, `test:${id}`, state, reapedAt);
 }
+
+/** A reaped cancelled task — the only kind `engineer rerun` accepts (its work is gone, so it cannot be resumed). */
+const REAPED_AT = "2026-01-16T09:00:00Z";
 
 describe("runRerun", () => {
   it("returns 1 when the database does not exist", () => {
@@ -68,10 +76,10 @@ describe("runRerun", () => {
     expect(stderrWrites.join("")).toContain("daemon is not running");
   });
 
-  it("writes a task.rerun_requested event for a cancelled task when the daemon is running", () => {
+  it("writes a task.rerun_requested event for a reaped cancelled task when the daemon is running", () => {
     markDaemonRunning();
     const handle = createDatabase(join(tempDir, "data", "engineer.db"));
-    insertTask(handle.db, "task-cancelled", TaskStates.cancelled);
+    insertTask(handle.db, "task-cancelled", TaskStates.cancelled, REAPED_AT);
 
     const code = runRerun(tempDir, "task-cancelled");
     expect(code).toBe(0);
@@ -100,6 +108,21 @@ describe("runRerun", () => {
     handle.close();
   });
 
+  it("rejects an unreaped cancelled task (still resumable) and points to retry, writing no event", () => {
+    markDaemonRunning();
+    const handle = createDatabase(join(tempDir, "data", "engineer.db"));
+    insertTask(handle.db, "task-unreaped", TaskStates.cancelled, null);
+
+    const code = runRerun(tempDir, "task-unreaped");
+    expect(code).toBe(1);
+    expect(stderrWrites.join("")).toContain("can still be resumed");
+    expect(stderrWrites.join("")).toContain("engineer retry");
+
+    const count = handle.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number };
+    expect(count.n).toBe(0);
+    handle.close();
+  });
+
   it("returns 1 when the task is not found", () => {
     markDaemonRunning();
     const handle = createDatabase(join(tempDir, "data", "engineer.db"));
@@ -113,7 +136,7 @@ describe("runRerun", () => {
   it("resolves a task by ID prefix", () => {
     markDaemonRunning();
     const handle = createDatabase(join(tempDir, "data", "engineer.db"));
-    insertTask(handle.db, "01HXYZ1234567890ABCDEFGHIJ", TaskStates.cancelled);
+    insertTask(handle.db, "01HXYZ1234567890ABCDEFGHIJ", TaskStates.cancelled, REAPED_AT);
 
     const code = runRerun(tempDir, "01HXYZ12");
     expect(code).toBe(0);

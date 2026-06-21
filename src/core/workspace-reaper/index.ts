@@ -290,11 +290,12 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
   // ── Per-Task Reconciliation ────────────────────────────────────────────────
 
   async function reapTask(task: Task): Promise<ReapOutcome> {
-    // The worklist is a snapshot. A cancelled task can be resumed (cancelled→queued) between the snapshot and
-    // here, so re-read under the current state: never reap a task that has left its terminal state or was
-    // already reaped — that would delete a live (resumed) task's workspace out from under it. The residual
-    // window between this re-read and the destructive cleanup below is sub-second; the guarded resume write
-    // additionally re-asserts `reaped_at IS NULL`, so the two writers serialize on the DB.
+    // The worklist is a snapshot. A cancelled task can be resumed (cancelled→queued, a cross-process write)
+    // between the snapshot and here, so re-read under the current state: never reap a task that has left its
+    // terminal state or was already reaped — that would delete a live (resumed) task's workspace out from
+    // under it. This early re-read catches a resume that landed before reaping began; the cancelled arm takes
+    // a SECOND re-read immediately before the irreversible local delete (see reapCancelledTask), since the
+    // network-bound PR close in between is a wide enough window for a resume to slip through.
     const fresh = taskEngine.getTask(task.id);
     if (!fresh || fresh.reaped_at || !isReapableState(fresh.state)) {
       observer.debug("Reap skipped — task is no longer an unreaped terminal task (likely resumed)", {
@@ -425,6 +426,19 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
       const prNumber = task.review?.pr_number ?? null;
       if (hosting && prNumber !== null) {
         await closeOpenPr(hosting, record.repo, prNumber, task.id);
+      }
+
+      // Final guard before the irreversible local delete. A resume (cancelled→queued) is a cross-process
+      // write that can land during the network-bound PR close above, so re-read once more: if the task came
+      // back to life (or was already reaped), abort the teardown rather than delete a live task's worktree.
+      // The residual is the microsecond gap between this read and the delete below — negligible for one owner.
+      const current = taskEngine.getTask(task.id);
+      if (!current || current.reaped_at || current.state !== TaskStates.cancelled) {
+        observer.debug("Cancelled-task reap aborted before cleanup — task was resumed or already reaped", {
+          taskId: task.id,
+          state: current?.state ?? "missing",
+        });
+        return "skipped";
       }
 
       // Local first (cheap, reliable, idempotent), then the remote (network, fallible).

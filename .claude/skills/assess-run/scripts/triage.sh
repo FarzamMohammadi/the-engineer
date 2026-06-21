@@ -86,18 +86,32 @@ qc "SELECT substr(id,1,14) session, datetime(started_at) started, datetime(ended
       coalesce(end_reason,'(still running)') end_reason
     FROM sessions WHERE task_id = '$TID' ORDER BY started_at;"
 
-# ── 3. The pipeline journey — agent_call per sub-phase, in order ───────────────
-# This is the most legible view of how the run actually moved through RRPIR.
-# Watch for: error status, repeats of a sub-phase, and bounces back to an
-# earlier phase (e.g. delivery → execution) that signal rework loops. The
-# sub-phase set is whatever actually ran — grade each against the phase's intent,
-# don't expect a fixed list.
-sec "3. PIPELINE JOURNEY  (sub-phase calls in order — repeats & backward jumps = rework)"
-qc "SELECT datetime(start_time) at, phase, name sub_phase, status,
-      printf('%.1fs', duration_ms/1000.0) dur, coalesce(substr(error_message,1,46),'') error
-    FROM observations
-    WHERE task_id = '$TID' AND type = 'agent_call'
-    ORDER BY start_time;"
+# ── 3. The pipeline journey — every sub-phase run, in order ────────────────────
+# Built from phase_transition observations (the authoritative sub-phase record),
+# NOT agent_call — so non-LLM sub-phases (verify, push, create-pr, await-review,
+# auto-merge) appear too, not only the ones that called an agent. One row per
+# sub-phase RUN in true executed order; its outcome is the matching
+# sub_phase_result (the next result of that sub-phase after the start), or
+# "running" when a start has no result yet. Repeats of a sub-phase and backward
+# jumps (e.g. a second execution/implement) are the rework signal — grade each
+# run against its phase's intent, don't expect a fixed list. The routing and
+# verdict behind each run are in §5 (decisions); per-gate output is in the trace
+# (§10). This section is the executed spine, not a re-derivation of that detail.
+sec "3. PIPELINE JOURNEY  (every sub-phase run in order — repeats & backward jumps = rework)"
+qc "SELECT datetime(s.start_time) at,
+      json_extract(s.input,'\$.phase') phase,
+      json_extract(s.input,'\$.subPhase') sub_phase,
+      coalesce(
+        (SELECT json_extract(r.input,'\$.outcome') FROM observations r
+           WHERE r.task_id = s.task_id AND r.type = 'phase_transition'
+             AND r.name = 'sub_phase_result'
+             AND json_extract(r.input,'\$.subPhase') = json_extract(s.input,'\$.subPhase')
+             AND r.start_time >= s.start_time
+           ORDER BY r.start_time LIMIT 1),
+        'running') outcome
+    FROM observations s
+    WHERE s.task_id = '$TID' AND s.type = 'phase_transition' AND s.name = 'sub_phase_started'
+    ORDER BY s.start_time;"
 
 # ── 4. State machine history ──────────────────────────────────────────────────
 sec "4. STATE TRANSITIONS  (from → to, why, who)"

@@ -76,7 +76,7 @@ task cancel; comms replies go through `messages`).
 
 | Mount | File | Serves |
 |---|---|---|
-| `/api/tasks` | `tasks.ts` | task list, detail, `timeline`, `phases`, `traces` (tool executions), `agent-traces` (agent calls), **`agent-activity`** (one call's conversation), and a guarded `cancel` |
+| `/api/tasks` | `tasks.ts` | task list, detail, `timeline`, `phases`, `traces` (tool executions), `agent-traces` (agent calls), **`agent-activity`** (one call's conversation), and the guarded task actions `cancel`, `retry` (re-queue / resume), and `rerun` (clone a reaped cancelled task) |
 | `/api/stream` | `stream.ts` | **SSE** — the realtime channel (see below) |
 | `/api/observations` | `observations.ts` | raw observation queries |
 | `/api/events` | `events.ts` | durable event queries (the cross-process path to engine events) |

@@ -61,7 +61,8 @@ engineer status --all       # Include completed and failed tasks
 engineer logs               # View daemon logs (--follow, --raw)
 engineer doctor             # Health checks
 engineer why <task-id>      # Explain a task's decision trail
-engineer retry <task-id>    # Re-queue a blocked or failed task
+engineer retry <task-id>    # Re-queue a blocked/failed task, or resume a cancelled one
+engineer rerun <task-id>    # Re-run a reaped cancelled task as a fresh clone
 engineer cancel <task-id>   # Cancel a task that hasn't finished
 ```
 

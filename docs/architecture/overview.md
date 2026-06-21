@@ -127,6 +127,7 @@ stateDiagram-v2
     blocked --> completed : Completed from the wait
     blocked --> failed : Escalation timeout
     failed --> queued : engineer retry
+    cancelled --> queued : engineer retry (resume, pre-reap)
     requirements_gathering --> cancelled : engineer cancel
     queued --> cancelled : engineer cancel
     active --> cancelled : engineer cancel

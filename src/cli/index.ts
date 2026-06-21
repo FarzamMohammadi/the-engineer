@@ -11,6 +11,7 @@ import { loadConfigDir } from "../config/loader.js";
 import { runCancel } from "./commands/cancel.js";
 import { checkTelemetry, computeExitCode, formatDoctorResults, runAllChecks } from "./commands/doctor.js";
 import { runLogs } from "./commands/logs.js";
+import { runRerun } from "./commands/rerun.js";
 import { runRetry } from "./commands/retry.js";
 import { runStart } from "./commands/start/index.js";
 import { runStatus } from "./commands/status.js";
@@ -218,11 +219,25 @@ program
 
 program
   .command("retry <task-id>")
-  .description("Retry a blocked or failed task (transitions to queued)")
+  .description("Retry a blocked or failed task, or resume a cancelled one (transitions to queued)")
   .action((taskId: string) => {
     const globals = program.opts<{ home?: string }>();
     const home = resolveEngineerHome(globals.home);
     const code = runRetry(home, taskId);
+    if (code !== 0) {
+      process.exitCode = code;
+    }
+  });
+
+// ── rerun ─────────────────────────────────────────────────────────────────────
+
+program
+  .command("rerun <task-id>")
+  .description("Re-run a cancelled task as a fresh clone from its source (requires a running daemon)")
+  .action((taskId: string) => {
+    const globals = program.opts<{ home?: string }>();
+    const home = resolveEngineerHome(globals.home);
+    const code = runRerun(home, taskId);
     if (code !== 0) {
       process.exitCode = code;
     }

@@ -25,7 +25,7 @@ pnpm run lint         # Biome + tsc + knip + madge
 | `src/core/` | The invariant brain — EventBus, TaskEngine, Orchestrator, Daemon |
 | `src/adapters/` | Adapter base classes + SDK boundary (plugin authors import from here) |
 | `src/plugins/` | Plugin implementations, grouped by adapter type |
-| `src/cli/` | The `engineer` CLI (start, stop, status, logs, doctor, why, retry, cancel) |
+| `src/cli/` | The `engineer` CLI (start, stop, status, logs, doctor, why, retry, rerun, cancel) |
 | `src/schemas/` | Centralized Zod schemas |
 | `docs/` | The system blueprint — architecture, plugins, configuration, CLI |
 

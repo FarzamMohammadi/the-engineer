@@ -1,6 +1,6 @@
 # CLI Reference
 
-The Engineer is operated through the `engineer` CLI — daily-use commands (`start`, `stop`, `status`, `logs`), diagnostics (`doctor`), and per-task commands (`why`, `retry`, `cancel`).
+The Engineer is operated through the `engineer` CLI — daily-use commands (`start`, `stop`, `status`, `logs`), diagnostics (`doctor`), and per-task commands (`why`, `retry`, `rerun`, `cancel`).
 
 ## Installing the CLI
 
@@ -227,7 +227,7 @@ Use this when:
 
 - A task is `blocked` because external input is now available (e.g., you answered a clarifying question outside the chat).
 - A task is `failed` because the [retry policy](configuration/daemon.md#retry-policy) exhausted its automatic budget, or because the [hard cap](configuration/daemon.md#stuck-detection) on total active time triggered. Address the root cause first, then retry.
-- A task was `cancelled` and you want it back — **resuming** it. This works only while its work still exists: cancel is non-eager, so the worktree, branch, and any pull request survive until the [workspace reaper](architecture/scheduling-dispatch.md) sweeps them. Once reaped, the task can no longer be resumed — use the dashboard's **Re-run** button to start a fresh task from the same source instead. Resume also refuses if a newer task has since been created from the same source.
+- A task was `cancelled` and you want it back — **resuming** it. This works only while its work still exists: cancel is non-eager, so the worktree, branch, and any pull request survive until the [workspace reaper](architecture/scheduling-dispatch.md) sweeps them. Once reaped, the task can no longer be resumed — use [`rerun`](#rerun) (or the dashboard's **Re-run** button) to start a fresh task from the same source instead. Resume also refuses if a newer task has since been created from the same source.
 
 Source: [`src/cli/commands/retry.ts`](../src/cli/commands/retry.ts)
 
@@ -244,6 +244,22 @@ engineer cancel <task-id> --json         # Machine-readable JSON output
 Cancellable states are `requirements_gathering`, `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled. A `failed` task is retryable, and a `cancelled` task is resumable while its work survives — both via [retry](#retry). Cancel abandons work; retry resumes it.
 
 Source: [`src/cli/commands/cancel.ts`](../src/cli/commands/cancel.ts)
+
+### rerun
+
+Re-runs a `cancelled` task as a **fresh task** cloned from its source — for when its work was already cleaned up, so [retry](#retry) can no longer resume it. The new task starts from scratch (a new ID, a new workspace, the full pipeline) and links back to the cancelled one as a previous attempt. The original cancelled task is left untouched.
+
+```bash
+engineer rerun <task-id>                 # Re-run a cancelled task as a fresh clone
+engineer rerun 01HXYZ12                  # Works with ID prefix
+engineer rerun <task-id> --json          # Machine-readable JSON output
+```
+
+Unlike `retry` and `cancel`, **`rerun` requires a running daemon.** Those commands write a task's state directly and work even while the daemon is stopped; `rerun` instead *creates* a task, which must go through the daemon so the new task lands on the audit trail. It hands the request to the daemon (which performs the clone on its next cycle), so a stopped daemon would never see it — the command refuses rather than silently dropping the request. Re-run also refuses if a newer task already exists for the same source (the daemon will not create a duplicate).
+
+This is the CLI counterpart of the dashboard's **Re-run** button.
+
+Source: [`src/cli/commands/rerun.ts`](../src/cli/commands/rerun.ts)
 
 ## Configuration
 

@@ -534,17 +534,49 @@ function sameTrace(a: string | null, b: string | null): boolean {
 }
 
 /**
+ * The run a closing `route:`/`loop_` decision belongs to.
+ *
+ * A run's `agent_call`/`safety_verdict`/gate spans fall INSIDE its `[start, nextStart)` window, but routing
+ * decisions are CLOSING events emitted at a sub-phase's hand-off: `route:<X>` fires the instant sub-phase X
+ * finishes, which is the SAME instant the next run starts. The window's lower bound is inclusive (tuned so an
+ * opening `agent_call` keeps its own start instant), so it would hand that decision to the NEXT run — verify
+ * would show implement's route and implement none. Attribute by the decision's meaning instead:
+ *   route:<X> → the latest run of sub-phase X started by the decision (matched by NAME, so a verify never
+ *               claims a `route:implement` that shares its start instant; an `await-review` block, emitted at
+ *               its own run's start, still lands on it via `>=`);
+ *   loop_*    → the latest run started STRICTLY before the decision (its name carries no sub-phase to match on;
+ *               the loop belongs to the run that just closed, never the next run opening on the same instant).
+ * Returns the owning run's index, or -1 when none matches (different phase/trace, or it precedes every run).
+ */
+function closingDecisionOwner<T extends StepObservationLike>(decision: T, runs: readonly StepRun[]): number {
+  const isRoute = decision.name.startsWith("route:");
+  const subPhase = isRoute ? decision.name.slice("route:".length) : "";
+  let owner = -1;
+  for (const [index, run] of runs.entries()) {
+    if ((decision.phase ?? "") !== run.phase || !sameTrace(decision.trace_id, run.traceId)) {
+      continue;
+    }
+    const owns = isRoute
+      ? run.subPhase === subPhase && decision.start_time >= run.startTime
+      : decision.start_time > run.startTime;
+    if (owns) {
+      owner = index;
+    }
+  }
+  return owner;
+}
+
+/**
  * Build the ordered step feed: every sub-phase run with the observations it owns.
  *
  * Correlation model — there is NO parent link from a run to its observations (`traceScope` stamps every
  * pipeline observation with the same `parent_observation_id = rootObservationId`), so each run claims its
- * enrichments by `(phase, trace_id)` plus a half-open time window `[run.startTime, nextRun.startTime)`. This
- * encodes the runner's emission order (start → the run's own spans/verdict/agent_call → result → route/loop) as
- * a behavioral assumption: a run's gates, verdict, agent_call, and trailing route/loop decisions all fall in
- * its window. The lower bound is inclusive so an `agent_call` span that shares its `sub_phase_started`'s
- * millisecond lands in its own run; the upper bound is exclusive so it never bleeds into the next run. If a
- * future runner change emits a run's enrichments outside this window, drill-in would mis-attribute — keep the
- * emission order and this window in sync.
+ * enrichments by `(phase, trace_id)` plus timing. A run's `agent_call`/`safety_verdict`/`tool_execution` spans
+ * fall inside a half-open window `[run.startTime, nextRun.startTime)`: lower bound inclusive so an `agent_call`
+ * sharing its `sub_phase_started`'s millisecond lands in its own run, upper bound exclusive so it never bleeds
+ * into the next. Routing decisions are CLOSING events emitted at the hand-off instant, so they are attributed by
+ * meaning rather than this window (see {@link closingDecisionOwner}). If a future runner change emits a run's
+ * enrichments outside this window, drill-in would mis-attribute — keep the emission order and this in sync.
  */
 export function buildStepFeed<T extends StepObservationLike>(
   transitions: readonly T[],
@@ -554,6 +586,26 @@ export function buildStepFeed<T extends StepObservationLike>(
   decisions: readonly T[],
 ): EnrichedStep<T>[] {
   const runs = buildStepRuns(transitions);
+
+  // Assign each route:/loop_ decision to the single run it belongs to, up front — a closing decision sharing
+  // the next run's start instant must not be claimed by that next run (see closingDecisionOwner).
+  const decisionsByRun = new Map<number, T[]>();
+  for (const obs of decisions) {
+    if (obs.type !== "decision_point" || !(obs.name.startsWith("route:") || obs.name.startsWith("loop_"))) {
+      continue;
+    }
+    const owner = closingDecisionOwner(obs, runs);
+    if (owner < 0) {
+      continue;
+    }
+    const bucket = decisionsByRun.get(owner);
+    if (bucket) {
+      bucket.push(obs);
+    } else {
+      decisionsByRun.set(owner, [obs]);
+    }
+  }
+
   return runs.map((run, index) => {
     // The window closes at the next run's start (exclusive); the last run's window is open-ended (+∞).
     const nextStart = runs[index + 1]?.startTime ?? null;
@@ -570,12 +622,7 @@ export function buildStepFeed<T extends StepObservationLike>(
       agentCall,
       verdict: verdicts.find((obs) => obs.type === "safety_verdict" && inWindow(obs)) ?? null,
       tools: toolExecutions.filter((obs) => obs.type === "tool_execution" && inWindow(obs)),
-      decisions: decisions.filter(
-        (obs) =>
-          obs.type === "decision_point" &&
-          (obs.name.startsWith("route:") || obs.name.startsWith("loop_")) &&
-          inWindow(obs),
-      ),
+      decisions: decisionsByRun.get(index) ?? [],
     };
   });
 }

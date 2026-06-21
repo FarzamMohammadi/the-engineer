@@ -660,6 +660,58 @@ describe("buildStepFeed", () => {
     expect(feed[1]?.agentCall?.id).toBe("ac"); // and IN its own implement run
   });
 
+  it("attributes a route:<prev> sharing the next run's start instant to the prev step, not the next", () => {
+    // The real runner emits route:implement in the SAME millisecond the next sub-phase (verify) starts — the
+    // closing decision and the next sub_phase_started share an instant. The window's inclusive lower bound would
+    // hand it to verify; by name it belongs to implement, and verify must show only its own route.
+    const transitions = [
+      transition("sub_phase_started", "implement", 1),
+      transition("sub_phase_result", "implement", 3, { outcome: "ok", summary: "Done." }),
+      transition("sub_phase_started", "verify", 3),
+      transition("sub_phase_result", "verify", 5, { outcome: "ok", summary: "ok", data: { passed: true } }),
+    ];
+    const agentCalls = [
+      makeStepObs({ id: "ac", type: "agent_call", name: "implement", start_time: at(1), input: { step: "implement" } }),
+    ];
+    const decisions = [
+      makeStepObs({
+        id: "ri",
+        type: "decision_point",
+        name: "route:implement",
+        start_time: at(3),
+        input: { chosen: "advance" },
+      }),
+      makeStepObs({
+        id: "rv",
+        type: "decision_point",
+        name: "route:verify",
+        start_time: at(5),
+        input: { chosen: "advance" },
+      }),
+    ];
+    const feed = buildStepFeed(transitions, agentCalls, [], [], decisions);
+    expect(feed.map((step) => step.subPhase)).toEqual(["implement", "verify"]);
+    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["ri"]); // route:implement stays with implement…
+    expect(feed[1]?.decisions.map((d) => d.id)).toEqual(["rv"]); // …and never leaks onto verify's start instant
+  });
+
+  it("keeps a loop_* decision on the run that closed, not the next run opening on the same instant", () => {
+    // verify fails and loops back: loop_repeat fires as the next implement starts, sharing its instant. The loop
+    // belongs to the verify that drove it, never the re-entered implement.
+    const transitions = [
+      transition("sub_phase_started", "verify", 1),
+      transition("sub_phase_result", "verify", 3, { outcome: "ok", summary: "Gates failed.", data: { passed: false } }),
+      transition("sub_phase_started", "implement", 3),
+    ];
+    const decisions = [
+      makeStepObs({ id: "lr", type: "decision_point", name: "loop_repeat", start_time: at(3), input: { count: 1 } }),
+    ];
+    const feed = buildStepFeed(transitions, [], [], [], decisions);
+    expect(feed[0]?.subPhase).toBe("verify");
+    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["lr"]); // the loop sits under verify…
+    expect(feed[1]?.decisions).toEqual([]); // …not the implement it looped back to
+  });
+
   it("ignores skip: decisions and observations from a different trace", () => {
     const transitions = [
       transition("sub_phase_started", "verify", 1),

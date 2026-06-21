@@ -12,7 +12,7 @@ import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
-import { BLOB_REF_KEY_SUFFIX, isBlobRef } from "../observer/blob-ref.js";
+import { isBlobRef, isBlobRefKey } from "../observer/blob-ref.js";
 import type { IObserver } from "../observer/index.js";
 
 export { MONTHLY_REPLAY_FLOOR_DAYS, inspectRetentionConfig } from "./inspect.js";
@@ -47,6 +47,8 @@ export interface CleanupStats {
   /** Blob files the sweep walked on disk (0 when blob cleanup was skipped). */
   blobsScanned: number;
   blobsDeleted: number;
+  /** True when the drift tripwire refused to run blob cleanup this sweep (protected set empty while refs exist). */
+  blobsCleanupSkipped: boolean;
   vacuumRan: boolean;
   durationMs: number;
 }
@@ -158,37 +160,41 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
  * rather than a hardcoded key list means a new `*_blob` field is protected with no change here — the drift
  * that silently emptied this set and let the sweep delete every blob can no longer recur from a rename.
  *
- * `json_each` walks each row's top-level `input`/`output` keys inside SQLite, so multi-KB payloads never load
- * into JS; the `__/%` SQL guard plus the JS-side {@link isBlobRef} drop the empty string a failed capture
- * writes and anything that isn't a well-formed ref.
+ * `json_each` enumerates each row's top-level `input`/`output` entries inside SQLite, so multi-KB payloads
+ * never load into JS; the `__/%` value prefilter keeps the returned rows proportional to ref count, not total
+ * key count. {@link isBlobRefKey} and {@link isBlobRef} — the same predicates the OTLP exporter uses — then
+ * apply the convention precisely from the one shared place, so a stray key or a non-ref value is dropped.
  */
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
-  const likeSuffix = `%${BLOB_REF_KEY_SUFFIX}`;
   const rows = db
     .prepare(
-      `SELECT je.value AS ref FROM observations o, json_each(o.input) je
-         WHERE je.key LIKE ? AND je.value LIKE '__/%'
-       UNION
-       SELECT je.value AS ref FROM observations o, json_each(o.output) je
-         WHERE je.key LIKE ? AND je.value LIKE '__/%'`,
+      `SELECT je.key AS k, je.value AS v FROM observations o, json_each(o.input)  je WHERE je.value LIKE '__/%'
+       UNION ALL
+       SELECT je.key AS k, je.value AS v FROM observations o, json_each(o.output) je WHERE je.value LIKE '__/%'`,
     )
-    .all(likeSuffix, likeSuffix) as { ref: string }[];
+    .all() as { k: string; v: string }[];
 
   const refs = new Set<string>();
-  for (const { ref } of rows) {
-    if (isBlobRef(ref)) {
-      refs.add(ref);
+  for (const { k, v } of rows) {
+    if (isBlobRefKey(k) && isBlobRef(v)) {
+      refs.add(v);
     }
   }
   return refs;
 }
 
 /**
- * A crude, JSON-parse-free probe: does any agent observation's raw text contain a `*_blob` key? Used only by
- * the orphan-sweep tripwire as an independent corroborating signal. It is *deliberately* a different mechanism
- * than {@link collectReferencedBlobRefs} (substring match, not `json_each`), so a regression in that extraction
- * cannot also defeat this guard. The `_` in the LIKE pattern is a single-char wildcard — harmless here, since
- * over-matching only makes the tripwire more conservative (skip rather than delete).
+ * A crude, JSON-parse-free probe: does any blob-bearing observation's raw text contain a `*_blob` key? Used
+ * only by the orphan-sweep tripwire as an independent corroborating signal — *deliberately* a substring match,
+ * not `json_each` like {@link collectReferencedBlobRefs}, so a regression in that extraction cannot defeat this
+ * guard too.
+ *
+ * The `type IN ('agent_call', 'agent_activity')` filter is load-bearing, not cosmetic: it scopes the probe to
+ * the only types that carry blob refs. Drop it and the sweep's OWN `data_lifecycle_sweep_completed` row (a
+ * `state_transition` whose data holds `"blobs_referenced"`) matches `%_blob%` — `"blob` clears the `_blob`
+ * wildcard — so the probe would read true forever, tripping the wire on every legitimately-empty store and
+ * leaking orphans. The remaining `_` wildcard inside the literal is harmless: over-matching only makes the
+ * tripwire more conservative (skip rather than delete).
  */
 export function observationsCarryBlobRefs(db: Database.Database): boolean {
   const row = db
@@ -328,6 +334,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     let blobsReferenced = 0;
     let blobsScanned = 0;
     let blobsDeleted = 0;
+    let blobsCleanupSkipped = false;
     let vacuumRan = false;
 
     try {
@@ -357,6 +364,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       blobsReferenced = blobStats.referenced;
       blobsScanned = blobStats.scanned;
       blobsDeleted = blobStats.deleted;
+      blobsCleanupSkipped = blobStats.skipped;
 
       // Incremental vacuum (non-critical — failure should not halt cleanup)
       try {
@@ -366,7 +374,15 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
       }
     } finally {
-      lastRun = finalizeSweep({ tables, blobsReferenced, blobsScanned, blobsDeleted, vacuumRan, startMs });
+      lastRun = finalizeSweep({
+        tables,
+        blobsReferenced,
+        blobsScanned,
+        blobsDeleted,
+        blobsCleanupSkipped,
+        vacuumRan,
+        startMs,
+      });
     }
 
     return lastRun;
@@ -377,29 +393,30 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
    * Failure-isolated — it returns zeroed tallies when blobsDir is unset, when the tripwire skips, or when the
    * json_each query throws — so {@link runCleanup} stays flat and its other stages run regardless.
    */
-  function runBlobCleanup(): { referenced: number; scanned: number; deleted: number } {
+  function runBlobCleanup(): { referenced: number; scanned: number; deleted: number; skipped: boolean } {
     if (!blobsDir) {
-      return { referenced: 0, scanned: 0, deleted: 0 };
+      return { referenced: 0, scanned: 0, deleted: 0, skipped: false };
     }
     try {
       const referencedRefs = collectReferencedBlobRefs(db);
       // Tripwire: an empty protected set while observations still carry `*_blob` refs is the signature of
       // extraction drift (it has happened — see blob-ref.ts). Deleting against an empty set wipes every blob
       // and is unrecoverable, so refuse and warn instead of nuking. observationsCarryBlobRefs is a crude
-      // substring probe — a different mechanism than the extraction — so one regression can't fool both.
+      // substring probe — a different mechanism than the extraction — so one regression can't fool both. The
+      // `skipped` flag carries the drift onto the durable event/observation, since observer.warn is log-only.
       if (referencedRefs.size === 0 && observationsCarryBlobRefs(db)) {
         observer.warn(
           "Blob cleanup skipped — 0 referenced refs but observations still carry blob refs (extraction drift?)",
         );
-        return { referenced: 0, scanned: 0, deleted: 0 };
+        return { referenced: 0, scanned: 0, deleted: 0, skipped: true };
       }
       const result = cleanupOrphanedBlobs(path.join(blobsDir, "blobs"), referencedRefs);
-      return { referenced: referencedRefs.size, scanned: result.scanned, deleted: result.deleted };
+      return { referenced: referencedRefs.size, scanned: result.scanned, deleted: result.deleted, skipped: false };
     } catch (err) {
       observer.warn("Blob cleanup failed — skipping it, continuing the sweep", {
         error: sanitizeErrorMessage(err),
       });
-      return { referenced: 0, scanned: 0, deleted: 0 };
+      return { referenced: 0, scanned: 0, deleted: 0, skipped: false };
     }
   }
 
@@ -414,10 +431,11 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     blobsReferenced: number;
     blobsScanned: number;
     blobsDeleted: number;
+    blobsCleanupSkipped: boolean;
     vacuumRan: boolean;
     startMs: number;
   }): CleanupStats {
-    const { tables, blobsReferenced, blobsScanned, blobsDeleted, vacuumRan, startMs } = partial;
+    const { tables, blobsReferenced, blobsScanned, blobsDeleted, blobsCleanupSkipped, vacuumRan, startMs } = partial;
     const durationMs = clock.now() - startMs;
     const stats: CleanupStats = {
       timestamp: new Date(clock.now()).toISOString(),
@@ -425,6 +443,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       blobsReferenced,
       blobsScanned,
       blobsDeleted,
+      blobsCleanupSkipped,
       vacuumRan,
       durationMs,
     };
@@ -435,6 +454,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
       blobsReferenced,
       blobsScanned,
       blobsDeleted,
+      blobsCleanupSkipped,
       vacuumRan,
     });
 
@@ -458,6 +478,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
           blobs_referenced: stats.blobsReferenced,
           blobs_scanned: stats.blobsScanned,
           blobs_deleted: stats.blobsDeleted,
+          blob_cleanup_skipped: stats.blobsCleanupSkipped,
           vacuum_ran: stats.vacuumRan,
           duration_ms: stats.durationMs,
         },
@@ -482,6 +503,7 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
           blobs_referenced: stats.blobsReferenced,
           blobs_scanned: stats.blobsScanned,
           blobs_deleted: stats.blobsDeleted,
+          blob_cleanup_skipped: stats.blobsCleanupSkipped,
           vacuum_ran: stats.vacuumRan,
         },
       } satisfies PublishInput<"system.cleanup_completed">);

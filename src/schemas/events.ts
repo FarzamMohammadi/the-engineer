@@ -373,6 +373,8 @@ export const SystemCleanupCompletedPayloadSchema = z.object({
   /** Blob files the sweep walked on disk (0 when blob cleanup was skipped by the drift tripwire). */
   blobs_scanned: z.number().int(),
   blobs_deleted: z.number().int(),
+  /** True when the drift tripwire refused blob cleanup this sweep (protected set empty while refs still exist). */
+  blob_cleanup_skipped: z.boolean(),
   vacuum_ran: z.boolean(),
 });
 export type SystemCleanupCompletedPayload = z.infer<typeof SystemCleanupCompletedPayloadSchema>;

@@ -616,6 +616,7 @@ describe("createDataLifecycleManager", () => {
     expect(events[0]?.payload).toHaveProperty("blobs_referenced");
     expect(events[0]?.payload).toHaveProperty("blobs_scanned");
     expect(events[0]?.payload).toHaveProperty("blobs_deleted");
+    expect(events[0]?.payload).toHaveProperty("blob_cleanup_skipped");
     expect(events[0]?.payload).toHaveProperty("vacuum_ran");
   });
 
@@ -646,6 +647,7 @@ describe("createDataLifecycleManager", () => {
       const stats = manager.runCleanup();
 
       expect(fs.existsSync(blobFile)).toBe(true); // not swept — the tripwire held
+      expect(stats.blobsCleanupSkipped).toBe(true); // drift surfaced on the durable stats, not just the log
       expect(stats.blobsReferenced).toBe(0);
       expect(stats.blobsScanned).toBe(0); // cleanup skipped entirely — nothing walked
       expect(stats.blobsDeleted).toBe(0);
@@ -675,6 +677,7 @@ describe("createDataLifecycleManager", () => {
       const stats = manager.runCleanup();
 
       expect(fs.existsSync(orphan)).toBe(false); // swept normally
+      expect(stats.blobsCleanupSkipped).toBe(false); // tripwire did not fire
       expect(stats.blobsScanned).toBe(1);
       expect(stats.blobsDeleted).toBe(1);
     } finally {

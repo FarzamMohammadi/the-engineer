@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, GanttChartSquare } from "lucide-react";
+import { ArrowLeft, Ban, GanttChartSquare, RotateCcw } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { CurrentPhaseBadge } from "../../components/shared/current-phase-badge";
@@ -8,7 +8,7 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useSystemStatus } from "../../hooks/use-system-status";
-import { useCancelTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
+import { useCancelTask, useRetryTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
 import { PHASE_ORDER } from "../../lib/constants";
 import { readPhaseTransition } from "../../lib/observation-shapes";
 import { ROUTES } from "../../lib/routes";
@@ -32,6 +32,9 @@ const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
   "blocked",
 ]);
 
+/** Task states a task can be retried (re-queued) from — mirrors RETRYABLE_STATES (src/schemas/task.ts). */
+const RETRYABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>(["failed", "blocked"]);
+
 /** Single task detail page with tabbed views for overview, timeline, phases, decisions, steps, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
@@ -40,6 +43,7 @@ export function TaskDetailPage(): React.JSX.Element {
   const { data: phaseObservations } = useTaskPhases(taskId);
   const { data: systemStatus } = useSystemStatus();
   const cancelMutation = useCancelTask(taskId ?? "");
+  const retryMutation = useRetryTask(taskId ?? "");
 
   const phasesRan = useMemo(() => distinctPhasesRan(phaseObservations ?? []), [phaseObservations]);
 
@@ -69,6 +73,7 @@ export function TaskDetailPage(): React.JSX.Element {
   const typedTask = task as TaskDetail;
   const isBlocked = typedTask.state === "blocked";
   const isCancellable = CANCELLABLE_STATES.has(typedTask.state);
+  const isRetryable = RETRYABLE_STATES.has(typedTask.state);
   // The current-phase pill is meaningful only while the task is mid-flight — on a terminal task the phase
   // would be stale. The dot pulses only when actively executing (a blocked task is paused, not live).
   const isLive = typedTask.state === "active" || typedTask.state === "requirements_gathering";
@@ -115,6 +120,12 @@ export function TaskDetailPage(): React.JSX.Element {
               <GanttChartSquare size={14} />
               View trace in Jaeger
             </a>
+          </Button>
+        )}
+        {isRetryable && (
+          <Button variant="outline" size="sm" onClick={() => retryMutation.mutate()} disabled={retryMutation.isPending}>
+            <RotateCcw size={14} />
+            Retry
           </Button>
         )}
         {isCancellable && (

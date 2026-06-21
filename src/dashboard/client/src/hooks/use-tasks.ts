@@ -163,3 +163,18 @@ export function useCancelTask(taskId: string): ReturnType<typeof useMutation<{ s
     },
   });
 }
+
+/** Retry a failed or blocked task via POST /api/tasks/:id/retry and invalidate task caches. */
+export function useRetryTask(taskId: string): ReturnType<typeof useMutation<{ success: boolean }, Error>> {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<{ success: boolean }>(`/tasks/${taskId}/retry`, {
+        method: "POST",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.detail(taskId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.tasks.all });
+    },
+  });
+}

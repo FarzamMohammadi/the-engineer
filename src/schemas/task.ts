@@ -373,6 +373,15 @@ export const CANCELLABLE_STATES = [
   ...new Set(ValidTransitions.filter((t) => t.to === TaskStates.cancelled).map((t) => t.from)),
 ] as const;
 
+/**
+ * States the owner can RETRY (re-queue) a task from — `engineer retry` and the dashboard Retry button.
+ * A deliberately CURATED subset of the `→queued` edges in {@link ValidTransitions}, not a derived one: it
+ * excludes the daemon-only preemption edges (`active`/`requirements_gathering` → queued), which are
+ * scheduler mechanics rather than owner-initiated recovery. {@link retryTask} is the single writer over
+ * this set. `cancelled` joins it once cancel becomes reversible (gated on the work still existing).
+ */
+export const RETRYABLE_STATES = [TaskStates.failed, TaskStates.blocked] as const;
+
 // ── Permission Table (const data) ──────────────────────────────────────────────
 
 export type PermissionEntry = {

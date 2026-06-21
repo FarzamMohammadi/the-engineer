@@ -169,6 +169,77 @@ describe("taskRoutes — POST /:id/cancel", () => {
   });
 });
 
+describe("taskRoutes — POST /:id/retry", () => {
+  let handle: DatabaseHandle;
+  let app: ReturnType<typeof taskRoutes>;
+
+  beforeEach(() => {
+    handle = createInMemoryDatabase();
+    app = taskRoutes({ db: handle.db, writeDb: handle.db, observationStore: observationStoreStub });
+  });
+
+  afterEach(() => {
+    handle.close();
+  });
+
+  it("retries a failed task: re-queues it, bumps version, writes a transition row", async () => {
+    insertTask(handle.db, "task-failed", { state: TaskStates.failed, sub_state: null });
+
+    const res = await app.request("/task-failed/retry", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    const task = handle.db.prepare("SELECT state, version FROM tasks WHERE id = ?").get("task-failed") as {
+      state: string;
+      version: number;
+    };
+    expect(task.state).toBe(TaskStates.queued);
+    expect(task.version).toBe(2);
+
+    const transition = handle.db
+      .prepare("SELECT from_state, to_state, reason, triggered_by FROM state_transitions WHERE task_id = ?")
+      .get("task-failed") as { from_state: string; to_state: string; reason: string; triggered_by: string };
+    expect(transition.from_state).toBe(TaskStates.failed);
+    expect(transition.to_state).toBe(TaskStates.queued);
+    expect(transition.reason).toBe("dashboard_retry");
+    expect(transition.triggered_by).toBe("dashboard");
+  });
+
+  it("retries a blocked task", async () => {
+    insertTask(handle.db, "task-blocked", { state: TaskStates.blocked, sub_state: null });
+
+    const res = await app.request("/task-blocked/retry", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const task = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-blocked") as { state: string };
+    expect(task.state).toBe(TaskStates.queued);
+  });
+
+  it("returns 400 for a task in a non-retryable state", async () => {
+    insertTask(handle.db, "task-active", { state: TaskStates.active, sub_state: SubStates.working });
+
+    const res = await app.request("/task-active/retry", { method: "POST" });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toMatchObject({
+      error: expect.stringContaining("Cannot retry"),
+    });
+
+    const count = handle.db
+      .prepare("SELECT COUNT(*) AS n FROM state_transitions WHERE task_id = ?")
+      .get("task-active") as { n: number };
+    expect(count.n).toBe(0);
+  });
+
+  it("returns 404 when the task does not exist", async () => {
+    const res = await app.request("/missing/retry", { method: "POST" });
+
+    expect(res.status).toBe(404);
+    expect((await res.json()) as { error: string }).toMatchObject({ error: "Task not found" });
+  });
+});
+
 describe("taskRoutes — GET /:id trace_otlp_id", () => {
   let handle: DatabaseHandle;
   let app: ReturnType<typeof taskRoutes>;

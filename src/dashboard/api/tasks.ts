@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { deriveTraceId } from "../../core/observer/otlp/index.js";
 import { PipelinePhaseSchema } from "../../core/orchestrator/pipeline/types.js";
-import { cancelTask } from "../../core/task-engine/index.js";
+import { cancelTask, retryTask } from "../../core/task-engine/index.js";
 import { fromSqliteJson } from "../../db/serialize.js";
 import { TaskStates } from "../../schemas/task.js";
 
@@ -176,7 +176,7 @@ function latestTraceOtlpId(db: Database.Database, taskId: string): string | null
   }
 }
 
-/** Registers task listing, detail, timeline, phase, trace, and cancel endpoints. */
+/** Registers task listing, detail, timeline, phase, trace, cancel, and retry endpoints. */
 export function taskRoutes(deps: TaskRoutesDeps): Hono {
   const app = new Hono();
 
@@ -452,6 +452,24 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       }
       if (result.outcome === "not_cancellable") {
         return c.json({ error: `Cannot cancel task in "${result.state}" state` }, 400);
+      }
+      return c.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  /** Retry a task — a guarded, versioned write back to `queued` (shared with `engineer retry`). */
+  app.post("/:id/retry", (c) => {
+    const taskId = c.req.param("id");
+    try {
+      const result = retryTask(deps.writeDb, taskId, { reason: "dashboard_retry", triggeredBy: "dashboard" });
+      if (result.outcome === "not_found") {
+        return c.json({ error: "Task not found" }, 404);
+      }
+      if (result.outcome === "not_retryable") {
+        return c.json({ error: `Cannot retry task in "${result.state}" state` }, 400);
       }
       return c.json({ success: true });
     } catch (err) {

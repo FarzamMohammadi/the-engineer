@@ -368,6 +368,10 @@ export const SystemCleanupCompletedPayloadSchema = z.object({
       remaining: z.number().int(),
     }),
   ),
+  /** Distinct blob refs the retained observations still point at — the protected set's size. */
+  blobs_referenced: z.number().int(),
+  /** Blob files the sweep walked on disk (0 when blob cleanup was skipped by the drift tripwire). */
+  blobs_scanned: z.number().int(),
   blobs_deleted: z.number().int(),
   vacuum_ran: z.boolean(),
 });

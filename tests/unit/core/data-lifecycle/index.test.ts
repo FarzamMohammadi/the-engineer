@@ -7,6 +7,7 @@ import {
   cleanupTable,
   collectReferencedBlobRefs,
   createDataLifecycleManager,
+  observationsCarryBlobRefs,
 } from "../../../../src/core/data-lifecycle/index.js";
 import { EventBus } from "../../../../src/core/event-bus/index.js";
 import { BlobStore } from "../../../../src/core/observer/blob-store.js";
@@ -146,6 +147,11 @@ function daysAgo(days: number): string {
 
 function createFakeClock(now = Date.now()): { now: () => number } {
   return { now: () => now };
+}
+
+/** A realistic blob ref — `<2-hex-prefix>/<64-hex-hash>` — built from a short seed for readable assertions. */
+function makeRef(prefix: string, seedChar: string): string {
+  return `${prefix}/${seedChar.repeat(64)}`;
 }
 
 // ── Tests ───────────────────────────────────────────────────────────────────
@@ -359,32 +365,56 @@ describe("collectReferencedBlobRefs", () => {
     // The bug this guards against: the prompt ref lives in `input`, but the result and transcript refs live
     // in `output`. Collecting only the input side left every result/transcript blob looking like an orphan.
     insertAgentCall(dbHandle.db, new Date().toISOString(), {
-      promptBlob: "ab/abc123",
-      resultBlob: "cd/cde456",
-      transcriptBlob: "ef/efg789",
+      promptBlob: makeRef("ab", "1"),
+      resultBlob: makeRef("cd", "2"),
+      transcriptBlob: makeRef("ef", "3"),
     });
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
 
     expect(refs.size).toBe(3);
-    expect(refs.has("ab/abc123")).toBe(true);
-    expect(refs.has("cd/cde456")).toBe(true);
-    expect(refs.has("ef/efg789")).toBe(true);
+    expect(refs.has(makeRef("ab", "1"))).toBe(true);
+    expect(refs.has(makeRef("cd", "2"))).toBe(true);
+    expect(refs.has(makeRef("ef", "3"))).toBe(true);
   });
 
   it("collects the text/input/output refs an agent_activity row carries in its input", () => {
     insertAgentActivity(dbHandle.db, new Date().toISOString(), {
-      textBlob: "11/text11",
-      inputBlob: "22/input22",
-      outputBlob: "33/output33",
+      textBlob: makeRef("11", "a"),
+      inputBlob: makeRef("22", "b"),
+      outputBlob: makeRef("33", "c"),
     });
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
 
     expect(refs.size).toBe(3);
-    expect(refs.has("11/text11")).toBe(true);
-    expect(refs.has("22/input22")).toBe(true);
-    expect(refs.has("33/output33")).toBe(true);
+    expect(refs.has(makeRef("11", "a"))).toBe(true);
+    expect(refs.has(makeRef("22", "b"))).toBe(true);
+    expect(refs.has(makeRef("33", "c"))).toBe(true);
+  });
+
+  it("protects a not-yet-written *_blob key with no code change (matches the convention, not a key list)", () => {
+    // The point of matching the `*_blob` convention rather than a hardcoded key list: a new ref field is
+    // covered for free. A hypothetical `diff_blob` must be collected without touching collectReferencedBlobRefs.
+    insertObservation(dbHandle.db, new Date().toISOString(), "agent_call", "implement", {
+      step: "implement",
+      diff_blob: makeRef("99", "d"),
+    });
+
+    const refs = collectReferencedBlobRefs(dbHandle.db);
+    expect(refs.has(makeRef("99", "d"))).toBe(true);
+  });
+
+  it("excludes a *_blob value that clears the SQL shape guard but is not a full ref", () => {
+    // `ab/short` passes the cheap `__/%` SQL prefilter but is not a real <2-hex>/<64-hex> ref — the JS-side
+    // isBlobRef validation drops it, so a malformed value never enters the protected set.
+    insertObservation(dbHandle.db, new Date().toISOString(), "agent_call", "implement", {
+      step: "implement",
+      prompt_blob: "ab/short",
+    });
+
+    const refs = collectReferencedBlobRefs(dbHandle.db);
+    expect(refs.size).toBe(0);
   });
 
   it("skips null refs", () => {
@@ -400,11 +430,42 @@ describe("collectReferencedBlobRefs", () => {
   });
 
   it("deduplicates shared refs", () => {
-    insertAgentCall(dbHandle.db, new Date().toISOString(), { promptBlob: "ab/same", resultBlob: "cd/same2" });
-    insertAgentCall(dbHandle.db, new Date().toISOString(), { promptBlob: "ab/same", resultBlob: "cd/same2" });
+    insertAgentCall(dbHandle.db, new Date().toISOString(), {
+      promptBlob: makeRef("ab", "1"),
+      resultBlob: makeRef("cd", "2"),
+    });
+    insertAgentCall(dbHandle.db, new Date().toISOString(), {
+      promptBlob: makeRef("ab", "1"),
+      resultBlob: makeRef("cd", "2"),
+    });
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(2);
+  });
+});
+
+describe("observationsCarryBlobRefs", () => {
+  let dbHandle: TestDatabaseHandle;
+
+  beforeEach(() => {
+    dbHandle = createTestDatabase();
+  });
+
+  afterEach(() => {
+    dbHandle.cleanup();
+  });
+
+  it("is true when an agent observation carries a *_blob key, even a failed (empty) capture", () => {
+    insertObservation(dbHandle.db, new Date().toISOString(), "agent_call", "implement", {
+      step: "implement",
+      prompt_blob: "",
+    });
+    expect(observationsCarryBlobRefs(dbHandle.db)).toBe(true);
+  });
+
+  it("is false when no agent observation carries a *_blob key", () => {
+    insertObservation(dbHandle.db, new Date().toISOString(), "lifecycle", "tick", { phase: "queued" });
+    expect(observationsCarryBlobRefs(dbHandle.db)).toBe(false);
   });
 });
 
@@ -427,7 +488,7 @@ describe("cleanupOrphanedBlobs", () => {
     fs.writeFileSync(path.join(prefix, "abd456.txt"), "content");
 
     const referenced = new Set(["ab/abc123"]);
-    const deleted = cleanupOrphanedBlobs(tmpDir, referenced);
+    const { deleted } = cleanupOrphanedBlobs(tmpDir, referenced);
 
     expect(deleted).toBe(1);
     expect(fs.existsSync(path.join(prefix, "abc123.txt"))).toBe(true);
@@ -440,14 +501,14 @@ describe("cleanupOrphanedBlobs", () => {
     fs.writeFileSync(path.join(prefix, "cde789.txt"), "content");
 
     const referenced = new Set(["cd/cde789"]);
-    const deleted = cleanupOrphanedBlobs(tmpDir, referenced);
+    const { deleted } = cleanupOrphanedBlobs(tmpDir, referenced);
 
     expect(deleted).toBe(0);
     expect(fs.existsSync(path.join(prefix, "cde789.txt"))).toBe(true);
   });
 
   it("handles missing blobs directory gracefully", () => {
-    const deleted = cleanupOrphanedBlobs("/nonexistent/path", new Set());
+    const { deleted } = cleanupOrphanedBlobs("/nonexistent/path", new Set());
     expect(deleted).toBe(0);
   });
 
@@ -470,7 +531,7 @@ describe("cleanupOrphanedBlobs", () => {
       // Create a symlinked prefix directory inside blobsDir pointing outside
       fs.symlinkSync(outsideDir, path.join(tmpDir, "zz"));
 
-      const deleted = cleanupOrphanedBlobs(tmpDir, new Set());
+      const { deleted } = cleanupOrphanedBlobs(tmpDir, new Set());
 
       // The file in the external directory should NOT have been deleted
       expect(deleted).toBe(0);
@@ -489,8 +550,9 @@ describe("cleanupOrphanedBlobs", () => {
     fs.writeFileSync(path.join(prefix1, "aab.txt"), "x");
     fs.writeFileSync(path.join(prefix2, "bbb.txt"), "x");
 
-    const deleted = cleanupOrphanedBlobs(tmpDir, new Set());
+    const { deleted, scanned } = cleanupOrphanedBlobs(tmpDir, new Set());
     expect(deleted).toBe(3);
+    expect(scanned).toBe(3); // every blob file is walked, whether or not it is removed
   });
 });
 
@@ -551,8 +613,73 @@ describe("createDataLifecycleManager", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.payload).toHaveProperty("duration_ms");
     expect(events[0]?.payload).toHaveProperty("tables");
+    expect(events[0]?.payload).toHaveProperty("blobs_referenced");
+    expect(events[0]?.payload).toHaveProperty("blobs_scanned");
     expect(events[0]?.payload).toHaveProperty("blobs_deleted");
     expect(events[0]?.payload).toHaveProperty("vacuum_ran");
+  });
+
+  it("tripwire: skips blob cleanup when the protected set is empty but observations still carry blob refs", () => {
+    // A failed capture writes `prompt_blob: ""`: collectReferencedBlobRefs excludes the empty value, so the
+    // protected set is empty, yet observationsCarryBlobRefs still sees the `prompt_blob` key. That is the drift
+    // signature — the sweep must skip and warn, never delete every blob against an empty set.
+    insertObservation(dbHandle.db, new Date().toISOString(), "agent_call", "implement", {
+      step: "implement",
+      prompt_blob: "",
+    });
+
+    const blobsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "engineer-tripwire-"));
+    const blobFile = path.join(blobsRoot, "blobs", "ab", `${"a".repeat(64)}.txt`);
+    fs.mkdirSync(path.dirname(blobFile), { recursive: true });
+    fs.writeFileSync(blobFile, "precious");
+
+    try {
+      const manager = createDataLifecycleManager({
+        db: dbHandle.db,
+        eventBus: ebHandle.eventBus,
+        config: defaultConfig(),
+        blobsDir: blobsRoot,
+        clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
+      });
+
+      const stats = manager.runCleanup();
+
+      expect(fs.existsSync(blobFile)).toBe(true); // not swept — the tripwire held
+      expect(stats.blobsReferenced).toBe(0);
+      expect(stats.blobsScanned).toBe(0); // cleanup skipped entirely — nothing walked
+      expect(stats.blobsDeleted).toBe(0);
+    } finally {
+      fs.rmSync(blobsRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not over-trip: sweeps genuine orphans when no observation carries a blob ref", () => {
+    // No agent observation carries a `*_blob` key, so an on-disk blob is a real orphan and must be reclaimed —
+    // proving the tripwire fires only on the drift signature, not on a legitimately empty store.
+    const blobsRoot = fs.mkdtempSync(path.join(os.tmpdir(), "engineer-no-trip-"));
+    const orphan = path.join(blobsRoot, "blobs", "ab", `${"a".repeat(64)}.txt`);
+    fs.mkdirSync(path.dirname(orphan), { recursive: true });
+    fs.writeFileSync(orphan, "orphan");
+
+    try {
+      const manager = createDataLifecycleManager({
+        db: dbHandle.db,
+        eventBus: ebHandle.eventBus,
+        config: defaultConfig(),
+        blobsDir: blobsRoot,
+        clock: createFakeClock(),
+        observer: createTestObserverFacade("data-lifecycle"),
+      });
+
+      const stats = manager.runCleanup();
+
+      expect(fs.existsSync(orphan)).toBe(false); // swept normally
+      expect(stats.blobsScanned).toBe(1);
+      expect(stats.blobsDeleted).toBe(1);
+    } finally {
+      fs.rmSync(blobsRoot, { recursive: true, force: true });
+    }
   });
 
   it("getLastRun returns null before first run", () => {
@@ -729,7 +856,7 @@ describe("createDataLifecycleManager", () => {
 
     it("continues the sweep and still fires the completion event when the blob stage throws", () => {
       insertEvent(dbHandle.db, daysAgo(100)); // old event — should still be pruned
-      // Drop observations so the blob-reference json_extract query (collectReferencedBlobRefs) throws.
+      // Drop observations so the blob-reference json_each query (collectReferencedBlobRefs) throws.
       // The observations table cleanup throws first (isolated); the blob stage then throws on the same
       // missing table — both are caught, and the sweep proceeds to vacuum + the completion event.
       dbHandle.db.exec("DROP TABLE observations");

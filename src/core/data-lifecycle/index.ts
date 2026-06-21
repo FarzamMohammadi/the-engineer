@@ -12,6 +12,7 @@ import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { EventDeclaration } from "../event-bus/topology.js";
 import type { IEventBus, PublishInput } from "../interfaces/event-bus.interface.js";
+import { BLOB_REF_KEY_SUFFIX, isBlobRef } from "../observer/blob-ref.js";
 import type { IObserver } from "../observer/index.js";
 
 export { MONTHLY_REPLAY_FLOOR_DAYS, inspectRetentionConfig } from "./inspect.js";
@@ -41,6 +42,10 @@ interface TableCleanupResult {
 export interface CleanupStats {
   timestamp: string;
   tables: Record<string, TableCleanupResult>;
+  /** Distinct blob refs the retained observations still point at — the protected set's size. */
+  blobsReferenced: number;
+  /** Blob files the sweep walked on disk (0 when blob cleanup was skipped). */
+  blobsScanned: number;
   blobsDeleted: number;
   vacuumRan: boolean;
   durationMs: number;
@@ -144,48 +149,57 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
 }
 
 /**
- * Every blob ref an observation can carry, by observation type and the JSON side it lives on.
- *
- * These names must track exactly what the engine writes, or a retained row's blob is mistaken for an orphan
- * and swept while its observation still points at it (a dangling DB→disk ref). The `agent_call` span writes
- * the prompt ref into `input` and the result/transcript refs into `output` (see `agent-step.ts`); each
- * `agent_activity` row spills its long text or large tool I/O to a blob ref in `input` (see
- * `agent-activity/sink.ts`). The dashboard's `observation-shapes.ts` readers consume these same keys.
- */
-const BLOB_REF_COLUMNS = [
-  { type: "agent_call", column: "input", keys: ["prompt_blob"] },
-  { type: "agent_call", column: "output", keys: ["result_blob", "transcript_blob"] },
-  { type: "agent_activity", column: "input", keys: ["text_blob", "input_blob", "output_blob"] },
-] as const;
-
-/**
  * Collect every blob reference still used by a retained observation — the protected set the orphan sweep
- * must never delete. A blob referenced by any non-deleted observation is live, whichever JSON side
- * (`input` or `output`) of whichever observation type carries the ref.
+ * must never delete.
+ *
+ * A ref is any value under a `*_blob` key (the shared convention in `../observer/blob-ref.ts`: `agent-step.ts`
+ * writes `prompt_blob`/`result_blob`/`transcript_blob`, `agent-activity/mapping.ts` writes
+ * `text_blob`/`input_blob`/`output_blob`) on either JSON side of any observation. Matching the *convention*
+ * rather than a hardcoded key list means a new `*_blob` field is protected with no change here — the drift
+ * that silently emptied this set and let the sweep delete every blob can no longer recur from a rename.
+ *
+ * `json_each` walks each row's top-level `input`/`output` keys inside SQLite, so multi-KB payloads never load
+ * into JS; the `__/%` SQL guard plus the JS-side {@link isBlobRef} drop the empty string a failed capture
+ * writes and anything that isn't a well-formed ref.
  */
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
+  const likeSuffix = `%${BLOB_REF_KEY_SUFFIX}`;
+  const rows = db
+    .prepare(
+      `SELECT je.value AS ref FROM observations o, json_each(o.input) je
+         WHERE je.key LIKE ? AND je.value LIKE '__/%'
+       UNION
+       SELECT je.value AS ref FROM observations o, json_each(o.output) je
+         WHERE je.key LIKE ? AND je.value LIKE '__/%'`,
+    )
+    .all(likeSuffix, likeSuffix) as { ref: string }[];
+
   const refs = new Set<string>();
-
-  // Extract each ref with json_extract at the SQL level, not by loading whole JSON columns into JS — an
-  // agent_call's input/output can each be multi-KB, and with thousands of rows that would scale memory to
-  // total JSON size instead of ref count. One small query per (type, column) keeps it proportional to refs.
-  for (const { type, column, keys } of BLOB_REF_COLUMNS) {
-    const selections = keys.map((key, index) => `json_extract("${column}", '$.${key}') as ref${index}`).join(", ");
-    const rows = db
-      .prepare(`SELECT ${selections} FROM observations WHERE type = ? AND "${column}" IS NOT NULL`)
-      .all(type) as Record<string, string | null>[];
-
-    for (const row of rows) {
-      for (let index = 0; index < keys.length; index++) {
-        const ref = row[`ref${index}`];
-        if (ref) {
-          refs.add(ref);
-        }
-      }
+  for (const { ref } of rows) {
+    if (isBlobRef(ref)) {
+      refs.add(ref);
     }
   }
-
   return refs;
+}
+
+/**
+ * A crude, JSON-parse-free probe: does any agent observation's raw text contain a `*_blob` key? Used only by
+ * the orphan-sweep tripwire as an independent corroborating signal. It is *deliberately* a different mechanism
+ * than {@link collectReferencedBlobRefs} (substring match, not `json_each`), so a regression in that extraction
+ * cannot also defeat this guard. The `_` in the LIKE pattern is a single-char wildcard — harmless here, since
+ * over-matching only makes the tripwire more conservative (skip rather than delete).
+ */
+export function observationsCarryBlobRefs(db: Database.Database): boolean {
+  const row = db
+    .prepare(
+      `SELECT EXISTS(
+         SELECT 1 FROM observations
+         WHERE type IN ('agent_call', 'agent_activity') AND (input LIKE '%_blob%' OR output LIKE '%_blob%')
+       ) AS present`,
+    )
+    .get() as { present: number };
+  return row.present === 1;
 }
 
 /** Check that a file's real path is confined within the expected base directory. */
@@ -198,23 +212,30 @@ function isConfinedPath(filePath: string, resolvedBase: string): boolean {
   }
 }
 
+/** What one orphan-blob sweep walked and removed — `scanned` is every blob file seen, `deleted` the orphans removed. */
+export interface BlobCleanupResult {
+  deleted: number;
+  scanned: number;
+}
+
 /**
- * Walk the blobs directory and delete any blob files not in the referenced set.
- * Returns the number of deleted blob files.
+ * Walk the blobs directory and delete any blob file not in the referenced set.
+ * Returns the count of files walked (`scanned`) and removed (`deleted`).
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: defensive filesystem traversal with error handling at each level
-export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<string>): number {
+export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<string>): BlobCleanupResult {
   if (!fs.existsSync(blobsDir)) {
-    return 0;
+    return { deleted: 0, scanned: 0 };
   }
 
   const resolvedBase = fs.realpathSync(blobsDir);
   let deleted = 0;
+  let scanned = 0;
   let prefixDirs: string[];
   try {
     prefixDirs = fs.readdirSync(blobsDir);
   } catch {
-    return 0; // Can't read blobs dir — nothing to clean
+    return { deleted: 0, scanned: 0 }; // Can't read blobs dir — nothing to clean
   }
 
   for (const prefix of prefixDirs) {
@@ -236,6 +257,7 @@ export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<strin
     }
 
     for (const blobFile of blobFiles) {
+      scanned++;
       // Blob ref format: "ab/abc123...def.txt" → reconstruct ref from path
       const hash = blobFile.replace(BLOB_TXT_SUFFIX, "");
       const ref = `${prefix}/${hash}`;
@@ -265,7 +287,7 @@ export function cleanupOrphanedBlobs(blobsDir: string, referencedRefs: Set<strin
     }
   }
 
-  return deleted;
+  return { deleted, scanned };
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -303,6 +325,8 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
     observer.debug("Data lifecycle cleanup starting");
     const startMs = clock.now();
     const tables: Record<string, TableCleanupResult> = {};
+    let blobsReferenced = 0;
+    let blobsScanned = 0;
     let blobsDeleted = 0;
     let vacuumRan = false;
 
@@ -327,19 +351,12 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         }
       }
 
-      // Blob orphan cleanup after observation pruning — isolated, because collectReferencedBlobRefs
-      // runs a real json_extract query that can throw and must not abort the sweep before vacuum.
-      if (blobsDir) {
-        try {
-          const blobsDirPath = path.join(blobsDir, "blobs");
-          const referencedRefs = collectReferencedBlobRefs(db);
-          blobsDeleted = cleanupOrphanedBlobs(blobsDirPath, referencedRefs);
-        } catch (err) {
-          observer.warn("Blob cleanup failed — skipping it, continuing the sweep", {
-            error: sanitizeErrorMessage(err),
-          });
-        }
-      }
+      // Blob orphan cleanup after observation pruning — extracted into its own failure-isolated helper
+      // (the json_each query can throw) so the sweep proceeds to vacuum regardless.
+      const blobStats = runBlobCleanup();
+      blobsReferenced = blobStats.referenced;
+      blobsScanned = blobStats.scanned;
+      blobsDeleted = blobStats.deleted;
 
       // Incremental vacuum (non-critical — failure should not halt cleanup)
       try {
@@ -349,10 +366,41 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         observer.warn("Incremental vacuum failed", { error: sanitizeErrorMessage(err) });
       }
     } finally {
-      lastRun = finalizeSweep({ tables, blobsDeleted, vacuumRan, startMs });
+      lastRun = finalizeSweep({ tables, blobsReferenced, blobsScanned, blobsDeleted, vacuumRan, startMs });
     }
 
     return lastRun;
+  }
+
+  /**
+   * The blob stage of one sweep: collect the protected set, run the drift tripwire, and reclaim orphans.
+   * Failure-isolated — it returns zeroed tallies when blobsDir is unset, when the tripwire skips, or when the
+   * json_each query throws — so {@link runCleanup} stays flat and its other stages run regardless.
+   */
+  function runBlobCleanup(): { referenced: number; scanned: number; deleted: number } {
+    if (!blobsDir) {
+      return { referenced: 0, scanned: 0, deleted: 0 };
+    }
+    try {
+      const referencedRefs = collectReferencedBlobRefs(db);
+      // Tripwire: an empty protected set while observations still carry `*_blob` refs is the signature of
+      // extraction drift (it has happened — see blob-ref.ts). Deleting against an empty set wipes every blob
+      // and is unrecoverable, so refuse and warn instead of nuking. observationsCarryBlobRefs is a crude
+      // substring probe — a different mechanism than the extraction — so one regression can't fool both.
+      if (referencedRefs.size === 0 && observationsCarryBlobRefs(db)) {
+        observer.warn(
+          "Blob cleanup skipped — 0 referenced refs but observations still carry blob refs (extraction drift?)",
+        );
+        return { referenced: 0, scanned: 0, deleted: 0 };
+      }
+      const result = cleanupOrphanedBlobs(path.join(blobsDir, "blobs"), referencedRefs);
+      return { referenced: referencedRefs.size, scanned: result.scanned, deleted: result.deleted };
+    } catch (err) {
+      observer.warn("Blob cleanup failed — skipping it, continuing the sweep", {
+        error: sanitizeErrorMessage(err),
+      });
+      return { referenced: 0, scanned: 0, deleted: 0 };
+    }
   }
 
   /**
@@ -363,21 +411,32 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
    */
   function finalizeSweep(partial: {
     tables: Record<string, TableCleanupResult>;
+    blobsReferenced: number;
+    blobsScanned: number;
     blobsDeleted: number;
     vacuumRan: boolean;
     startMs: number;
   }): CleanupStats {
-    const { tables, blobsDeleted, vacuumRan, startMs } = partial;
+    const { tables, blobsReferenced, blobsScanned, blobsDeleted, vacuumRan, startMs } = partial;
     const durationMs = clock.now() - startMs;
     const stats: CleanupStats = {
       timestamp: new Date(clock.now()).toISOString(),
       tables,
+      blobsReferenced,
+      blobsScanned,
       blobsDeleted,
       vacuumRan,
       durationMs,
     };
 
-    observer.info("Data lifecycle cleanup completed", { durationMs, tables, blobsDeleted, vacuumRan });
+    observer.info("Data lifecycle cleanup completed", {
+      durationMs,
+      tables,
+      blobsReferenced,
+      blobsScanned,
+      blobsDeleted,
+      vacuumRan,
+    });
 
     // Liveness observation for the dashboard: the durable event below is the cross-process record the
     // separate dashboard reads; this observation lands the same sweep on the task-less trace timeline.
@@ -396,6 +455,8 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         "data_lifecycle_sweep_completed",
         {
           tables: stats.tables,
+          blobs_referenced: stats.blobsReferenced,
+          blobs_scanned: stats.blobsScanned,
           blobs_deleted: stats.blobsDeleted,
           vacuum_ran: stats.vacuumRan,
           duration_ms: stats.durationMs,
@@ -418,6 +479,8 @@ export function createDataLifecycleManager(deps: DataLifecycleManagerDeps): Data
         payload: {
           duration_ms: stats.durationMs,
           tables: stats.tables,
+          blobs_referenced: stats.blobsReferenced,
+          blobs_scanned: stats.blobsScanned,
           blobs_deleted: stats.blobsDeleted,
           vacuum_ran: stats.vacuumRan,
         },

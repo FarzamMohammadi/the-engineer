@@ -101,13 +101,7 @@ describe("Daemon", () => {
       await handle.daemon.tick();
 
       expect(handle.taskEngine.createTask).toHaveBeenCalledOnce();
-      expect(handle.taskEngine.requestTransition).toHaveBeenCalledWith(
-        expect.any(String),
-        TaskStates.queued,
-        null,
-        "new_trigger_event",
-        "daemon",
-      );
+      // createTask admits the task directly into the queue — no separate requestTransition step.
     });
 
     it("duplicate idempotency key is ignored", async () => {

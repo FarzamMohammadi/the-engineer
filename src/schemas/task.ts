@@ -5,15 +5,7 @@ import { ObservationLinkSchema } from "./observer.js";
 
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
-export const TaskStateSchema = z.enum([
-  "requirements_gathering",
-  "queued",
-  "active",
-  "blocked",
-  "completed",
-  "failed",
-  "cancelled",
-]);
+export const TaskStateSchema = z.enum(["queued", "active", "blocked", "completed", "failed", "cancelled"]);
 export type TaskState = z.infer<typeof TaskStateSchema>;
 
 /** Constant enum values for TaskState. Use instead of raw strings. */
@@ -337,9 +329,9 @@ export type StateTransition = z.infer<typeof StateTransitionSchema>;
 // ── Valid Transitions (const data) ─────────────────────────────────────────────
 
 export const ValidTransitions = [
-  { from: TaskStates.requirements_gathering, to: TaskStates.queued },
-  { from: TaskStates.requirements_gathering, to: TaskStates.failed },
-  { from: TaskStates.requirements_gathering, to: TaskStates.cancelled },
+  // `queued` is the task's birth state: createTask admits a runnable task directly into the queue, so a task
+  // needs no genesis transition — the `task.created` event marks its birth. Tasks also RE-enter `queued` via
+  // the recovery/preemption edges below (a retry, a resume, a preempt-requeue).
   { from: TaskStates.queued, to: TaskStates.active, to_sub: SubStates.working },
   { from: TaskStates.queued, to: TaskStates.cancelled },
   { from: TaskStates.active, from_sub: SubStates.working, to: TaskStates.blocked },
@@ -380,8 +372,8 @@ export const CANCELLABLE_STATES = [
 /**
  * States the owner can RETRY (re-queue) a task from — `engineer retry` and the dashboard Retry/Resume
  * button. A deliberately CURATED subset of the `→queued` edges in {@link ValidTransitions}, not a derived
- * one: it excludes the daemon-only preemption edges (`active`/`requirements_gathering` → queued), which are
- * scheduler mechanics rather than owner-initiated recovery. {@link retryTask} is the single writer over this
+ * one: it excludes the daemon-only preemption edge (`active` → queued), which is scheduler mechanics rather
+ * than owner-initiated recovery. {@link retryTask} is the single writer over this
  * set. `cancelled` is included — resuming a cancelled task — but carries extra preconditions the others do
  * not: the work must still exist (`reaped_at IS NULL`) and its idempotency key must be free.
  */
@@ -397,7 +389,6 @@ export type PermissionEntry = {
 };
 
 export const PermissionTable: readonly PermissionEntry[] = [
-  { state: TaskStates.requirements_gathering, sub_state: null, allowed: [ActionClasses.read] },
   { state: TaskStates.queued, sub_state: null, allowed: [ActionClasses.read] },
   {
     state: TaskStates.active,

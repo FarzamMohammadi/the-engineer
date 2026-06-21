@@ -38,15 +38,7 @@ export const OBSERVATION_TYPES = [
 export type ObservationType = (typeof OBSERVATION_TYPES)[number];
 
 /** Task lifecycle states — mirrors `TaskStateSchema`. */
-export const TASK_STATES = [
-  "requirements_gathering",
-  "queued",
-  "active",
-  "blocked",
-  "completed",
-  "failed",
-  "cancelled",
-] as const;
+export const TASK_STATES = ["queued", "active", "blocked", "completed", "failed", "cancelled"] as const;
 export type TaskState = (typeof TASK_STATES)[number];
 
 /** The coarse routing reason a task is blocked — mirrors `BlockReasonSchema`. */

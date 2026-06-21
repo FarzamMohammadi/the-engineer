@@ -45,7 +45,7 @@ function insertTask(db: TestDatabaseHandle["db"], overrides: Record<string, unkn
     id,
     null,
     (overrides["idempotency_key"] as string) ?? `test:${id}`,
-    (overrides["state"] as string) ?? TaskStates.requirements_gathering,
+    (overrides["state"] as string) ?? TaskStates.queued,
     (overrides["sub_state"] as string) ?? null,
     null,
     "Test Task",
@@ -95,10 +95,6 @@ describe("subStateMatches", () => {
 });
 
 describe("isValidTransition", () => {
-  it("allows intake → queued", () => {
-    expect(isValidTransition(TaskStates.requirements_gathering, null, TaskStates.queued, null)).toBe(true);
-  });
-
   it("allows queued → active.working", () => {
     expect(isValidTransition(TaskStates.queued, null, TaskStates.active, SubStates.working)).toBe(true);
   });
@@ -109,12 +105,6 @@ describe("isValidTransition", () => {
 
   it("allows blocked → completed (PR merge path)", () => {
     expect(isValidTransition(TaskStates.blocked, null, TaskStates.completed, null)).toBe(true);
-  });
-
-  it("rejects intake → active", () => {
-    expect(isValidTransition(TaskStates.requirements_gathering, null, TaskStates.active, SubStates.working)).toBe(
-      false,
-    );
   });
 
   it("rejects queued → completed", () => {
@@ -155,9 +145,9 @@ describe("StateMachine", () => {
     dbHandle.cleanup();
   });
 
-  it("transitions intake → queued", () => {
+  it("transitions queued → active.working", () => {
     const id = insertTask(dbHandle.db);
-    const result = stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
+    const result = stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "scheduled", "test");
     expect(result).toEqual({ success: true });
     expect(eventBus.publish).toHaveBeenCalledOnce();
   });
@@ -177,7 +167,7 @@ describe("StateMachine", () => {
 
   it("increments version on successful transition", () => {
     const id = insertTask(dbHandle.db);
-    stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
+    stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "scheduled", "test");
 
     const row = dbHandle.db.prepare("SELECT version FROM tasks WHERE id = ?").get(id) as {
       version: number;
@@ -221,15 +211,15 @@ describe("StateMachine", () => {
 
   it("records state transition in audit trail", () => {
     const id = insertTask(dbHandle.db);
-    stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
+    stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "scheduled", "test");
 
     const transitions = dbHandle.db.prepare("SELECT * FROM state_transitions WHERE task_id = ?").all(id) as Array<{
       from_state: string;
       to_state: string;
     }>;
     expect(transitions).toHaveLength(1);
-    expect(transitions[0]?.from_state).toBe(TaskStates.requirements_gathering);
-    expect(transitions[0]?.to_state).toBe(TaskStates.queued);
+    expect(transitions[0]?.from_state).toBe(TaskStates.queued);
+    expect(transitions[0]?.to_state).toBe(TaskStates.active);
   });
 
   describe("optimistic locking", () => {
@@ -250,7 +240,7 @@ describe("StateMachine", () => {
       // To truly test conflict, we'd need concurrent access.
 
       // Instead, test that version increments correctly across multiple transitions
-      stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
+      stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "scheduled", "test");
 
       // After successful transition from version=2, version should now be 3
       const row = dbHandle.db.prepare("SELECT version FROM tasks WHERE id = ?").get(id) as {
@@ -271,17 +261,17 @@ describe("StateMachine", () => {
       // a value that the update WHERE clause won't match.
 
       // First transition succeeds (version 1 → 2)
-      const result1 = stateMachine.requestTransition(id, TaskStates.queued, null, "ready", "test");
+      const result1 = stateMachine.requestTransition(id, TaskStates.active, SubStates.working, "scheduled", "test");
       expect(result1.success).toBe(true);
 
-      // Now manually revert the state back to intake but keep version=2
+      // Now manually revert the state back to queued but jump version to 999
       dbHandle.db
-        .prepare("UPDATE tasks SET state = ?, version = 999 WHERE id = ?")
-        .run(TaskStates.requirements_gathering, id);
+        .prepare("UPDATE tasks SET state = ?, sub_state = NULL, version = 999 WHERE id = ?")
+        .run(TaskStates.queued, id);
 
       // Second StateMachine reads version=999, tries UPDATE WHERE version=999
       // This should succeed (version matches what was read)
-      const result2 = sm2.requestTransition(id, TaskStates.queued, null, "ready again", "test");
+      const result2 = sm2.requestTransition(id, TaskStates.active, SubStates.working, "scheduled again", "test");
       expect(result2.success).toBe(true);
 
       const row = dbHandle.db.prepare("SELECT version FROM tasks WHERE id = ?").get(id) as {

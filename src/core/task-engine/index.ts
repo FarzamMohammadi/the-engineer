@@ -179,11 +179,10 @@ export class TaskEngine implements ITaskEngine {
   // ── Task Creation ───────────────────────────────────────────────────────────
 
   /**
-   * Create a new task in Intake state.
-   *
-   * The task is returned in `intake` state. The caller is responsible for
-   * transitioning to `queued` via `requestTransition()` when ready.
-   * Emits a `task.created` event.
+   * Create a new task, admitted directly into the queue (`queued` state), ready for the scheduler to
+   * dispatch. This is the single admission chokepoint: a task is born runnable, so no caller can create one
+   * and forget to queue it. Emits a `task.created` event — the task's birth, which stands in for a
+   * transition INTO `queued` (there is none; `queued` is the first state).
    */
   createTask(input: CreateTaskInput): Task {
     const id = ulid();
@@ -197,7 +196,7 @@ export class TaskEngine implements ITaskEngine {
       id,
       toSqliteJson(externalRef),
       input.idempotency_key,
-      TaskStates.requirements_gathering,
+      TaskStates.queued,
       null, // sub_state
       null, // phase
       null, // sub_phase
@@ -253,7 +252,7 @@ export class TaskEngine implements ITaskEngine {
       id,
       external_ref: externalRef,
       idempotency_key: input.idempotency_key,
-      state: TaskStates.requirements_gathering,
+      state: TaskStates.queued,
       sub_state: null,
       phase: null,
       sub_phase: null,

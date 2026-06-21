@@ -114,12 +114,7 @@ describe("retryTask", () => {
       insertTask(handle.db, `ok-${state}`, state);
       expect(retryTask(handle.db, `ok-${state}`, RETRY_OPTS).outcome).toBe("retried");
     }
-    for (const state of [
-      TaskStates.requirements_gathering,
-      TaskStates.queued,
-      TaskStates.active,
-      TaskStates.completed,
-    ]) {
+    for (const state of [TaskStates.queued, TaskStates.active, TaskStates.completed]) {
       insertTask(handle.db, `no-${state}`, state);
       expect(retryTask(handle.db, `no-${state}`, RETRY_OPTS)).toEqual({ outcome: "not_retryable", state });
     }

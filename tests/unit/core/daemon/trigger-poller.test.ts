@@ -4,7 +4,6 @@ import { createTriggerPoller } from "../../../../src/core/daemon/trigger-poller.
 import type { TriggerPollerContext } from "../../../../src/core/daemon/types.js";
 import { externalRefsMatch } from "../../../../src/core/daemon/unblock-resolver.js";
 import type { DaemonConfig } from "../../../../src/schemas/config.js";
-import { TaskStates } from "../../../../src/schemas/task.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -140,13 +139,7 @@ describe("TriggerPoller", () => {
         idempotency_key: "key-1",
       }),
     );
-    expect(ctx.taskEngine.requestTransition).toHaveBeenCalledWith(
-      "task-001",
-      TaskStates.queued,
-      null,
-      "new_trigger_event",
-      "daemon",
-    );
+    // createTask admits the task directly into the queue — no separate requestTransition step.
   });
 
   it("suppresses an event when a task still holds its idempotency key in the DB (crash-safe cold path)", async () => {

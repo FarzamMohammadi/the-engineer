@@ -102,11 +102,10 @@ function getTaskList(dbPath: string, showAll: boolean): TaskRow[] {
            CASE state
              WHEN 'active' THEN 1
              WHEN 'blocked' THEN 2
-             WHEN 'requirements_gathering' THEN 3
-             WHEN 'queued' THEN 4
-             WHEN 'failed' THEN 5
-             WHEN 'completed' THEN 6
-             WHEN 'cancelled' THEN 7
+             WHEN 'queued' THEN 3
+             WHEN 'failed' THEN 4
+             WHEN 'completed' THEN 5
+             WHEN 'cancelled' THEN 6
            END,
            created_at ASC`,
       )

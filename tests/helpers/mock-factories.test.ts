@@ -88,7 +88,7 @@ describe("mock-factories", () => {
 
     it("has sensible defaults", () => {
       const task = createMockTask();
-      expect(task.state).toBe(TaskStates.requirements_gathering);
+      expect(task.state).toBe(TaskStates.queued);
       expect(task.priority).toBe(50);
     });
   });

@@ -62,7 +62,7 @@ export function TaskDetailPage(): React.JSX.Element {
   const isBlocked = typedTask.state === "blocked";
   // The current-phase pill is meaningful only while the task is mid-flight — on a terminal task the phase
   // would be stale. The dot pulses only when actively executing (a blocked task is paused, not live).
-  const isLive = typedTask.state === "active" || typedTask.state === "requirements_gathering";
+  const isLive = typedTask.state === "active";
   const showCurrentPhase = typedTask.phase !== null && (isLive || typedTask.state === "blocked");
 
   // The Jaeger deep-link. Shown only when export is on AND this task has a trace yet. The OTLP id is derived

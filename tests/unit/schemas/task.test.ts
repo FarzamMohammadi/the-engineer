@@ -28,16 +28,16 @@ import {
 // ── Enums ──────────────────────────────────────────────────────────────────────
 
 describe("TaskStateSchema", () => {
-  const validStates = ["requirements_gathering", "queued", "active", "blocked", "completed", "failed", "cancelled"];
+  const validStates = ["queued", "active", "blocked", "completed", "failed", "cancelled"];
 
-  it("accepts all 7 valid states", () => {
+  it("accepts all 6 valid states", () => {
     for (const state of validStates) {
       expect(TaskStateSchema.parse(state)).toBe(state);
     }
   });
 
-  it("has exactly 7 values", () => {
-    expect(TaskStateSchema.options).toHaveLength(7);
+  it("has exactly 6 values", () => {
+    expect(TaskStateSchema.options).toHaveLength(6);
   });
 
   it("rejects invalid values", () => {
@@ -56,7 +56,6 @@ describe("isTerminal / TERMINAL_STATES", () => {
   });
 
   it("treats pre-terminal states as non-terminal", () => {
-    expect(isTerminal(TaskStates.requirements_gathering)).toBe(false);
     expect(isTerminal(TaskStates.queued)).toBe(false);
     expect(isTerminal(TaskStates.active)).toBe(false);
     expect(isTerminal(TaskStates.blocked)).toBe(false);
@@ -370,7 +369,7 @@ describe("TaskSchema", () => {
     id: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
     external_ref: null,
     idempotency_key: "test:minimal",
-    state: TaskStates.requirements_gathering,
+    state: TaskStates.queued,
     sub_state: null,
     phase: null,
     sub_phase: null,
@@ -454,11 +453,11 @@ describe("StateTransitionSchema", () => {
     const valid = {
       id: "01ABC",
       task_id: "01XYZ",
-      from_state: TaskStates.requirements_gathering,
+      from_state: TaskStates.failed,
       to_state: TaskStates.queued,
       from_sub: null,
       to_sub: null,
-      reason: "Task validated",
+      reason: "Task retried",
       timestamp: "2026-03-10T12:00:00.000Z",
       triggered_by: "task_engine",
     };
@@ -513,21 +512,13 @@ describe("ValidTransitions", () => {
 
   it("every non-terminal state can transition to cancelled", () => {
     const cancellableFrom = new Set(ValidTransitions.filter((t) => t.to === TaskStates.cancelled).map((t) => t.from));
-    expect(cancellableFrom).toEqual(
-      new Set([TaskStates.requirements_gathering, TaskStates.queued, TaskStates.active, TaskStates.blocked]),
-    );
+    expect(cancellableFrom).toEqual(new Set([TaskStates.queued, TaskStates.active, TaskStates.blocked]));
   });
 
-  it("RETRYABLE_STATES is the curated owner-retry set and excludes the daemon-only preemption edges", () => {
+  it("RETRYABLE_STATES is the curated owner-retry set and excludes the daemon-only preemption edge", () => {
     expect(new Set(RETRYABLE_STATES)).toEqual(new Set([TaskStates.failed, TaskStates.blocked, TaskStates.cancelled]));
-    // active/requirements_gathering also have →queued edges, but those are scheduler preemption, not retry.
+    // active also has a →queued edge, but that is scheduler preemption, not owner-initiated retry.
     expect(RETRYABLE_STATES as readonly string[]).not.toContain(TaskStates.active);
-    expect(RETRYABLE_STATES as readonly string[]).not.toContain(TaskStates.requirements_gathering);
-  });
-
-  it("intake is never a 'to' state", () => {
-    const toStates = new Set<string>(ValidTransitions.map((t) => t.to));
-    expect(toStates.has(TaskStates.requirements_gathering)).toBe(false);
   });
 
   it("active 'from' entries always have from_sub specified", () => {
@@ -550,7 +541,6 @@ describe("ValidTransitions", () => {
 describe("PermissionTable", () => {
   it("covers all valid (state, sub_state) pairs", () => {
     const expectedPairs = [
-      [TaskStates.requirements_gathering, null],
       [TaskStates.queued, null],
       [TaskStates.active, SubStates.working],
       [TaskStates.blocked, null],

@@ -166,7 +166,7 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
     // Extract priority from ticket body (@priority: <number>)
     const vars = extractEventVariables(event.body);
 
-    // Create task: intake → queued
+    // Create the task — createTask admits it directly into the queue, ready for the scheduler to dispatch.
     const task = taskEngine.createTask({
       title: event.title,
       repo: event.repo,
@@ -179,7 +179,6 @@ export function createTriggerPoller(ctx: TriggerPollerContext): TriggerPoller {
       ...(vars.priority !== undefined ? { priority: vars.priority } : {}),
     });
 
-    taskEngine.requestTransition(task.id, TaskStates.queued, null, "new_trigger_event", "daemon");
     observer.info("Task created from trigger event", { taskId: task.id, title: event.title });
   }
 

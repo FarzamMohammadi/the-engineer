@@ -127,11 +127,11 @@ describe("TaskStateChangedPayloadSchema", () => {
   it("parses valid data with task state enums", () => {
     const valid = {
       task_id: "01TASK",
-      from_state: TaskStates.requirements_gathering,
+      from_state: TaskStates.failed,
       from_sub: null,
       to_state: TaskStates.queued,
       to_sub: null,
-      reason: "Task validated",
+      reason: "Task retried",
       triggered_by: "task_engine",
     };
     expect(TaskStateChangedPayloadSchema.parse(valid)).toEqual(valid);

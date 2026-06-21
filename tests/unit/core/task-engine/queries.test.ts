@@ -46,7 +46,7 @@ describe("TaskQueries", () => {
         id,
         (overrides["external_ref"] as string) ?? null,
         (overrides["idempotency_key"] as string) ?? `test:${id}`,
-        (overrides["state"] as string) ?? TaskStates.requirements_gathering,
+        (overrides["state"] as string) ?? TaskStates.queued,
         (overrides["sub_state"] as string) ?? null,
         (overrides["phase"] as string) ?? null,
         (overrides["title"] as string) ?? `Task ${id}`,
@@ -123,7 +123,6 @@ describe("TaskQueries", () => {
       insertTask({ state: TaskStates.queued });
       insertTask({ state: TaskStates.active, sub_state: SubStates.working });
       insertTask({ state: TaskStates.blocked });
-      insertTask({ state: TaskStates.requirements_gathering });
       expect(queries.getUnreapedTerminalTasks()).toEqual([]);
     });
 
@@ -153,7 +152,7 @@ describe("TaskQueries", () => {
     });
 
     it("returns tasks filtered by state", () => {
-      insertTask({ state: TaskStates.requirements_gathering });
+      insertTask({ state: TaskStates.blocked });
       insertTask({ state: TaskStates.queued });
       insertTask({ state: TaskStates.queued });
 
@@ -188,7 +187,7 @@ describe("TaskQueries", () => {
 
   describe("getQueuedByPriority", () => {
     it("returns only queued tasks", () => {
-      insertTask({ state: TaskStates.requirements_gathering });
+      insertTask({ state: TaskStates.blocked });
       insertTask({ state: TaskStates.queued });
 
       const result = queries.getQueuedByPriority();
@@ -200,13 +199,13 @@ describe("TaskQueries", () => {
   describe("getStateHistory", () => {
     it("returns transitions ordered by timestamp", () => {
       const id = insertTask();
-      insertTransition(id, TaskStates.requirements_gathering, TaskStates.queued);
       insertTransition(id, TaskStates.queued, TaskStates.active);
+      insertTransition(id, TaskStates.active, TaskStates.blocked);
 
       const history = queries.getStateHistory(id);
       expect(history).toHaveLength(2);
-      expect(history[0]?.from_state).toBe(TaskStates.requirements_gathering);
-      expect(history[1]?.from_state).toBe(TaskStates.queued);
+      expect(history[0]?.from_state).toBe(TaskStates.queued);
+      expect(history[1]?.from_state).toBe(TaskStates.active);
     });
 
     it("returns empty for task with no transitions", () => {

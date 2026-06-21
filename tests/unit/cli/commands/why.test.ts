@@ -42,7 +42,7 @@ afterEach(() => {
 // Helper to insert a task with all required NOT NULL columns
 function insertTask(db: import("better-sqlite3").Database, id: string, overrides: Record<string, unknown> = {}): void {
   const defaults = {
-    state: TaskStates.requirements_gathering,
+    state: TaskStates.queued,
     sub_state: null as string | null,
     priority: 50,
     title: "Test task",
@@ -127,8 +127,8 @@ describe("runWhy", () => {
       .run(
         "tr-1",
         "task-002",
-        TaskStates.requirements_gathering,
         TaskStates.queued,
+        TaskStates.active,
         "auto-transition",
         "daemon",
         "2026-01-15T10:30:01Z",
@@ -140,8 +140,8 @@ describe("runWhy", () => {
     expect(code).toBe(0);
 
     const output = stdoutWrites.join("");
-    expect(output).toContain("requirements_gathering");
     expect(output).toContain("queued");
+    expect(output).toContain("active");
     expect(output).toContain("auto-transition");
   });
 

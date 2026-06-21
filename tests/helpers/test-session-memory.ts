@@ -35,7 +35,7 @@ export function createTestSessionMemory(): TestSessionMemoryHandle {
       priority, agent_tokens, agent_cost_usd, compute_time_ms,
       created_at, last_transition_at
     ) VALUES (
-      ?, ?, 'requirements_gathering', ?, '', '',
+      ?, ?, 'queued', ?, '', '',
       '[]', '[]', '[]', '[]',
       50, 0, 0.0, 0,
       ?, ?

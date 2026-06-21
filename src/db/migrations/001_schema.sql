@@ -10,7 +10,7 @@ CREATE TABLE tasks (
   idempotency_key         TEXT NOT NULL,
 
   -- State
-  state                   TEXT NOT NULL CHECK(state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
+  state                   TEXT NOT NULL CHECK(state IN ('queued','active','blocked','completed','failed','cancelled')),
   sub_state               TEXT CHECK(sub_state IN ('working')),
   phase                   TEXT,
   sub_phase               TEXT,
@@ -88,8 +88,8 @@ CREATE INDEX idx_tasks_state ON tasks(state);
 CREATE INDEX idx_tasks_session_id ON tasks(session_id);
 CREATE INDEX idx_tasks_priority ON tasks(priority DESC);
 CREATE INDEX idx_tasks_state_priority ON tasks(state, priority DESC);
--- In-play uniqueness: no two simultaneously in-play tasks (requirements_gathering/queued/active/blocked)
--- may share an idempotency_key — a hard guard against two live tasks cloning the same source. This set is
+-- In-play uniqueness: no two simultaneously in-play tasks (queued/active/blocked) may share an
+-- idempotency_key — a hard guard against two live tasks cloning the same source. This set is
 -- the hand-kept DB sibling of TERMINAL_STATES in schemas/task.ts (it excludes every terminal state, failed
 -- included, because a failed task is not in-play) — keep the two in lockstep. Identity/dedup rides on
 -- idempotency_key; external_ref is descriptive only.
@@ -104,8 +104,8 @@ CREATE UNIQUE INDEX idx_tasks_idempotency_key_active
 CREATE TABLE state_transitions (
   id              TEXT PRIMARY KEY,
   task_id         TEXT NOT NULL REFERENCES tasks(id),
-  from_state      TEXT NOT NULL CHECK(from_state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
-  to_state        TEXT NOT NULL CHECK(to_state IN ('requirements_gathering','queued','active','blocked','completed','failed','cancelled')),
+  from_state      TEXT NOT NULL CHECK(from_state IN ('queued','active','blocked','completed','failed','cancelled')),
+  to_state        TEXT NOT NULL CHECK(to_state IN ('queued','active','blocked','completed','failed','cancelled')),
   from_sub        TEXT CHECK(from_sub IN ('working')),
   to_sub          TEXT CHECK(to_sub IN ('working')),
   reason          TEXT NOT NULL,

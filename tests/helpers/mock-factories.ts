@@ -89,7 +89,7 @@ export function createMockTask(overrides?: Partial<Task>): Task {
     id: "01MOCK000000000000000000000",
     external_ref: null,
     idempotency_key: "mock:01MOCK",
-    state: TaskStates.requirements_gathering,
+    state: TaskStates.queued,
     sub_state: null,
     phase: null,
     sub_phase: null,

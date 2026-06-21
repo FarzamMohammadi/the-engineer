@@ -70,7 +70,7 @@ describe("cancelTask", () => {
   });
 
   it("cancels each cancellable state and refuses each terminal state", () => {
-    for (const state of [TaskStates.requirements_gathering, TaskStates.queued, TaskStates.blocked]) {
+    for (const state of [TaskStates.queued, TaskStates.blocked]) {
       insertTask(handle.db, `ok-${state}`, state);
       expect(cancelTask(handle.db, `ok-${state}`, CANCEL_OPTS).outcome).toBe("cancelled");
     }

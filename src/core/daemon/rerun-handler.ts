@@ -21,8 +21,8 @@ export interface RerunHandlerDeps {
  *
  * The clone reuses the source's `idempotency_key`, so it refuses if a live task already holds it (cancel
  * freed the key, so the trigger may already have re-created the task) — never two live tasks on one source.
- * The new task starts fresh at `requirements_gathering` and links back to the cancelled one as a
- * previous_attempt. Never throws into the poll loop: every early exit logs and returns.
+ * createTask admits the clone directly into the queue (ready for dispatch) and it links back to the cancelled
+ * one as a previous_attempt. Never throws into the poll loop: every early exit logs and returns.
  */
 export function handleRerunRequest(deps: RerunHandlerDeps, sourceTaskId: string): void {
   const { taskEngine, observer } = deps;
@@ -80,6 +80,9 @@ export function handleRerunRequest(deps: RerunHandlerDeps, sourceTaskId: string)
     taskEngine.updateTaskField(created.id, "related", [
       { type: RelatedTypes.previous_attempt, ref: sourceTaskId, relevance: "Re-run of a cancelled task" },
     ]);
+    // createTask admits the clone directly into the queue, so the scheduler picks it up on the next tick —
+    // no separate transition needed (the original re-run defect was a missing queue step here; collapsing
+    // admission into createTask makes it impossible to recreate).
     observer.info("Re-ran a cancelled task as a fresh task", { sourceTaskId, newTaskId: created.id });
   } catch (err) {
     // The key check above is not atomic with the insert: a trigger can clone the freed key in between, and

@@ -4,12 +4,7 @@ import { useCancelTask, useRerunTask, useRetryTask } from "../../hooks/use-tasks
 import type { TaskDetail, TaskState } from "../../types/api";
 
 /** Task states a task can be cancelled from — mirrors CANCELLABLE_STATES (src/schemas/task.ts). */
-const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
-  "requirements_gathering",
-  "queued",
-  "active",
-  "blocked",
-]);
+const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>(["queued", "active", "blocked"]);
 
 /**
  * The retry/resume affordance for a task, or null when neither applies. Mirrors retryTask's accepted states

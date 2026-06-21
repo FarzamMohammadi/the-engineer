@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
+import { handleRerunRequest } from "../../src/core/daemon/rerun-handler.js";
 import { EventBus } from "../../src/core/event-bus/index.js";
 import { TaskEngine } from "../../src/core/task-engine/index.js";
 import type { Event } from "../../src/schemas/events.js";
@@ -24,7 +25,7 @@ describe("Task lifecycle (integration)", () => {
   });
 
   describe("happy path", () => {
-    it("transitions through intake → queued → active.working → completed", () => {
+    it("transitions through queued → active.working → completed", () => {
       setup();
       const events: Event[] = [];
       eventBus.subscribe("test", "task.state_changed", (e) => events.push(e));
@@ -36,36 +37,28 @@ describe("Task lifecycle (integration)", () => {
         idempotency_key: "lifecycle:happy",
         description: "A test task",
       });
-      expect(task.state).toBe(TaskStates.requirements_gathering);
-
-      // requirements_gathering → queued
-      const r1 = taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
-      expect(r1.success).toBe(true);
-      expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.queued);
+      // createTask admits the task directly into the queue.
+      expect(task.state).toBe(TaskStates.queued);
 
       // queued → active.working
-      const r2 = taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
-      expect(r2.success).toBe(true);
+      const r1 = taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
+      expect(r1.success).toBe(true);
       const activeTask = taskEngine.getTask(task.id);
       expect(activeTask?.state).toBe(TaskStates.active);
       expect(activeTask?.sub_state).toBe(SubStates.working);
 
       // active.working → completed
-      const r3 = taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
-      expect(r3.success).toBe(true);
+      const r2 = taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
+      expect(r2.success).toBe(true);
       expect(taskEngine.getTask(task.id)?.state).toBe(TaskStates.completed);
 
       // Verify events emitted for each transition
-      expect(events).toHaveLength(3);
+      expect(events).toHaveLength(2);
       expect(events[0]?.payload).toMatchObject({
-        from_state: TaskStates.requirements_gathering,
-        to_state: TaskStates.queued,
-      });
-      expect(events[1]?.payload).toMatchObject({
         from_state: TaskStates.queued,
         to_state: TaskStates.active,
       });
-      expect(events[2]?.payload).toMatchObject({
+      expect(events[1]?.payload).toMatchObject({
         from_state: TaskStates.active,
         to_state: TaskStates.completed,
       });
@@ -82,7 +75,6 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.blocked, null, "pr_review_pending", "orchestrator");
 
@@ -106,7 +98,6 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.blocked, null, "waiting_for_input", "orchestrator");
 
@@ -132,7 +123,6 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.failed, null, "unrecoverable_error", "orchestrator");
 
@@ -141,7 +131,7 @@ describe("Task lifecycle (integration)", () => {
   });
 
   describe("invalid transitions", () => {
-    it("rejects transition from intake directly to active", () => {
+    it("rejects transition from queued directly to completed (skipping the pipeline)", () => {
       setup();
 
       const task = taskEngine.createTask({
@@ -152,7 +142,7 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      const result = taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "bad", "daemon");
+      const result = taskEngine.requestTransition(task.id, TaskStates.completed, null, "bad", "daemon");
       expect(result.success).toBe(false);
     });
 
@@ -167,7 +157,6 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
 
@@ -188,21 +177,16 @@ describe("Task lifecycle (integration)", () => {
         description: "",
       });
 
-      taskEngine.requestTransition(task.id, TaskStates.queued, null, "triggered", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.active, SubStates.working, "scheduled", "daemon");
       taskEngine.requestTransition(task.id, TaskStates.completed, null, "done", "orchestrator");
 
       const history = taskEngine.getStateHistory(task.id);
-      expect(history).toHaveLength(3);
+      expect(history).toHaveLength(2);
       expect(history[0]).toMatchObject({
-        from_state: TaskStates.requirements_gathering,
-        to_state: TaskStates.queued,
-      });
-      expect(history[1]).toMatchObject({
         from_state: TaskStates.queued,
         to_state: TaskStates.active,
       });
-      expect(history[2]).toMatchObject({
+      expect(history[1]).toMatchObject({
         from_state: TaskStates.active,
         to_state: TaskStates.completed,
       });
@@ -227,8 +211,6 @@ describe("Task lifecycle (integration)", () => {
         idempotency_key: "lifecycle:t2",
         description: "",
       });
-      taskEngine.requestTransition(t1.id, TaskStates.queued, null, "go", "daemon");
-      taskEngine.requestTransition(t2.id, TaskStates.queued, null, "go", "daemon");
       taskEngine.requestTransition(t1.id, TaskStates.active, SubStates.working, "go", "daemon");
 
       const queued = taskEngine.getTasksByState(TaskStates.queued);
@@ -238,6 +220,37 @@ describe("Task lifecycle (integration)", () => {
       const active = taskEngine.getTasksByState(TaskStates.active);
       expect(active).toHaveLength(1);
       expect(active[0]?.id).toBe(t1.id);
+    });
+  });
+
+  describe("re-run a reaped cancelled task", () => {
+    // Regression guard for the original re-run defect: the clone must be admitted to the queue, not stranded in
+    // a non-dispatchable birth state. Drives the REAL task engine end to end (the rerun-handler unit test mocks
+    // it), so it would fail the moment a clone is created but not made dispatchable.
+    it("clones a reaped cancelled task into a queued, dispatchable task", () => {
+      setup();
+      const observer = createTestObserverFacade("daemon");
+
+      const source = taskEngine.createTask({
+        title: "Original work",
+        repo: "test/repo",
+        source: "test",
+        idempotency_key: "lifecycle:rerun",
+        description: "",
+      });
+      // Drive the source to a reaped cancelled state — cancel frees the key, the reaper stamps reaped_at.
+      taskEngine.requestTransition(source.id, TaskStates.cancelled, null, "user cancelled", "test");
+      dbHandle.db.prepare("UPDATE tasks SET reaped_at = ? WHERE id = ?").run(new Date().toISOString(), source.id);
+
+      handleRerunRequest({ taskEngine, observer }, source.id);
+
+      // The clone must be queued AND visible to the scheduler's dispatch query — the exact guarantee the
+      // original bug violated (it left the clone invisible to getQueuedByPriority).
+      const clone = taskEngine.getQueuedByPriority().find((t) => t.idempotency_key === "lifecycle:rerun");
+      expect(clone).toBeDefined();
+      expect(clone?.state).toBe(TaskStates.queued);
+      expect(clone?.id).not.toBe(source.id);
+      expect(clone?.related).toContainEqual(expect.objectContaining({ type: "previous_attempt", ref: source.id }));
     });
   });
 });

@@ -26,7 +26,7 @@ function insertTask(): string {
       id, idempotency_key, state, title, description, source_text,
       acceptance_criteria, team, related, decisions,
       priority, agent_tokens, agent_cost_usd, compute_time_ms, created_at, last_transition_at
-    ) VALUES (?, ?, 'requirements_gathering', 'Test', '', '', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
+    ) VALUES (?, ?, 'queued', 'Test', '', '', '[]', '[]', '[]', '[]', 50, 0, 0.0, 0, ?, ?)`,
     )
     .run(id, `test:${id}`, now, now);
   return id;

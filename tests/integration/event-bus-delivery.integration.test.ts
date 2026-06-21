@@ -74,7 +74,7 @@ describe("EventBus delivery (integration)", () => {
         task_id: "t1",
         payload: {
           task_id: "t1",
-          from_state: TaskStates.requirements_gathering,
+          from_state: TaskStates.failed,
           from_sub: null,
           to_state: TaskStates.queued,
           to_sub: null,

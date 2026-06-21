@@ -63,6 +63,8 @@ describe("handleRerunRequest", () => {
     expect(taskEngine.updateTaskField).toHaveBeenCalledWith("new-1", "related", [
       expect.objectContaining({ type: "previous_attempt", ref: "old-1" }),
     ]);
+    // The clone is admitted into the queue by createTask itself (createTask births tasks `queued`), so the
+    // handler does not need a separate transition — it just creates and links provenance.
   });
 
   it("skips the clone when a live task already holds the idempotency key", () => {

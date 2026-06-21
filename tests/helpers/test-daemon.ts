@@ -209,7 +209,7 @@ export function createTestDaemon(
       return createMockTask({
         id: `task-${String(taskCounter).padStart(3, "0")}`,
         title: input.title,
-        state: TaskStates.requirements_gathering,
+        state: TaskStates.queued,
         sub_state: null,
         priority: input.priority ?? 50,
         created_at: new Date(clock.now()).toISOString(),

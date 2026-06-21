@@ -4,19 +4,6 @@ import { checkPermission } from "../../../../src/core/task-engine/permissions.js
 import { ActionClasses, SubStates, TaskStates } from "../../../../src/schemas/task.js";
 
 describe("checkPermission (pure function)", () => {
-  describe("requirements_gathering state", () => {
-    it("allows read", () => {
-      const result = checkPermission(TaskStates.requirements_gathering, null, ActionClasses.read);
-      expect(result).toEqual({ allowed: true });
-    });
-
-    it("denies write", () => {
-      const result = checkPermission(TaskStates.requirements_gathering, null, ActionClasses.write);
-      expect(result.allowed).toBe(false);
-      expect(result.reason).toContain("not permitted");
-    });
-  });
-
   describe("queued state", () => {
     it("allows read", () => {
       const result = checkPermission(TaskStates.queued, null, ActionClasses.read);

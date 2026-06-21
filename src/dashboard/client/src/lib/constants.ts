@@ -3,7 +3,6 @@ import { PHASES } from "./vocabulary";
 
 /** Tailwind badge classes (background, text, border) for each task state. */
 export const STATE_COLORS: Record<TaskState, string> = {
-  requirements_gathering: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   queued: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   active: "bg-blue-500/20 text-blue-400 border-blue-500/30",
   blocked: "bg-amber-500/20 text-amber-400 border-amber-500/30",
@@ -14,7 +13,6 @@ export const STATE_COLORS: Record<TaskState, string> = {
 
 /** Human-readable short labels for each task state. */
 export const STATE_LABELS: Record<TaskState, string> = {
-  requirements_gathering: "Requirements",
   queued: "Queued",
   active: "Active",
   blocked: "Blocked",
@@ -25,7 +23,6 @@ export const STATE_LABELS: Record<TaskState, string> = {
 
 /** Tailwind background color for the small dot indicator beside each task state. */
 export const STATE_DOT_COLORS: Record<TaskState, string> = {
-  requirements_gathering: "bg-purple-400",
   queued: "bg-zinc-400",
   active: "bg-blue-400",
   blocked: "bg-amber-400",

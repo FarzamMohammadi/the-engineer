@@ -4,15 +4,7 @@ import { BLOCK_REASONS } from "../../lib/vocabulary";
 import type { BlockReason, TaskState } from "../../types/api";
 
 /** The full set of states a task can be filtered to, in lifecycle order — includes the terminal cancelled state. */
-const FILTER_STATES: TaskState[] = [
-  "active",
-  "blocked",
-  "queued",
-  "requirements_gathering",
-  "completed",
-  "failed",
-  "cancelled",
-];
+const FILTER_STATES: TaskState[] = ["active", "blocked", "queued", "completed", "failed", "cancelled"];
 
 interface TaskFiltersProps {
   selected: string | undefined;

@@ -144,30 +144,44 @@ export function cleanupTable(opts: CleanupTableOptions): TableCleanupResult {
 }
 
 /**
- * Collect all blob references still used by agent_call observations.
- * Blob refs are stored inside the input JSON as prompt_ref / response_ref.
+ * Every blob ref an observation can carry, by observation type and the JSON side it lives on.
+ *
+ * These names must track exactly what the engine writes, or a retained row's blob is mistaken for an orphan
+ * and swept while its observation still points at it (a dangling DB→disk ref). The `agent_call` span writes
+ * the prompt ref into `input` and the result/transcript refs into `output` (see `agent-step.ts`); each
+ * `agent_activity` row spills its long text or large tool I/O to a blob ref in `input` (see
+ * `agent-activity/sink.ts`). The dashboard's `observation-shapes.ts` readers consume these same keys.
+ */
+const BLOB_REF_COLUMNS = [
+  { type: "agent_call", column: "input", keys: ["prompt_blob"] },
+  { type: "agent_call", column: "output", keys: ["result_blob", "transcript_blob"] },
+  { type: "agent_activity", column: "input", keys: ["text_blob", "input_blob", "output_blob"] },
+] as const;
+
+/**
+ * Collect every blob reference still used by a retained observation — the protected set the orphan sweep
+ * must never delete. A blob referenced by any non-deleted observation is live, whichever JSON side
+ * (`input` or `output`) of whichever observation type carries the ref.
  */
 export function collectReferencedBlobRefs(db: Database.Database): Set<string> {
   const refs = new Set<string>();
 
-  // Use json_extract at the SQL level to avoid loading full input JSON blobs into JS memory.
-  // With thousands of agent calls, the input column can be multi-KB each — extracting only the
-  // two ref strings keeps memory proportional to ref count, not total JSON size.
-  const rows = db
-    .prepare(
-      `SELECT json_extract(input, '$.prompt_ref') as prompt_ref,
-              json_extract(input, '$.response_ref') as response_ref
-       FROM observations
-       WHERE type = 'agent_call' AND input IS NOT NULL`,
-    )
-    .all() as { prompt_ref: string | null; response_ref: string | null }[];
+  // Extract each ref with json_extract at the SQL level, not by loading whole JSON columns into JS — an
+  // agent_call's input/output can each be multi-KB, and with thousands of rows that would scale memory to
+  // total JSON size instead of ref count. One small query per (type, column) keeps it proportional to refs.
+  for (const { type, column, keys } of BLOB_REF_COLUMNS) {
+    const selections = keys.map((key, index) => `json_extract("${column}", '$.${key}') as ref${index}`).join(", ");
+    const rows = db
+      .prepare(`SELECT ${selections} FROM observations WHERE type = ? AND "${column}" IS NOT NULL`)
+      .all(type) as Record<string, string | null>[];
 
-  for (const row of rows) {
-    if (row.prompt_ref) {
-      refs.add(row.prompt_ref);
-    }
-    if (row.response_ref) {
-      refs.add(row.response_ref);
+    for (const row of rows) {
+      for (let index = 0; index < keys.length; index++) {
+        const ref = row[`ref${index}`];
+        if (ref) {
+          refs.add(ref);
+        }
+      }
     }
   }
 

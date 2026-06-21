@@ -9,6 +9,7 @@ import {
   createDataLifecycleManager,
 } from "../../../../src/core/data-lifecycle/index.js";
 import { EventBus } from "../../../../src/core/event-bus/index.js";
+import { BlobStore } from "../../../../src/core/observer/blob-store.js";
 import { createDatabase, runIncrementalVacuum } from "../../../../src/db/database.js";
 import {
   DaemonConfigSchema,
@@ -77,10 +78,11 @@ function insertObservation(
   type: string,
   name: string,
   input?: Record<string, unknown> | null,
+  output?: Record<string, unknown> | null,
 ): void {
   db.prepare(
-    `INSERT INTO observations (id, type, name, task_id, start_time, end_time, level, status, input)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO observations (id, type, name, task_id, start_time, end_time, level, status, input, output)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     `obs-${Date.now()}-${Math.random()}`,
     type,
@@ -91,20 +93,50 @@ function insertObservation(
     "info",
     "ok",
     input ? JSON.stringify(input) : null,
+    output ? JSON.stringify(output) : null,
   );
 }
 
-function insertLlmObservation(
+/**
+ * Insert an `agent_call` row in the exact shape the engine emits: the prompt ref lives in `input`, the
+ * result/transcript refs in `output` (see `agent-step.ts`). Refs left undefined are omitted, matching a run
+ * that captured no blob for that slot.
+ */
+function insertAgentCall(
   db: TestDatabaseHandle["db"],
   timestamp: string,
-  promptRef?: string | null,
-  responseRef?: string | null,
+  refs: { promptBlob?: string; resultBlob?: string; transcriptBlob?: string },
 ): void {
-  insertObservation(db, timestamp, "agent_call", "completion", {
-    prompt_ref: promptRef ?? null,
-    response_ref: responseRef ?? null,
-    cost_usd: 0.01,
-    duration_ms: 150,
+  insertObservation(
+    db,
+    timestamp,
+    "agent_call",
+    "implement",
+    { step: "implement", prompt_blob: refs.promptBlob ?? null },
+    {
+      outcome: "ok",
+      cost_usd: 0.01,
+      result_blob: refs.resultBlob ?? null,
+      transcript_blob: refs.transcriptBlob ?? null,
+    },
+  );
+}
+
+/**
+ * Insert an `agent_activity` row in the shape the activity sink emits: its spilled-text/tool-I/O refs live in
+ * `input` (`text_blob` / `input_blob` / `output_blob`, see `agent-activity/sink.ts`).
+ */
+function insertAgentActivity(
+  db: TestDatabaseHandle["db"],
+  timestamp: string,
+  refs: { textBlob?: string; inputBlob?: string; outputBlob?: string },
+): void {
+  insertObservation(db, timestamp, "agent_activity", "assistant_text", {
+    kind: "assistant_text",
+    truncated: true,
+    text_blob: refs.textBlob ?? null,
+    input_blob: refs.inputBlob ?? null,
+    output_blob: refs.outputBlob ?? null,
   });
 }
 
@@ -323,9 +355,14 @@ describe("collectReferencedBlobRefs", () => {
     dbHandle.cleanup();
   });
 
-  it("returns all distinct prompt_ref and response_ref from agent_call observations", () => {
-    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/abc123", "cd/cde456");
-    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ef/efg789", null);
+  it("collects the agent_call prompt ref from input AND the result/transcript refs from output", () => {
+    // The bug this guards against: the prompt ref lives in `input`, but the result and transcript refs live
+    // in `output`. Collecting only the input side left every result/transcript blob looking like an orphan.
+    insertAgentCall(dbHandle.db, new Date().toISOString(), {
+      promptBlob: "ab/abc123",
+      resultBlob: "cd/cde456",
+      transcriptBlob: "ef/efg789",
+    });
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
 
@@ -335,8 +372,23 @@ describe("collectReferencedBlobRefs", () => {
     expect(refs.has("ef/efg789")).toBe(true);
   });
 
+  it("collects the text/input/output refs an agent_activity row carries in its input", () => {
+    insertAgentActivity(dbHandle.db, new Date().toISOString(), {
+      textBlob: "11/text11",
+      inputBlob: "22/input22",
+      outputBlob: "33/output33",
+    });
+
+    const refs = collectReferencedBlobRefs(dbHandle.db);
+
+    expect(refs.size).toBe(3);
+    expect(refs.has("11/text11")).toBe(true);
+    expect(refs.has("22/input22")).toBe(true);
+    expect(refs.has("33/output33")).toBe(true);
+  });
+
   it("skips null refs", () => {
-    insertLlmObservation(dbHandle.db, new Date().toISOString(), null, null);
+    insertAgentCall(dbHandle.db, new Date().toISOString(), {});
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(0);
@@ -348,8 +400,8 @@ describe("collectReferencedBlobRefs", () => {
   });
 
   it("deduplicates shared refs", () => {
-    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
-    insertLlmObservation(dbHandle.db, new Date().toISOString(), "ab/same", "cd/same2");
+    insertAgentCall(dbHandle.db, new Date().toISOString(), { promptBlob: "ab/same", resultBlob: "cd/same2" });
+    insertAgentCall(dbHandle.db, new Date().toISOString(), { promptBlob: "ab/same", resultBlob: "cd/same2" });
 
     const refs = collectReferencedBlobRefs(dbHandle.db);
     expect(refs.size).toBe(2);
@@ -700,6 +752,101 @@ describe("createDataLifecycleManager", () => {
       ebHandle.assertEventEmitted("system.cleanup_completed");
       expect(ebHandle.getEmittedEvents("system.cleanup_completed")).toHaveLength(1);
     });
+  });
+});
+
+// Acceptance criteria: a blob referenced by any RETAINED observation must survive the orphan sweep, whichever
+// JSON side carries the ref. This is the regression that emptied a finished session's result/transcript blobs
+// from disk while their agent_call rows still pointed at them — the sweep collected only input-side refs.
+describe("blob reference integrity across a full sweep", () => {
+  let dbHandle: TestDatabaseHandle;
+  let ebHandle: TestEventBusHandle;
+  let tracesDir: string;
+
+  beforeEach(() => {
+    dbHandle = createTestDatabase();
+    ebHandle = createTestEventBus();
+    tracesDir = fs.mkdtempSync(path.join(os.tmpdir(), "engineer-blob-integrity-"));
+  });
+
+  afterEach(() => {
+    dbHandle.cleanup();
+    ebHandle.cleanup();
+    fs.rmSync(tracesDir, { recursive: true, force: true });
+  });
+
+  /** Map a blob ref (`prefix/hash`) to its on-disk file under `<tracesDir>/blobs/`. */
+  function blobPath(ref: string): string {
+    return path.join(tracesDir, "blobs", `${ref}.txt`);
+  }
+
+  /** Refs a retained observation still points at whose blob file is missing from disk (dangling DB→disk refs). */
+  function danglingRefs(): string[] {
+    const live = collectReferencedBlobRefs(dbHandle.db);
+    return [...live].filter((ref) => !fs.existsSync(blobPath(ref)));
+  }
+
+  it("keeps the result and transcript blobs of a retained agent_call (refs live in output)", () => {
+    const blobStore = new BlobStore(tracesDir);
+    // A retained agent_call whose output references its result + transcript blobs, both written to disk.
+    const resultBlob = blobStore.store("the agent's session result");
+    const transcriptBlob = blobStore.store("the full agent transcript");
+    const promptBlob = blobStore.store("the prompt the agent was given");
+    insertAgentCall(dbHandle.db, new Date().toISOString(), { promptBlob, resultBlob, transcriptBlob });
+    // An orphan blob no observation references — this one is the legitimate sweep target.
+    const orphanBlob = blobStore.store("nothing points at me");
+
+    const manager = createDataLifecycleManager({
+      db: dbHandle.db,
+      eventBus: ebHandle.eventBus,
+      config: defaultConfig(),
+      blobsDir: tracesDir,
+      clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
+    });
+
+    const stats = manager.runCleanup();
+
+    // The orphan is swept; every blob the retained agent_call points at — on the output side too — survives.
+    expect(stats.blobsDeleted).toBe(1);
+    expect(fs.existsSync(blobPath(orphanBlob))).toBe(false);
+    expect(fs.existsSync(blobPath(promptBlob))).toBe(true);
+    expect(fs.existsSync(blobPath(resultBlob))).toBe(true);
+    expect(fs.existsSync(blobPath(transcriptBlob))).toBe(true);
+    expect(danglingRefs()).toEqual([]);
+  });
+
+  it("sweeps the blobs of an aged-out observation but keeps those of the retained one", () => {
+    const blobStore = new BlobStore(tracesDir);
+    // An old agent_call whose observation row is pruned by age — its blobs become true orphans and are swept.
+    const agedResult = blobStore.store("aged result");
+    const agedTranscript = blobStore.store("aged transcript");
+    insertAgentCall(dbHandle.db, daysAgo(100), { resultBlob: agedResult, transcriptBlob: agedTranscript });
+    // A recent agent_call that survives the row prune — its blobs must NOT be swept.
+    const liveResult = blobStore.store("live result");
+    const liveTranscript = blobStore.store("live transcript");
+    insertAgentCall(dbHandle.db, new Date().toISOString(), { resultBlob: liveResult, transcriptBlob: liveTranscript });
+
+    const manager = createDataLifecycleManager({
+      db: dbHandle.db,
+      eventBus: ebHandle.eventBus,
+      config: defaultConfig(),
+      blobsDir: tracesDir,
+      clock: createFakeClock(),
+      observer: createTestObserverFacade("data-lifecycle"),
+    });
+
+    const stats = manager.runCleanup();
+
+    // Row pruning ran before the blob sweep, so the aged row's blobs are now orphans and swept; the retained
+    // row's blobs are still referenced and survive — and nothing the surviving rows point at is missing.
+    expect(stats.tables["observations"]?.deleted).toBe(1);
+    expect(stats.blobsDeleted).toBe(2);
+    expect(fs.existsSync(blobPath(agedResult))).toBe(false);
+    expect(fs.existsSync(blobPath(agedTranscript))).toBe(false);
+    expect(fs.existsSync(blobPath(liveResult))).toBe(true);
+    expect(fs.existsSync(blobPath(liveTranscript))).toBe(true);
+    expect(danglingRefs()).toEqual([]);
   });
 });
 

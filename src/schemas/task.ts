@@ -353,6 +353,10 @@ export const ValidTransitions = [
   { from: TaskStates.blocked, to: TaskStates.queued },
   { from: TaskStates.blocked, to: TaskStates.cancelled },
   { from: TaskStates.failed, to: TaskStates.queued },
+  // Resume a cancelled task back into the pipeline. Cancel is non-eager, so a just-cancelled task's
+  // worktree/branch/PR survive until the reaper sweeps; this edge is gated (in retryTask) on the work
+  // still existing (`reaped_at IS NULL`). Once reaped, the task is re-run from source instead.
+  { from: TaskStates.cancelled, to: TaskStates.queued },
 ] as const satisfies ReadonlyArray<{
   readonly from: TaskState;
   readonly from_sub?: SubState;
@@ -374,13 +378,14 @@ export const CANCELLABLE_STATES = [
 ] as const;
 
 /**
- * States the owner can RETRY (re-queue) a task from — `engineer retry` and the dashboard Retry button.
- * A deliberately CURATED subset of the `→queued` edges in {@link ValidTransitions}, not a derived one: it
- * excludes the daemon-only preemption edges (`active`/`requirements_gathering` → queued), which are
- * scheduler mechanics rather than owner-initiated recovery. {@link retryTask} is the single writer over
- * this set. `cancelled` joins it once cancel becomes reversible (gated on the work still existing).
+ * States the owner can RETRY (re-queue) a task from — `engineer retry` and the dashboard Retry/Resume
+ * button. A deliberately CURATED subset of the `→queued` edges in {@link ValidTransitions}, not a derived
+ * one: it excludes the daemon-only preemption edges (`active`/`requirements_gathering` → queued), which are
+ * scheduler mechanics rather than owner-initiated recovery. {@link retryTask} is the single writer over this
+ * set. `cancelled` is included — resuming a cancelled task — but carries extra preconditions the others do
+ * not: the work must still exist (`reaped_at IS NULL`) and its idempotency key must be free.
  */
-export const RETRYABLE_STATES = [TaskStates.failed, TaskStates.blocked] as const;
+export const RETRYABLE_STATES = [TaskStates.failed, TaskStates.blocked, TaskStates.cancelled] as const;
 
 // ── Permission Table (const data) ──────────────────────────────────────────────
 

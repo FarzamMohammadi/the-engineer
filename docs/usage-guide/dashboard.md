@@ -42,7 +42,7 @@ The full task list, with filter chips across the top to narrow by state — `act
 
 #### Task detail
 
-A task's detail page opens on its title, state, and current position in the pipeline, plus action buttons that match the task's state: a **Cancel** button while the task is still cancellable, and a **Retry** button on a failed or blocked task that re-queues it for the daemon. If a blocked task needs you, an amber banner sits at the top with the block details and a response box — see [Responding to a blocked task](#responding-to-a-blocked-task). Below that, six tabs break the task down:
+A task's detail page opens on its title, state, and current position in the pipeline, plus action buttons that match the task's state: a **Cancel** button while the task is still cancellable, a **Retry** button on a failed or blocked task that re-queues it, and a **Resume** button on a cancelled task whose work has not yet been cleaned up (it picks up from the last checkpoint). If a blocked task needs you, an amber banner sits at the top with the block details and a response box — see [Responding to a blocked task](#responding-to-a-blocked-task). Below that, six tabs break the task down:
 
 | Tab | What it shows |
 |---|---|

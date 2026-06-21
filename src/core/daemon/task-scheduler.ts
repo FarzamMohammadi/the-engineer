@@ -1,6 +1,7 @@
 import type { Dispatch } from "../../schemas/ephemeral.js";
 import { EventTypes } from "../../schemas/events.js";
 import { NotificationKinds } from "../../schemas/notifications.js";
+import { ObservationTypes } from "../../schemas/observer.js";
 import { BlockReasons, SubStates, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { DispatchTracker } from "../dispatch-tracker/index.js";
@@ -145,6 +146,10 @@ export function createTaskScheduler(
     const hasUnappliedFeedback = task.review?.feedback_rounds?.some((r) => !r.applied) ?? false;
     const checkpoint = hasUnappliedFeedback ? null : rawCheckpoint;
 
+    // Read BEFORE the transition below appends its own queued→active row, so the latest transition still
+    // reflects how the task reached `queued` — a cancelled→queued resume is the one the daemon announces.
+    const resumedFromCancel = wasResumedFromCancel(task.id);
+
     // Transition to active.working
     const transition = taskEngine.requestTransition(
       task.id,
@@ -169,6 +174,10 @@ export function createTaskScheduler(
       isRework: hasUnappliedFeedback,
     });
 
+    if (resumedFromCancel) {
+      announceResume(task.id);
+    }
+
     // dispatch-tracker owns the AbortController, mints the dispatchId, and routes
     // late callbacks idempotently — the scheduler is purely the policy layer.
     dispatchTracker.register(
@@ -185,6 +194,37 @@ export function createTaskScheduler(
         onCompleted: callbacks.onTaskCompleted,
         onError: callbacks.onTaskError,
       },
+    );
+  }
+
+  /**
+   * Whether the latest transition on this task is a resume from a cancelled state (cancelled→queued). Read
+   * before a dispatch appends its own queued→active row, so the latest transition still reflects how the
+   * task reached `queued`. A failed/blocked retry reaches queued from a different state and is not announced.
+   */
+  function wasResumedFromCancel(taskId: string): boolean {
+    const latest = taskEngine.getStateHistory(taskId).at(-1);
+    return latest?.from_state === TaskStates.cancelled && latest.to_state === TaskStates.queued;
+  }
+
+  /**
+   * Announce a resume the moment the daemon first dispatches the task. The dashboard/CLI resume is a
+   * cross-process raw write that reaches no comm plugins and emits no `task.state_changed`, so the daemon is
+   * the only place that can post the courtesy comment on the source ticket and emit the `state_transition`
+   * observation that makes the resume visible on the dashboard timeline. Mirrors the reaper's cancel
+   * announcement, in reverse; fires once, since the task leaves `queued` on dispatch.
+   */
+  function announceResume(taskId: string): void {
+    notifications.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId,
+      message: "Task resumed by the owner.",
+    });
+    observer.observe(
+      ObservationTypes.state_transition,
+      "resume_announced",
+      { to_state: TaskStates.queued, reason: "owner_resume", trigger: "cross_process_resume" },
+      { task_id: taskId, level: "info" },
     );
   }
 

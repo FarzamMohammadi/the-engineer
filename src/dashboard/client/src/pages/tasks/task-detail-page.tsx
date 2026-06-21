@@ -32,8 +32,20 @@ const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
   "blocked",
 ]);
 
-/** Task states a task can be retried (re-queued) from — mirrors RETRYABLE_STATES (src/schemas/task.ts). */
-const RETRYABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>(["failed", "blocked"]);
+/**
+ * The retry/resume affordance for a task, or null when neither applies. Mirrors retryTask's accepted states
+ * (src/schemas/task.ts): a `failed`/`blocked` task is retried; a `cancelled` task is resumed only while its
+ * work survives (`reaped_at` null) — once reaped, the server rejects resume and the task is re-run from source.
+ */
+function retryActionFor(task: TaskDetail): { label: string } | null {
+  if (task.state === "failed" || task.state === "blocked") {
+    return { label: "Retry" };
+  }
+  if (task.state === "cancelled" && task.reaped_at === null) {
+    return { label: "Resume" };
+  }
+  return null;
+}
 
 /** Single task detail page with tabbed views for overview, timeline, phases, decisions, steps, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
@@ -73,7 +85,7 @@ export function TaskDetailPage(): React.JSX.Element {
   const typedTask = task as TaskDetail;
   const isBlocked = typedTask.state === "blocked";
   const isCancellable = CANCELLABLE_STATES.has(typedTask.state);
-  const isRetryable = RETRYABLE_STATES.has(typedTask.state);
+  const retryAction = retryActionFor(typedTask);
   // The current-phase pill is meaningful only while the task is mid-flight — on a terminal task the phase
   // would be stale. The dot pulses only when actively executing (a blocked task is paused, not live).
   const isLive = typedTask.state === "active" || typedTask.state === "requirements_gathering";
@@ -122,10 +134,10 @@ export function TaskDetailPage(): React.JSX.Element {
             </a>
           </Button>
         )}
-        {isRetryable && (
+        {retryAction && (
           <Button variant="outline" size="sm" onClick={() => retryMutation.mutate()} disabled={retryMutation.isPending}>
             <RotateCcw size={14} />
-            Retry
+            {retryAction.label}
           </Button>
         )}
         {isCancellable && (

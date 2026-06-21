@@ -460,7 +460,11 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
     }
   });
 
-  /** Retry a task — a guarded, versioned write back to `queued` (shared with `engineer retry`). */
+  /**
+   * Retry or resume a task — a guarded, versioned write back to `queued` (shared with `engineer retry`).
+   * `failed`/`blocked` retry unconditionally; a `cancelled` task resumes only while its work survives
+   * (`already_reaped` once the reaper swept) and its source is free (`key_conflict` if a newer task claimed it).
+   */
   app.post("/:id/retry", (c) => {
     const taskId = c.req.param("id");
     try {
@@ -470,6 +474,15 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       }
       if (result.outcome === "not_retryable") {
         return c.json({ error: `Cannot retry task in "${result.state}" state` }, 400);
+      }
+      if (result.outcome === "already_reaped") {
+        return c.json(
+          { error: "This task's workspace was already cleaned up; re-run it from the source instead" },
+          409,
+        );
+      }
+      if (result.outcome === "key_conflict") {
+        return c.json({ error: `A newer task (${result.holderId}) already exists for this source` }, 409);
       }
       return c.json({ success: true });
     } catch (err) {

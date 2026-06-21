@@ -77,6 +77,18 @@ one recovery state:
 | `cost_limit_reached`    | `blocked`      | Owner-facing notifications already fired immediately when the limit hit; the late callback only does the state transition. |
 | `graceful_shutdown`     | `queued`       | The daemon is stopping. The task will resume from its last checkpoint on the next start. |
 
+### Owner recovery and the resume announcement
+
+Beyond these automatic routes, the owner can move a `blocked`, `failed`, or `cancelled`
+task back to `queued` out-of-band via [`engineer retry`](../cli.md#retry) or the dashboard.
+A `cancelled` task moving back to `queued` is a **resume**, and it is special: cancel is a
+cross-process raw write that reaches no communication plugins, so the source ticket is not
+updated at resume time. The daemon closes that gap on dispatch — when it picks up a task whose
+latest transition is `cancelled → queued`, it posts a "Task resumed by the owner" courtesy
+comment on the source ticket and records a `state_transition` observation, so the resume is
+visible on the dashboard timeline. The `cancelled` label self-heals to `active` through the
+normal `queued → active` state sync.
+
 ---
 
 ## Preemption

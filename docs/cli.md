@@ -215,10 +215,10 @@ Source: [`src/cli/commands/why.ts`](../src/cli/commands/why.ts)
 
 ### retry
 
-Re-queues a `blocked` or `failed` task so the daemon picks it up on the next scheduling cycle. Resets both per-category retry counters (crash, agent-unavailable) and clears `not_before` so the retry cycle starts fresh. Direct database access — usable even when the daemon is stopped. Accepts a full task ID or a unique prefix.
+Re-queues a `blocked`, `failed`, or `cancelled` task so the daemon picks it up on the next scheduling cycle, resuming from its last checkpoint. Resets both per-category retry counters (crash, agent-unavailable), clears `not_before`, and clears the stale completion timestamp so the cycle starts fresh. Direct database access — usable even when the daemon is stopped. Accepts a full task ID or a unique prefix.
 
 ```bash
-engineer retry <task-id>                 # Re-queue a blocked or failed task
+engineer retry <task-id>                 # Re-queue a blocked, failed, or cancelled task
 engineer retry 01HXYZ12                  # Works with ID prefix
 engineer retry <task-id> --json          # Machine-readable JSON output
 ```
@@ -227,6 +227,7 @@ Use this when:
 
 - A task is `blocked` because external input is now available (e.g., you answered a clarifying question outside the chat).
 - A task is `failed` because the [retry policy](configuration/daemon.md#retry-policy) exhausted its automatic budget, or because the [hard cap](configuration/daemon.md#stuck-detection) on total active time triggered. Address the root cause first, then retry.
+- A task was `cancelled` and you want it back — **resuming** it. This works only while its work still exists: cancel is non-eager, so the worktree, branch, and any pull request survive until the [workspace reaper](architecture/scheduling-dispatch.md) sweeps them. Once reaped, the task can no longer be resumed (re-run it from the source instead). Resume also refuses if a newer task has since been created from the same source.
 
 Source: [`src/cli/commands/retry.ts`](../src/cli/commands/retry.ts)
 
@@ -240,7 +241,7 @@ engineer cancel 01HXYZ12                 # Works with ID prefix
 engineer cancel <task-id> --json         # Machine-readable JSON output
 ```
 
-Cancellable states are `requirements_gathering`, `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled — a `failed` task is retryable instead (see [retry](#retry)). Cancel is for abandoning work; retry is for resuming it.
+Cancellable states are `requirements_gathering`, `queued`, `active`, and `blocked`. A task that has already finished (`completed`, `failed`, or `cancelled`) cannot be cancelled. A `failed` task is retryable, and a `cancelled` task is resumable while its work survives — both via [retry](#retry). Cancel abandons work; retry resumes it.
 
 Source: [`src/cli/commands/cancel.ts`](../src/cli/commands/cancel.ts)
 

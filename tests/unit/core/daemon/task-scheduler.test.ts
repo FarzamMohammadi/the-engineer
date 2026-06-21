@@ -105,6 +105,7 @@ function makeContext(configOverrides?: Partial<DaemonConfig>) {
     getQueuedByPriority: vi.fn().mockReturnValue([]),
     getTask: vi.fn().mockReturnValue(null),
     getTasksByState: vi.fn().mockReturnValue([]),
+    getStateHistory: vi.fn().mockReturnValue([]),
     requestTransition: vi.fn().mockReturnValue({ success: true }),
     updateTaskField: vi.fn(),
   };
@@ -792,6 +793,42 @@ describe("TaskScheduler", () => {
       return kind === NotificationKinds.completion || kind === NotificationKinds.ticket_comment;
     });
     expect(postDispatchCalls).toHaveLength(0);
+  });
+
+  it("announces a resume on the source ticket when dispatching a task resumed from cancelled", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    // The latest transition is cancelled→queued — the cross-process resume the daemon must announce.
+    taskEngine.getStateHistory.mockReturnValue([{ from_state: TaskStates.cancelled, to_state: TaskStates.queued }]);
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+    scheduler.dispatchTask(makeMockTask({ id: "t1" }) as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    expect(notifications.notify).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: NotificationKinds.ticket_comment,
+        taskId: "t1",
+        message: "Task resumed by the owner.",
+      }),
+    );
+  });
+
+  it("does not announce a resume when dispatching a failed/blocked retry or a fresh queued task", () => {
+    const { ctx, taskEngine } = makeContext();
+    const notifications = makeNotifications();
+    const callbacks = makeCallbacks();
+
+    taskEngine.getStateHistory.mockReturnValue([{ from_state: TaskStates.failed, to_state: TaskStates.queued }]);
+
+    const scheduler = makeScheduler(ctx, notifications, callbacks);
+    scheduler.dispatchTask(makeMockTask({ id: "t1" }) as ReturnType<typeof taskEngine.getQueuedByPriority>[number]);
+
+    const resumeComments = (notifications.notify as ReturnType<typeof vi.fn>).mock.calls.filter(
+      (c: unknown[]) => (c[0] as { message?: string }).message === "Task resumed by the owner.",
+    );
+    expect(resumeComments).toHaveLength(0);
   });
 
   // 26. F2: unknown outcome transitions task to blocked instead of silently dropping it

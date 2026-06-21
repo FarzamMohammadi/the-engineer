@@ -216,6 +216,34 @@ describe("taskRoutes — POST /:id/retry", () => {
     expect(task.state).toBe(TaskStates.queued);
   });
 
+  it("resumes a cancelled task whose work still exists (reaped_at NULL)", async () => {
+    insertTask(handle.db, "task-cancelled", { state: TaskStates.cancelled, sub_state: null, reaped_at: null });
+
+    const res = await app.request("/task-cancelled/retry", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    const task = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-cancelled") as { state: string };
+    expect(task.state).toBe(TaskStates.queued);
+  });
+
+  it("returns 409 when resuming a cancelled task whose work was already reaped", async () => {
+    insertTask(handle.db, "task-reaped", {
+      state: TaskStates.cancelled,
+      sub_state: null,
+      reaped_at: "2026-01-16T09:00:00Z",
+    });
+
+    const res = await app.request("/task-reaped/retry", { method: "POST" });
+
+    expect(res.status).toBe(409);
+    expect((await res.json()) as { error: string }).toMatchObject({
+      error: expect.stringContaining("cleaned up"),
+    });
+    // Untouched — still cancelled.
+    const task = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-reaped") as { state: string };
+    expect(task.state).toBe(TaskStates.cancelled);
+  });
+
   it("returns 400 for a task in a non-retryable state", async () => {
     insertTask(handle.db, "task-active", { state: TaskStates.active, sub_state: SubStates.working });
 

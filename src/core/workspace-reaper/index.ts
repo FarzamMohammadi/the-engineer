@@ -51,6 +51,7 @@ const REAP_FAILURE_ALERT_THRESHOLD = 3;
 type ReapOutcome =
   | "reaped" // fully reconciled — reaped_at stamped
   | "deferred" // intentionally not reaped this sweep (a merged branch still inside its retention window) — no error
+  | "skipped" // the snapshot went stale — the task left its terminal state (e.g. resumed) before we reached it
   | "failed"; // a reap step threw — reaped_at left NULL, retried next sweep
 
 /** Summary of one reconciliation sweep — the owner-inspectable record (mirrors data-lifecycle's CleanupStats). */
@@ -208,7 +209,9 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
   function applyOutcome(taskId: string, outcome: ReapOutcome, stats: ReapStats): void {
     if (outcome === "reaped") {
       stats.reaped++;
-    } else if (outcome === "deferred") {
+    } else if (outcome === "deferred" || outcome === "skipped") {
+      // `skipped` (a task resumed out from under the sweep) is no error and nothing to retry — fold it into
+      // the deferred bucket; the per-task debug log in reapTask records the real reason.
       stats.deferred++;
     } else {
       stats.failed++;
@@ -225,8 +228,9 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
       consecutiveFailures.delete(taskId);
       return;
     }
-    if (outcome === "deferred") {
-      // A deferral is neither success nor failure — leave any prior streak untouched.
+    if (outcome === "deferred" || outcome === "skipped") {
+      // Neither success nor failure (a retention deferral, or a task resumed out from under the sweep) —
+      // leave any prior streak untouched.
       return;
     }
     const count = (consecutiveFailures.get(taskId) ?? 0) + 1;
@@ -286,20 +290,39 @@ export function createWorkspaceReaper(deps: WorkspaceReaperDeps): WorkspaceReape
   // ── Per-Task Reconciliation ────────────────────────────────────────────────
 
   async function reapTask(task: Task): Promise<ReapOutcome> {
-    if (task.state === TaskStates.cancelled) {
-      return await reapCancelledTask(task);
+    // The worklist is a snapshot. A cancelled task can be resumed (cancelled→queued) between the snapshot and
+    // here, so re-read under the current state: never reap a task that has left its terminal state or was
+    // already reaped — that would delete a live (resumed) task's workspace out from under it. The residual
+    // window between this re-read and the destructive cleanup below is sub-second; the guarded resume write
+    // additionally re-asserts `reaped_at IS NULL`, so the two writers serialize on the DB.
+    const fresh = taskEngine.getTask(task.id);
+    if (!fresh || fresh.reaped_at || !isReapableState(fresh.state)) {
+      observer.debug("Reap skipped — task is no longer an unreaped terminal task (likely resumed)", {
+        taskId: task.id,
+        state: fresh?.state ?? "missing",
+      });
+      return "skipped";
+    }
+
+    if (fresh.state === TaskStates.cancelled) {
+      return await reapCancelledTask(fresh);
     }
 
     // Completed task. Push-only when no merge was recorded: the pushed branch IS the deliverable, so keep it.
     // The worktree was already removed inline at completion, so there is nothing to reap — just mark it.
-    const mergedAt = task.review?.merged_at ?? null;
+    const mergedAt = fresh.review?.merged_at ?? null;
     if (mergedAt === null) {
-      markReaped(task.id);
-      observer.debug("Push-only task — branch preserved, marked reaped", { taskId: task.id });
+      markReaped(fresh.id);
+      observer.debug("Push-only task — branch preserved, marked reaped", { taskId: fresh.id });
       return "reaped";
     }
 
-    return reapMergedBranch(task, mergedAt);
+    return reapMergedBranch(fresh, mergedAt);
+  }
+
+  /** Whether a state is one the reaper reconciles — completed or cancelled (never failed; failed is preserved). */
+  function isReapableState(state: Task["state"]): boolean {
+    return state === TaskStates.completed || state === TaskStates.cancelled;
   }
 
   /** A merged task: delete the branch once retention elapses; null retention keeps it forever (still marked reaped). */

@@ -129,8 +129,12 @@ describe("isValidTransition", () => {
     expect(isValidTransition(TaskStates.active, SubStates.working, TaskStates.cancelled, null)).toBe(true);
   });
 
-  it("rejects cancelled → queued (terminal, non-retryable)", () => {
-    expect(isValidTransition(TaskStates.cancelled, null, TaskStates.queued, null)).toBe(false);
+  it("allows cancelled → queued (resume of a not-yet-reaped cancel)", () => {
+    expect(isValidTransition(TaskStates.cancelled, null, TaskStates.queued, null)).toBe(true);
+  });
+
+  it("rejects cancelled → active (resume must go through queued, never straight to active)", () => {
+    expect(isValidTransition(TaskStates.cancelled, null, TaskStates.active, SubStates.working)).toBe(false);
   });
 });
 

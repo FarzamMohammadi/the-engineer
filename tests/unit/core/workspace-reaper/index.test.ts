@@ -582,3 +582,36 @@ describe("workspace reaper — eager reapNow", () => {
     expect(alerts).toHaveLength(1);
   });
 });
+
+describe("workspace reaper — resume race (snapshot re-read guard)", () => {
+  it("skips a cancelled task that was resumed between the worklist snapshot and the reap", async () => {
+    const cancelled = cancelledTask();
+    const h = makeReaper({ tasks: [cancelled] });
+    // Simulate a resume landing after the snapshot: the per-task re-read returns the task already back in
+    // `queued`. The reaper must NOT delete the (now live) task's workspace, branch, or mark it reaped.
+    h.getTask.mockImplementation((id: string) =>
+      id === cancelled.id ? ({ ...cancelled, state: TaskStates.queued } as Task) : null,
+    );
+
+    await h.reaper.runOnce();
+
+    expect(h.cleanupWorkspace).not.toHaveBeenCalled();
+    expect(h.deleteRemoteBranch).not.toHaveBeenCalled();
+    expect(h.branchDeletedPublished()).toBe(false);
+    expect(h.updateTaskField).not.toHaveBeenCalled();
+    expect(cancelComments(h.notify)).toHaveLength(0);
+  });
+
+  it("skips a task already reaped between the snapshot and the reap", async () => {
+    const cancelled = cancelledTask();
+    const h = makeReaper({ tasks: [cancelled] });
+    h.getTask.mockImplementation((id: string) =>
+      id === cancelled.id ? ({ ...cancelled, reaped_at: "2026-01-02T00:00:00.000Z" } as Task) : null,
+    );
+
+    await h.reaper.runOnce();
+
+    expect(h.cleanupWorkspace).not.toHaveBeenCalled();
+    expect(h.updateTaskField).not.toHaveBeenCalled();
+  });
+});

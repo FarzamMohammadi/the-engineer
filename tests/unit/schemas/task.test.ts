@@ -7,6 +7,7 @@ import {
   ExternalRefSchema,
   KEY_FREEING_STATES,
   PermissionTable,
+  RETRYABLE_STATES,
   RelatedItemSchema,
   ReviewStateSchema,
   StateTransitionSchema,
@@ -504,9 +505,10 @@ describe("ValidTransitions", () => {
     expect(failedEdges[0]!.to).toBe(TaskStates.queued);
   });
 
-  it("cancelled is never a 'from' state (terminal, non-retryable)", () => {
-    const fromStates = new Set<string>(ValidTransitions.map((t) => t.from));
-    expect(fromStates.has(TaskStates.cancelled)).toBe(false);
+  it("cancelled can only transition to queued (owner resume of a not-yet-reaped cancel)", () => {
+    const cancelledEdges = ValidTransitions.filter((t) => t.from === TaskStates.cancelled);
+    expect(cancelledEdges).toHaveLength(1);
+    expect(cancelledEdges[0]!.to).toBe(TaskStates.queued);
   });
 
   it("every non-terminal state can transition to cancelled", () => {
@@ -514,6 +516,13 @@ describe("ValidTransitions", () => {
     expect(cancellableFrom).toEqual(
       new Set([TaskStates.requirements_gathering, TaskStates.queued, TaskStates.active, TaskStates.blocked]),
     );
+  });
+
+  it("RETRYABLE_STATES is the curated owner-retry set and excludes the daemon-only preemption edges", () => {
+    expect(new Set(RETRYABLE_STATES)).toEqual(new Set([TaskStates.failed, TaskStates.blocked, TaskStates.cancelled]));
+    // active/requirements_gathering also have →queued edges, but those are scheduler preemption, not retry.
+    expect(RETRYABLE_STATES as readonly string[]).not.toContain(TaskStates.active);
+    expect(RETRYABLE_STATES as readonly string[]).not.toContain(TaskStates.requirements_gathering);
   });
 
   it("intake is never a 'to' state", () => {

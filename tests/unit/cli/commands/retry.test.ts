@@ -174,7 +174,24 @@ describe("runRetry", () => {
 
     const code = runRetry(tempDir, "task-active");
     expect(code).toBe(1);
-    expect(stderrWrites.join("")).toContain("Only blocked or failed tasks can be retried");
+    expect(stderrWrites.join("")).toContain("Only blocked, failed, or cancelled tasks can be retried");
+    handle.close();
+  });
+
+  it("resumes a cancelled task — moves it to queued and reports 'resumed'", () => {
+    const dbPath = join(tempDir, "data", "engineer.db");
+    const handle = createDatabase(dbPath);
+    insertTask(handle.db, "task-cancelled", { state: TaskStates.cancelled });
+
+    const code = runRetry(tempDir, "task-cancelled");
+    expect(code).toBe(0);
+
+    const row = handle.db.prepare("SELECT state FROM tasks WHERE id = ?").get("task-cancelled") as Record<
+      string,
+      unknown
+    >;
+    expect(row["state"]).toBe(TaskStates.queued);
+    expect(stdoutWrites.join("")).toContain("resumed — moved from cancelled to queued");
     handle.close();
   });
 

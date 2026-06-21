@@ -58,7 +58,17 @@ function retryResolvedTask(db: BetterSqlite3.Database, taskIdInput: string): num
     return 1;
   }
   if (result.outcome === "not_retryable") {
-    out.error(`Task is in state "${result.state}". Only blocked or failed tasks can be retried.`);
+    out.error(`Task is in state "${result.state}". Only blocked, failed, or cancelled tasks can be retried.`);
+    return 1;
+  }
+  if (result.outcome === "already_reaped") {
+    out.error(
+      `Task ${taskId} was cancelled and its workspace cleaned up; it can no longer be resumed. Re-run it from the source instead.`,
+    );
+    return 1;
+  }
+  if (result.outcome === "key_conflict") {
+    out.error(`Cannot resume ${taskId}: a newer task (${result.holderId}) already exists for the same source.`);
     return 1;
   }
 
@@ -70,7 +80,8 @@ function retryResolvedTask(db: BetterSqlite3.Database, taskIdInput: string): num
       retriedAt: new Date().toISOString(),
     });
   } else {
-    out.success(`Task ${taskId} retried — moved from ${result.fromState} to queued.`);
+    const verb = result.fromState === TaskStates.cancelled ? "resumed" : "retried";
+    out.success(`Task ${taskId} ${verb} — moved from ${result.fromState} to queued.`);
     out.log(`  Title: ${task?.title ?? taskId}`);
     out.log("  The daemon will pick it up on the next scheduling cycle.");
   }

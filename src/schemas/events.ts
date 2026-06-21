@@ -31,6 +31,7 @@ export type Subscription = z.infer<typeof SubscriptionSchema>;
 export const EventTypeSchema = z.enum([
   "task.created",
   "task.state_changed",
+  "task.rerun_requested",
   "action.rejected",
   "cost.incurred",
   "cost.limit_reached",
@@ -79,6 +80,17 @@ export const TaskCreatedPayloadSchema = z.object({
   repo: z.string(),
 });
 export type TaskCreatedPayload = z.infer<typeof TaskCreatedPayloadSchema>;
+
+/**
+ * Owner asked (from the dashboard) to re-run a cancelled task as a fresh clone from its source. Written
+ * directly to the events table by the dashboard process (which has no event bus), then picked up by the
+ * daemon's response poller — the same cross-process path `comm.message_received` uses. Carries only the
+ * source task's id; the daemon reads the rest off that task.
+ */
+export const TaskRerunRequestedPayloadSchema = z.object({
+  task_id: z.string(),
+});
+export type TaskRerunRequestedPayload = z.infer<typeof TaskRerunRequestedPayloadSchema>;
 
 export const TaskStateChangedPayloadSchema = z.object({
   task_id: z.string(),
@@ -399,6 +411,7 @@ export type SystemHealthChangedPayload = z.infer<typeof SystemHealthChangedPaylo
 export type EventPayloads = {
   "task.created": TaskCreatedPayload;
   "task.state_changed": TaskStateChangedPayload;
+  "task.rerun_requested": TaskRerunRequestedPayload;
   "action.rejected": ActionRejectedPayload;
   "cost.incurred": CostIncurredPayload;
   "cost.limit_reached": CostLimitReachedPayload;
@@ -441,6 +454,7 @@ export type TypedEvent<T extends keyof EventPayloads> = Omit<Event, "payload" | 
 export const eventPayloadSchemas: Record<EventType, ZodType> = {
   "task.created": TaskCreatedPayloadSchema,
   "task.state_changed": TaskStateChangedPayloadSchema,
+  "task.rerun_requested": TaskRerunRequestedPayloadSchema,
   "action.rejected": ActionRejectedPayloadSchema,
   "cost.incurred": CostIncurredPayloadSchema,
   "cost.limit_reached": CostLimitReachedPayloadSchema,

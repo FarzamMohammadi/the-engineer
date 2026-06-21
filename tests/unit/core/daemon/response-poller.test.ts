@@ -352,6 +352,43 @@ describe("ResponsePoller", () => {
     );
   });
 
+  it("routes a dashboard re-run request to a fresh clone of the cancelled source task", async () => {
+    const taskEngine = ctx.taskEngine as unknown as {
+      getTask: ReturnType<typeof vi.fn>;
+      findKeyHolder: ReturnType<typeof vi.fn>;
+      createTask: ReturnType<typeof vi.fn>;
+      updateTaskField: ReturnType<typeof vi.fn>;
+    };
+    taskEngine.getTask = vi.fn(() => ({
+      id: "old-1",
+      state: "cancelled",
+      idempotency_key: "github:issue-42",
+      title: "Fix the bug",
+      repo: "acme/app",
+      description: "",
+      source_text: "",
+      acceptance_criteria: [],
+      external_ref: null,
+      priority: 50,
+      clone_url: null,
+      thoughts_id: null,
+    }));
+    taskEngine.findKeyHolder = vi.fn(() => null);
+    taskEngine.createTask = vi.fn(() => ({ id: "new-1" }));
+    taskEngine.updateTaskField = vi.fn();
+
+    (ctx.eventBus.getEventsSince as ReturnType<typeof vi.fn>).mockReturnValue([
+      { type: "task.rerun_requested", source: "dashboard", sequence: 1, payload: { task_id: "old-1" } },
+    ]);
+
+    const poller = createResponsePoller(ctx, resolver);
+    await poller.poll(100_000);
+
+    expect(taskEngine.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({ idempotency_key: "github:issue-42", source: "rerun" }),
+    );
+  });
+
   it("advances the scan cursor past a filtered-out row so the next poll does not re-read it", async () => {
     const getEventsSince = ctx.eventBus.getEventsSince as ReturnType<typeof vi.fn>;
     // Construct against an empty bus so the startup cursor begins at 0.

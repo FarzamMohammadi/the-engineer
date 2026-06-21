@@ -227,7 +227,7 @@ Use this when:
 
 - A task is `blocked` because external input is now available (e.g., you answered a clarifying question outside the chat).
 - A task is `failed` because the [retry policy](configuration/daemon.md#retry-policy) exhausted its automatic budget, or because the [hard cap](configuration/daemon.md#stuck-detection) on total active time triggered. Address the root cause first, then retry.
-- A task was `cancelled` and you want it back — **resuming** it. This works only while its work still exists: cancel is non-eager, so the worktree, branch, and any pull request survive until the [workspace reaper](architecture/scheduling-dispatch.md) sweeps them. Once reaped, the task can no longer be resumed (re-run it from the source instead). Resume also refuses if a newer task has since been created from the same source.
+- A task was `cancelled` and you want it back — **resuming** it. This works only while its work still exists: cancel is non-eager, so the worktree, branch, and any pull request survive until the [workspace reaper](architecture/scheduling-dispatch.md) sweeps them. Once reaped, the task can no longer be resumed — use the dashboard's **Re-run** button to start a fresh task from the same source instead. Resume also refuses if a newer task has since been created from the same source.
 
 Source: [`src/cli/commands/retry.ts`](../src/cli/commands/retry.ts)
 

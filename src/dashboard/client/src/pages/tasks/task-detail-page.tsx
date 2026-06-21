@@ -1,4 +1,4 @@
-import { ArrowLeft, Ban, GanttChartSquare, RotateCcw } from "lucide-react";
+import { ArrowLeft, GanttChartSquare } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router";
 import { CurrentPhaseBadge } from "../../components/shared/current-phase-badge";
@@ -8,12 +8,13 @@ import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useSystemStatus } from "../../hooks/use-system-status";
-import { useCancelTask, useRetryTask, useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
+import { useTaskDetail, useTaskPhases } from "../../hooks/use-tasks";
 import { PHASE_ORDER } from "../../lib/constants";
 import { readPhaseTransition } from "../../lib/observation-shapes";
 import { ROUTES } from "../../lib/routes";
-import type { Observation, Phase, TaskDetail, TaskState } from "../../types/api";
+import type { Observation, Phase, TaskDetail } from "../../types/api";
 import { BlockedResponse } from "./blocked-response";
+import { TaskActions } from "./task-actions";
 import { TaskAgentTab } from "./task-agent-tab";
 import { TaskDecisionsTab } from "./task-decisions-tab";
 import { TaskOverviewTab } from "./task-overview-tab";
@@ -24,29 +25,6 @@ import { TaskToolsTab } from "./task-tools-tab";
 const TAB_ROUTES = ["overview", "timeline", "phases", "decisions", "agent", "tools"] as const;
 type TabValue = (typeof TAB_ROUTES)[number];
 
-/** Task states a task can be cancelled from — mirrors CANCELLABLE_STATES (src/schemas/task.ts). */
-const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set<TaskState>([
-  "requirements_gathering",
-  "queued",
-  "active",
-  "blocked",
-]);
-
-/**
- * The retry/resume affordance for a task, or null when neither applies. Mirrors retryTask's accepted states
- * (src/schemas/task.ts): a `failed`/`blocked` task is retried; a `cancelled` task is resumed only while its
- * work survives (`reaped_at` null) — once reaped, the server rejects resume and the task is re-run from source.
- */
-function retryActionFor(task: TaskDetail): { label: string } | null {
-  if (task.state === "failed" || task.state === "blocked") {
-    return { label: "Retry" };
-  }
-  if (task.state === "cancelled" && task.reaped_at === null) {
-    return { label: "Resume" };
-  }
-  return null;
-}
-
 /** Single task detail page with tabbed views for overview, timeline, phases, decisions, steps, and tools. */
 export function TaskDetailPage(): React.JSX.Element {
   const { taskId, tab } = useParams<{ taskId: string; tab?: string }>();
@@ -54,8 +32,6 @@ export function TaskDetailPage(): React.JSX.Element {
   const { data: task, isLoading } = useTaskDetail(taskId);
   const { data: phaseObservations } = useTaskPhases(taskId);
   const { data: systemStatus } = useSystemStatus();
-  const cancelMutation = useCancelTask(taskId ?? "");
-  const retryMutation = useRetryTask(taskId ?? "");
 
   const phasesRan = useMemo(() => distinctPhasesRan(phaseObservations ?? []), [phaseObservations]);
 
@@ -84,8 +60,6 @@ export function TaskDetailPage(): React.JSX.Element {
 
   const typedTask = task as TaskDetail;
   const isBlocked = typedTask.state === "blocked";
-  const isCancellable = CANCELLABLE_STATES.has(typedTask.state);
-  const retryAction = retryActionFor(typedTask);
   // The current-phase pill is meaningful only while the task is mid-flight — on a terminal task the phase
   // would be stale. The dot pulses only when actively executing (a blocked task is paused, not live).
   const isLive = typedTask.state === "active" || typedTask.state === "requirements_gathering";
@@ -134,23 +108,7 @@ export function TaskDetailPage(): React.JSX.Element {
             </a>
           </Button>
         )}
-        {retryAction && (
-          <Button variant="outline" size="sm" onClick={() => retryMutation.mutate()} disabled={retryMutation.isPending}>
-            <RotateCcw size={14} />
-            {retryAction.label}
-          </Button>
-        )}
-        {isCancellable && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => cancelMutation.mutate()}
-            disabled={cancelMutation.isPending}
-          >
-            <Ban size={14} />
-            Cancel
-          </Button>
-        )}
+        <TaskActions task={typedTask} />
       </div>
 
       {isBlocked && <BlockedResponse taskId={typedTask.id} blocked={typedTask.blocked} />}

@@ -4,11 +4,13 @@ import type Database from "better-sqlite3";
  */
 import { Hono } from "hono";
 
+import { ulid } from "ulid";
 import type { ObservationStore } from "../../core/observer/index.js";
 import { deriveTraceId } from "../../core/observer/otlp/index.js";
 import { PipelinePhaseSchema } from "../../core/orchestrator/pipeline/types.js";
+
 import { cancelTask, retryTask } from "../../core/task-engine/index.js";
-import { fromSqliteJson } from "../../db/serialize.js";
+import { fromSqliteJson, toSqliteJson } from "../../db/serialize.js";
 import { TaskStates } from "../../schemas/task.js";
 
 /** The real pipeline phase names, as a set, for validating values parsed out of observation inputs. */
@@ -176,7 +178,7 @@ function latestTraceOtlpId(db: Database.Database, taskId: string): string | null
   }
 }
 
-/** Registers task listing, detail, timeline, phase, trace, cancel, and retry endpoints. */
+/** Registers task listing, detail, timeline, phase, trace, cancel, retry, and rerun endpoints. */
 export function taskRoutes(deps: TaskRoutesDeps): Hono {
   const app = new Hono();
 
@@ -484,6 +486,41 @@ export function taskRoutes(deps: TaskRoutesDeps): Hono {
       if (result.outcome === "key_conflict") {
         return c.json({ error: `A newer task (${result.holderId}) already exists for this source` }, 409);
       }
+      return c.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return c.json({ error: msg }, 500);
+    }
+  });
+
+  /**
+   * Re-run a cancelled task as a fresh clone from its source. The dashboard has no event bus, so it writes a
+   * `task.rerun_requested` event for the daemon's response poller to pick up and clone (mirroring how blocked
+   * responses cross the process boundary). The clone itself — reusing the source's identity, guarding against
+   * duplicates — is the daemon's job.
+   */
+  app.post("/:id/rerun", (c) => {
+    const taskId = c.req.param("id");
+    const row = deps.writeDb.prepare("SELECT state FROM tasks WHERE id = ?").get(taskId) as
+      | { state: string }
+      | undefined;
+    if (!row) {
+      return c.json({ error: "Task not found" }, 404);
+    }
+    if (row.state !== TaskStates.cancelled) {
+      return c.json({ error: `Only a cancelled task can be re-run; this one is "${row.state}"` }, 400);
+    }
+    try {
+      deps.writeDb
+        .prepare("INSERT INTO events (id, type, source, task_id, timestamp, payload) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          ulid(),
+          "task.rerun_requested",
+          "dashboard",
+          taskId,
+          new Date().toISOString(),
+          toSqliteJson({ task_id: taskId }),
+        );
       return c.json({ success: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

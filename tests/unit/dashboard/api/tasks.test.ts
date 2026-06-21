@@ -268,6 +268,58 @@ describe("taskRoutes — POST /:id/retry", () => {
   });
 });
 
+describe("taskRoutes — POST /:id/rerun", () => {
+  let handle: DatabaseHandle;
+  let app: ReturnType<typeof taskRoutes>;
+
+  beforeEach(() => {
+    handle = createInMemoryDatabase();
+    app = taskRoutes({ db: handle.db, writeDb: handle.db, observationStore: observationStoreStub });
+  });
+
+  afterEach(() => {
+    handle.close();
+  });
+
+  it("writes a task.rerun_requested event for a cancelled task", async () => {
+    insertTask(handle.db, "task-reaped", {
+      state: TaskStates.cancelled,
+      sub_state: null,
+      reaped_at: "2026-01-16T09:00:00Z",
+    });
+
+    const res = await app.request("/task-reaped/rerun", { method: "POST" });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+
+    const event = handle.db
+      .prepare("SELECT type, source, task_id, payload FROM events WHERE task_id = ?")
+      .get("task-reaped") as { type: string; source: string; task_id: string; payload: string };
+    expect(event.type).toBe("task.rerun_requested");
+    expect(event.source).toBe("dashboard");
+    expect(JSON.parse(event.payload)).toEqual({ task_id: "task-reaped" });
+  });
+
+  it("returns 400 and writes no event when the task is not cancelled", async () => {
+    insertTask(handle.db, "task-active", { state: TaskStates.active, sub_state: SubStates.working });
+
+    const res = await app.request("/task-active/rerun", { method: "POST" });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toMatchObject({ error: expect.stringContaining("can be re-run") });
+    const count = handle.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number };
+    expect(count.n).toBe(0);
+  });
+
+  it("returns 404 when the task does not exist", async () => {
+    const res = await app.request("/missing/rerun", { method: "POST" });
+
+    expect(res.status).toBe(404);
+    expect((await res.json()) as { error: string }).toMatchObject({ error: "Task not found" });
+  });
+});
+
 describe("taskRoutes — GET /:id trace_otlp_id", () => {
   let handle: DatabaseHandle;
   let app: ReturnType<typeof taskRoutes>;

@@ -6,6 +6,7 @@ import type { ExternalRef } from "../../schemas/task.js";
 import { BlockReasons, TaskStates } from "../../schemas/task.js";
 import type { PublishInput } from "../interfaces/event-bus.interface.js";
 import { type QueryHandlerDeps, type QueryRoutingReason, handleQuery, isCommand } from "./query-handler.js";
+import { handleRerunRequest } from "./rerun-handler.js";
 import type { ResponsePollerContext } from "./types.js";
 import type { UnblockInput, UnblockResolver } from "./unblock-resolver.js";
 
@@ -320,7 +321,7 @@ export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver
     } satisfies PublishInput<"comm.message_received">);
   }
 
-  /** Scan event bus for comm.message_received events from non-plugin sources (dashboard). */
+  /** Scan the event bus for dashboard-written events (responses and re-run requests) and dispatch each. */
   function scanEventBus(): void {
     const rows = eventBus.getEventsSince(lastEventSeq);
     for (const row of rows) {
@@ -328,26 +329,40 @@ export function createResponsePoller(ctx: ResponsePollerContext, unblockResolver
       // must never re-read a row we have already inspected, whether or not it matched.
       lastEventSeq = row.sequence;
 
-      // Events from "daemon" source are ones WE published (from plugin messages above).
-      // Only process comm.message_received from other sources (e.g., "dashboard").
-      if (row.type !== "comm.message_received" || row.source === "daemon") {
+      // Events from "daemon" source are ones WE published (e.g. the comm.message_received we mint from plugin
+      // messages above). Only events from other sources (the dashboard) carry owner intent to act on.
+      if (row.source === "daemon") {
         continue;
       }
-      const payload = row.payload as {
-        source?: string;
-        task_id?: string | null;
-        content?: string;
-      };
-      if (!payload.task_id) {
-        continue;
+      if (row.type === "comm.message_received") {
+        handleDashboardResponse(row);
+      } else if (row.type === "task.rerun_requested") {
+        handleDashboardRerun(row);
       }
-      unblockResolver.tryUnblock({
-        by: "task_id",
-        taskId: payload.task_id,
-        source: payload.source ?? "unknown",
-        ...(payload.content ? { content: payload.content } : {}),
-      });
     }
+  }
+
+  /** A blocked-task response the owner sent from the dashboard — route it to the unblock resolver. */
+  function handleDashboardResponse(row: { payload: unknown }): void {
+    const payload = row.payload as { source?: string; task_id?: string | null; content?: string };
+    if (!payload.task_id) {
+      return;
+    }
+    unblockResolver.tryUnblock({
+      by: "task_id",
+      taskId: payload.task_id,
+      source: payload.source ?? "unknown",
+      ...(payload.content ? { content: payload.content } : {}),
+    });
+  }
+
+  /** A re-run request the owner sent from the dashboard — clone the cancelled source task afresh. */
+  function handleDashboardRerun(row: { payload: unknown }): void {
+    const payload = row.payload as { task_id?: string };
+    if (!payload.task_id) {
+      return;
+    }
+    handleRerunRequest({ taskEngine, observer }, payload.task_id);
   }
 
   return { poll };

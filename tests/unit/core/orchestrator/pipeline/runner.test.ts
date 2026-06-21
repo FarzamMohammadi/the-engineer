@@ -2,7 +2,7 @@ import { type Mock, describe, expect, it, vi } from "vitest";
 
 import type { CreateCheckpointInput } from "../../../../../src/core/interfaces/session-memory.interface.js";
 import { traceScope } from "../../../../../src/core/orchestrator/pipeline/observability.js";
-import { InvalidRouteError, runPipeline } from "../../../../../src/core/orchestrator/pipeline/runner.js";
+import { InvalidRouteError, joinSentences, runPipeline } from "../../../../../src/core/orchestrator/pipeline/runner.js";
 import type { Route, SubPhase, SubPhaseResult } from "../../../../../src/core/orchestrator/pipeline/types.js";
 import { createMockPipeline, mockOwner, mockPhase, mockSubPhase } from "../../../../helpers/test-mock-pipeline.js";
 
@@ -711,5 +711,74 @@ describe("runPipeline", () => {
       const recordedError = observer.errors.find((e) => e.operation === "sub_phase:push");
       expect(parentOf(recordedError?.opts)).toBe(started?.id);
     });
+  });
+
+  describe("owner question composition", () => {
+    it("does not double the period when the escalated decision's reasoning already ends in one", async () => {
+      // The real regression: a reasoning ending in "." used to collide with the template's ". This is..." seam,
+      // producing "the count.. This is". The owner question must read cleanly regardless of the parts' own tails.
+      const sub = mockSubPhase("implement", {
+        run: () =>
+          Promise.resolve<SubPhaseResult>({
+            outcome: "ok",
+            summary: "Touched 7 files",
+            data: {
+              decisions: [
+                {
+                  category: "scope_expansion",
+                  summary: "The change spans more files than expected",
+                  chosen: "expand the scope",
+                  reasoning: "the policy can adjudicate the count.",
+                },
+              ],
+            },
+          }),
+      });
+      const { ctx } = createMockPipeline({
+        people: [mockOwner()],
+        consultJudgment: () => ({ action: "ask_human", reason: "scope_expansion always asks" }),
+      });
+
+      const outcome = await runPipeline([mockPhase("execution", [sub])], ctx);
+
+      expect(outcome.kind).toBe("blocked");
+      if (outcome.kind === "blocked") {
+        expect(outcome.detail.needed).not.toMatch(/[.!?]{2}/);
+        expect(outcome.detail.needed).toContain("the count. This is");
+        expect(outcome.detail.needed).toContain('"scope_expansion" decision your autonomy policy asks me to confirm');
+        expect(outcome.detail.needed).toContain("Proceed with this, or tell me what to do instead?");
+      }
+    });
+  });
+});
+
+describe("joinSentences", () => {
+  it("joins fragments with a single space and a single terminal period each", () => {
+    expect(joinSentences("first thought", "second thought")).toBe("first thought. second thought.");
+  });
+
+  it("collapses a fragment that already ends in a period — no doubled punctuation", () => {
+    expect(joinSentences("it ends already.", "next one")).toBe("it ends already. next one.");
+  });
+
+  it("preserves a fragment's own question mark as the final character", () => {
+    expect(joinSentences("a statement", "is this a question?")).toBe("a statement. is this a question?");
+  });
+
+  it("preserves an exclamation and collapses a repeated terminal run to one mark", () => {
+    expect(joinSentences("wow!!!", "calm down...")).toBe("wow! calm down.");
+  });
+
+  it("drops empty and whitespace-only fragments, leaving no stray separator", () => {
+    expect(joinSentences("", "  ", "only this one")).toBe("only this one.");
+    expect(joinSentences("before", "", "after")).toBe("before. after.");
+  });
+
+  it("trims trailing whitespace before adding the separator", () => {
+    expect(joinSentences("padded fragment   ", "next")).toBe("padded fragment. next.");
+  });
+
+  it("returns an empty string when every fragment is empty", () => {
+    expect(joinSentences("", "   ")).toBe("");
   });
 });

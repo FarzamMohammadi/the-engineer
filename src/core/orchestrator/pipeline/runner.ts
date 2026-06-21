@@ -423,7 +423,12 @@ function deriveCarryForward(phase: Phase, subPhase: string, result: SubPhaseResu
 
 /** Render one surfaced decision as a key finding — what was decided, the choice made, and why. */
 function renderFinding(decision: SurfacedDecision): string {
-  return `Decided "${decision.category}": ${decision.summary} Chose "${decision.chosen}" because ${decision.reasoning}.`;
+  // Joined through joinSentences so an agent-supplied summary/reasoning with its own trailing punctuation
+  // never doubles or drops the seam (the same punctuation safety the owner-facing question uses).
+  return joinSentences(
+    `Decided "${decision.category}": ${decision.summary}`,
+    `Chose "${decision.chosen}" because ${decision.reasoning}`,
+  );
 }
 
 /**
@@ -586,16 +591,45 @@ function readSurfacedDecisions(result: SubPhaseResult): readonly SurfacedDecisio
   return parsed.success ? parsed.data : [];
 }
 
+/**
+ * Join sentence fragments into one clean run of prose. Each fragment is its own complete thought; this
+ * normalizes the boundary between them so the seam never doubles or drops punctuation. Agent-supplied
+ * parts (a decision's `summary`, `reasoning`) arrive with unpredictable tails — some already end in
+ * `.`/`!`/`?`, some in whitespace, some bare — so we cannot template a literal "." between them.
+ *
+ * Rule per fragment: trim trailing whitespace; collapse a trailing run of terminal punctuation to a
+ * single mark, preserving the fragment's own intent (a `?` stays a question); add `.` when there is
+ * none. Empty fragments are dropped, so an absent `summary` leaves no stray leading space or "..".
+ */
+export function joinSentences(...fragments: readonly string[]): string {
+  return fragments
+    .map((fragment) => fragment.trim())
+    .filter((fragment) => fragment.length > 0)
+    .map((fragment) =>
+      TERMINAL_PUNCTUATION_RUN.test(fragment)
+        ? fragment.replace(TERMINAL_PUNCTUATION_RUN, (run) => run[0] ?? "")
+        : `${fragment}.`,
+    )
+    .join(" ");
+}
+
+/** A trailing run of sentence-terminal punctuation, collapsed to its first mark when a fragment already ends a sentence. */
+const TERMINAL_PUNCTUATION_RUN = /[.!?]+$/;
+
 /** One surfaced decision, framed for the owner: what was chosen, why, and which policy category it is. */
 function synthesizeDecision(decision: SurfacedDecision): string {
-  return `${decision.summary} I chose "${decision.chosen}" because ${decision.reasoning}. This is a "${decision.category}" decision your autonomy policy asks me to confirm.`;
+  return joinSentences(
+    decision.summary,
+    `I chose "${decision.chosen}" because ${decision.reasoning}`,
+    `This is a "${decision.category}" decision your autonomy policy asks me to confirm`,
+  );
 }
 
 /** Frame the escalated decisions as a single confirmation — numbered when there are several, so the owner answers them all in one reply. */
 function synthesizeBatchedQuestion(decisions: readonly SurfacedDecision[]): string {
   const [first] = decisions;
   if (decisions.length === 1 && first) {
-    return `${synthesizeDecision(first)} Proceed with this, or tell me what to do instead?`;
+    return joinSentences(synthesizeDecision(first), "Proceed with this, or tell me what to do instead?");
   }
   const numbered = decisions
     .map((decision, index) => `${String(index + 1)}. ${synthesizeDecision(decision)}`)

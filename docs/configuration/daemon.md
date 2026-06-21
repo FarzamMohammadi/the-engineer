@@ -151,7 +151,7 @@ value at runtime.
 
 ## Workspace Reaper
 
-The reaper performs the terminal-task cleanup that cannot happen inline: it deletes merged branches once their retention window (`pr.branch_retention_days` in [workspace.yaml](workspace.md)) elapses, and reconciles cross-process cancels. The task-completion path also invokes the reaper eagerly, so a `branch_retention_days: 0` branch is deleted immediately on completion rather than waiting for a sweep; this interval sweep is the backstop for non-zero retention, eager-deletion failures, and PRs merged while the daemon was down. It is a daemon-resident sweep, separate from data lifecycle because it does git + plugin (network) work rather than pure local DB cleanup.
+The reaper performs the terminal-task cleanup that cannot happen inline: it deletes merged branches once their retention window (`pr.branch_retention_days` in [workspace.yaml](workspace.md)) elapses, and reconciles cross-process cancels. It runs from two triggers. The task-completion path invokes it eagerly, so a `branch_retention_days: 0` branch is deleted immediately on completion. An interval sweep then runs as the backstop for everything the eager path does not cover: non-zero retention windows, eager-deletion failures, and PRs merged while the daemon was down. The reaper is a daemon-resident service, separate from data lifecycle because it does git + plugin (network) work rather than pure local DB cleanup.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

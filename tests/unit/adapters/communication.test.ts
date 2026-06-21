@@ -58,7 +58,7 @@ class FullCommAdapter extends MinimalCommAdapter {
   listening = false;
   syncCalls: Array<{ taskId: string; oldState: string; newState: string }> = [];
   reconcileCalls: TaskReconciliationInput[][] = [];
-  issueCalls: Array<{ method: string; repo: string }> = [];
+  ticketCalls: Array<{ method: string; repo: string }> = [];
 
   protected override doStartListening(): Promise<void> {
     this.listening = true;
@@ -89,17 +89,17 @@ class FullCommAdapter extends MinimalCommAdapter {
     _externalRef: { type: string; repo: string; id: string },
     _comment: string,
   ): Promise<void> {
-    this.issueCalls.push({ method: "commentOnTicket", repo: _externalRef.repo });
+    this.ticketCalls.push({ method: "commentOnTicket", repo: _externalRef.repo });
     return Promise.resolve();
   }
 
   protected override doCreateTicket(repo: string, _options: TicketOptions): Promise<TicketResult> {
-    this.issueCalls.push({ method: "createTicket", repo });
+    this.ticketCalls.push({ method: "createTicket", repo });
     return Promise.resolve({ id: "42", url: "https://github.com/test/repo/issues/42" });
   }
 
   protected override doUpdateTicket(repo: string, _ticketId: string, _updates: unknown): Promise<void> {
-    this.issueCalls.push({ method: "updateTicket", repo });
+    this.ticketCalls.push({ method: "updateTicket", repo });
     return Promise.resolve();
   }
 }
@@ -322,7 +322,7 @@ describe("CommunicationAdapter", () => {
         adapter_meta: { capabilities: ["send", "ticket_management"] },
       });
       await adapter.commentOnTicket({ type: "test_issue", repo: "test/repo", id: "1" }, "Comment");
-      const issueResult = await adapter.createTicket("test/repo", {
+      const ticketResult = await adapter.createTicket("test/repo", {
         title: "Test",
         body: "Body",
         labels: null,
@@ -335,8 +335,8 @@ describe("CommunicationAdapter", () => {
         labels_remove: null,
         body: null,
       });
-      expect(issueResult.id).toBe("42");
-      expect(adapter.issueCalls).toHaveLength(3);
+      expect(ticketResult.id).toBe("42");
+      expect(adapter.ticketCalls).toHaveLength(3);
     });
   });
 });

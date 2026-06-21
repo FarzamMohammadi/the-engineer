@@ -18,7 +18,7 @@ export const RESEARCH_INSTRUCTIONS = [
   "- When the task changes instances of something, count every instance. The inventory is the contract for execution and review.",
   "",
   "Keep observations and inferences separate, and label them:",
-  "- **Observations** are facts you verified by reading the code. ",
+  "- **Observations** are facts you verified by reading the code.",
   "- **Inferences** are what you conclude from them. Never present an inference as a fact.",
   "",
   "Then challenge what you found: What is the genuinely simplest approach? Are these patterns actually good, or legacy you should not copy? Which assumptions have you not verified? Is there an existing mechanism that already solves part of this? The best code is the code you do not write.",

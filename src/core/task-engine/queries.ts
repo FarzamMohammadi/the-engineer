@@ -107,9 +107,10 @@ export class TaskQueries {
   }
 
   /**
-   * Check if a non-terminal task exists with the given idempotency key.
-   * The durable half of trigger dedup: survives restarts (the in-memory seen-key
-   * cache does not). Active-scoped — a terminal task frees its key.
+   * Whether a task still holding the given idempotency key exists — the durable half of the re-trigger
+   * dedup gate. Survives restarts (the in-memory seen-key cache does not). Scoped to KEY_FREEING_STATES:
+   * only `completed`/`cancelled` free the key; a `failed` task HOLDS it, so the trigger resumes it via
+   * `engineer retry` rather than cloning a duplicate.
    */
   findByIdempotencyKey(key: string): boolean {
     const row = this.findByIdempotencyKeyStmt.get(key);

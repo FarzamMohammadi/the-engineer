@@ -33,6 +33,14 @@ const TITLE_DELIVERABLE = "pr-title.md";
 /** Strips a leading markdown heading marker so a title written as `# Foo` reads as `Foo`. */
 const LEADING_HEADING = /^#\s+/;
 
+/** The ways a rework's PR-presentation refresh can resolve — recorded as the decision's alternatives. */
+const REFRESH_DISPOSITION_OPTIONS = [
+  { id: "changed", description: "Substance changed — refresh the PR title and body on the host" },
+  { id: "unchanged", description: "Substance unchanged since the shown presentation — leave the host untouched" },
+  { id: "digest_unavailable", description: "Cannot verify substance (no diff digest) — skip the refresh" },
+  { id: "update_failed", description: "Host update failed — skip and retry next round" },
+] as const;
+
 /** Delivery: open the pull request, or push a rework onto the existing one. Skipped in push-only mode. */
 export const createPr: SubPhase = {
   name: "create-pr",
@@ -140,6 +148,12 @@ async function refreshPrPresentation(
   const current = ctx.workspaceManager.diffDigestAgainstBase(ctx.task.id);
 
   if (current == null) {
+    recordRefreshDecision(
+      ctx,
+      prNumber,
+      "digest_unavailable",
+      "Diff digest is unavailable — cannot tell whether the PR's substance changed, so the refresh is skipped",
+    );
     ctx.observer.warn("Cannot verify PR substance — skipping description refresh", {
       taskId: ctx.task.id,
       prNumber,
@@ -147,6 +161,12 @@ async function refreshPrPresentation(
     return { updated: false, digest: last, reason: "digest_unavailable" };
   }
   if (current === last) {
+    recordRefreshDecision(
+      ctx,
+      prNumber,
+      "unchanged",
+      "Diff digest matches the shown presentation — the re-push changed nothing merge-relevant, so the host is left untouched",
+    );
     ctx.observer.info("PR substance unchanged since last description — skipping refresh", {
       taskId: ctx.task.id,
       prNumber,
@@ -181,10 +201,22 @@ async function refreshPrPresentation(
       labels_remove: null,
     });
     span.end({ updated: true });
+    recordRefreshDecision(
+      ctx,
+      prNumber,
+      "changed",
+      "Diff digest moved since the shown presentation — the PR's title and body were refreshed to describe it as it now stands",
+    );
     return { updated: true, digest: current, reason: "changed" };
   } catch (error) {
     span.setError(error);
     span.end({ updated: false });
+    recordRefreshDecision(
+      ctx,
+      prNumber,
+      "update_failed",
+      "The host rejected the title/body update — the stored digest is left unadvanced so the next round retries",
+    );
     ctx.observer.warn("Failed to refresh PR title/body after rework push — proceeding", {
       taskId: ctx.task.id,
       prNumber,
@@ -192,6 +224,19 @@ async function refreshPrPresentation(
     });
     return { updated: false, digest: last, reason: "update_failed" };
   }
+}
+
+/** Record why the rework's PR-presentation refresh resolved as it did — the alternatives and the road not taken. */
+function recordRefreshDecision(ctx: Ctx, prNumber: number, chosen: string, reasoning: string): void {
+  ctx.observer.recordDecision(
+    "pr_presentation_refresh",
+    `Rework re-push on PR #${String(prNumber)} — decide whether to refresh the PR's title and body`,
+    REFRESH_DISPOSITION_OPTIONS,
+    chosen,
+    reasoning,
+    1,
+    traceScope(ctx),
+  );
 }
 
 /**
@@ -289,14 +334,7 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
 
 /** Read the PR narrative the pr-description sub-phase wrote, or null when it is absent. */
 function readPrDescription(ctx: Ctx): string | null {
-  if (!(ctx.worktreePath && ctx.thoughtsDir)) {
-    return null;
-  }
-  const file = path.join(ctx.worktreePath, ctx.thoughtsDir, PHASE_DIR, DELIVERABLE);
-  if (!(existsSync(file) && statSync(file).isFile())) {
-    return null;
-  }
-  return readFileSync(file, "utf-8").trim() || null;
+  return readDeliverable(ctx, DELIVERABLE)?.trim() || null;
 }
 
 /**
@@ -305,18 +343,23 @@ function readPrDescription(ctx: Ctx): string | null {
  * task title so a missing deliverable never breaks PR creation or refresh.
  */
 function readPrTitle(ctx: Ctx): string | null {
-  if (!(ctx.worktreePath && ctx.thoughtsDir)) {
-    return null;
-  }
-  const file = path.join(ctx.worktreePath, ctx.thoughtsDir, PHASE_DIR, TITLE_DELIVERABLE);
-  if (!(existsSync(file) && statSync(file).isFile())) {
-    return null;
-  }
-  const firstLine = readFileSync(file, "utf-8")
-    .split("\n")
+  const firstLine = readDeliverable(ctx, TITLE_DELIVERABLE)
+    ?.split("\n")
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   return firstLine ? firstLine.replace(LEADING_HEADING, "") || null : null;
+}
+
+/** Read a delivery deliverable's raw contents from the worktree, or null when the worktree or file is absent. */
+function readDeliverable(ctx: Ctx, deliverable: string): string | null {
+  if (!(ctx.worktreePath && ctx.thoughtsDir)) {
+    return null;
+  }
+  const file = path.join(ctx.worktreePath, ctx.thoughtsDir, PHASE_DIR, deliverable);
+  if (!(existsSync(file) && statSync(file).isFile())) {
+    return null;
+  }
+  return readFileSync(file, "utf-8");
 }
 
 // ── PR Composition (pure) ──────────────────────────────────────────────────────

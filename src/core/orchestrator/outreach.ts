@@ -5,16 +5,14 @@ import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IObserver } from "../observer/index.js";
 
-// This module owns "turn a blocked task's ask into a delivered question". A human block resolves to ONE
-// canonical question — the asking sub-phase's outreach file(s), or its synthesized `needed` when it wrote
-// none — and that one question is delivered to every surface the owner watches: their chat channel and the
-// source ticket. The orchestrator persists the same text as `blocked.needed`, so the dashboard, the chat,
-// and the ticket never show a different (or stale) question.
+// Turns a blocked task's ask into one canonical question delivered to every surface the owner watches.
+// The single export, deliverBlockedQuestion, carries the full contract in its own doc below.
 
+/** The collaborators {@link deliverBlockedQuestion} needs to resolve the owner and fan the question out. */
 export interface QuestionDelivery {
-  peopleDirectory: IPeopleDirectory;
-  notifications: NotificationRouter;
-  observer: IObserver;
+  readonly peopleDirectory: IPeopleDirectory;
+  readonly notifications: NotificationRouter;
+  readonly observer: IObserver;
 }
 
 /**

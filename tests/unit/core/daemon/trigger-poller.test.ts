@@ -149,7 +149,7 @@ describe("TriggerPoller", () => {
     );
   });
 
-  it("suppresses an event when the DB already has a non-terminal task for its key (crash-safe cold path)", async () => {
+  it("suppresses an event when a task still holds its idempotency key in the DB (crash-safe cold path)", async () => {
     // Fresh poller with an empty hot cache simulates a post-restart daemon. The event
     // carries no external_ref, so the old external_ref-based dedup would have missed it —
     // the idempotency_key DB lookup is what makes every trigger crash-safe.

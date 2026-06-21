@@ -276,7 +276,7 @@ describe("TaskEngine", () => {
     });
   });
 
-  // ── findByIdempotencyKey (durable, active-scoped dedup) ──────────────────────
+  // ── findByIdempotencyKey (durable re-trigger dedup — only completed/cancelled free the key) ──────────────────────
 
   describe("findByIdempotencyKey", () => {
     it("returns false for an unknown key", () => {
@@ -288,7 +288,7 @@ describe("TaskEngine", () => {
       expect(engine.findByIdempotencyKey("rt:active")).toBe(true);
     });
 
-    it("frees the key once the task is completed (active-scoped)", () => {
+    it("frees the key once the task is completed", () => {
       createTaskInState(engine, TaskStates.completed, null, { idempotency_key: "rt:completed" });
       expect(engine.findByIdempotencyKey("rt:completed")).toBe(false);
     });
@@ -300,7 +300,7 @@ describe("TaskEngine", () => {
       expect(engine.findByIdempotencyKey("rt:failed")).toBe(true);
     });
 
-    it("frees the key once the task is cancelled (active-scoped)", () => {
+    it("frees the key once the task is cancelled", () => {
       createTaskInState(engine, TaskStates.cancelled, null, { idempotency_key: "rt:cancelled" });
       expect(engine.findByIdempotencyKey("rt:cancelled")).toBe(false);
     });

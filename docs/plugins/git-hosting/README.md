@@ -6,7 +6,7 @@ This adapter type is fully separate from Communication adapters. PRs are code ar
 
 Every method is required. There are no optional or capability-gated methods. Each implementation must handle the full PR lifecycle: create, update, merge, close, query status, query reviews, dismiss stale approvals, comment, fetch comments, check branch protection, and resolve default branch. The full method list is in the contract table below.
 
-A core safety invariant: never force-merge. If branch protection rules are not satisfied, return an error in `MergeResult` rather than bypassing them.
+A core safety invariant: never force-merge. If branch protection rules are not satisfied, return a failed `MergeResult` (`success: false` with `reason: "not_mergeable"`) rather than bypassing them.
 
 ## Contract
 
@@ -123,7 +123,7 @@ type PrEvent =
 
 ## Developing a New Plugin
 
-The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers only what is specific to a git-hosting plugin: the class skeleton, the manifest fields, and the contract suite. Note the adapter-unique rules: **every method is required** (no capability gating), and a plugin must **never force-merge** — return an error in `MergeResult` when branch protection blocks a merge, rather than bypassing it.
+The full authoring flow — scaffold, register, run the contract suite, configure, verify, and contribute back — is the same for every adapter and lives in **[Authoring a Plugin](../../contribution-docs/how-tos/plugins/authoring.md)**. This section covers only what is specific to a git-hosting plugin: the class skeleton, the manifest fields, and the contract suite. Note the adapter-unique rules: **every method is required** (no capability gating), and a plugin must **never force-merge** — return a failed `MergeResult` (`reason: "not_mergeable"`) when branch protection blocks a merge, rather than bypassing it.
 
 ### Class skeleton
 

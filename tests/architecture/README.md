@@ -5,7 +5,7 @@ Build-time guards for the project's **whole-codebase architectural invariants** 
 | Guard | Enforces | Mechanism |
 |-------|----------|-----------|
 | [`tier-import-rules.test.ts`](tier-import-rules.test.ts) | The three-tier import model — adapters never import Core, Core never imports plugins or test code, the SDK barrel never re-exports Core internals. **The structural half of Plugin Opacity.** | Walks the **import graph** of every source file. |
-| [`plugin-opacity.test.ts`](plugin-opacity.test.ts) | No platform name (`"github"`, `"gitlab"`, `"slack"`, …) hardcoded as a string literal anywhere in `src/core/`. **The semantic half of Plugin Opacity.** | Scans the **source text** of every `src/core/` file. |
+| [`plugin-opacity.test.ts`](plugin-opacity.test.ts) | No platform name (`"github"`, `"gitlab"`, `"slack"`, …) named anywhere in `src/core/` — not in code values, and not in prose like the agent's self-model. **The semantic half of Plugin Opacity.** | Scans the **source text** of every `src/core/` file. |
 
 The two are complementary, not redundant: a hardcoded channel like `=== "github"` crosses no import boundary, so the structural guard cannot see it — that exact gap is how one once reached Core. They stay separate files because they use different mechanisms, and the import-rules guard is broader than opacity (it covers all three-tier import rules).
 

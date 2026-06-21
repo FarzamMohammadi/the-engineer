@@ -90,7 +90,7 @@ export interface ITaskEngine {
   getStateHistory(taskId: string): StateTransition[];
   updateTaskField(taskId: string, field: UpdatableField, value: unknown): void;
   updateTracking(taskId: string, tokens: number, costUsd: number, computeMs: number): void;
-  /** Check if a non-terminal task exists with the given idempotency key (durable dedup). */
+  /** Whether a task still holding the given idempotency key exists (durable re-trigger dedup; a failed task holds its key). */
   findByIdempotencyKey(key: string): boolean;
   /** The task holding an idempotency key (id + state), or null. Explains a suppressed re-trigger. */
   findKeyHolder(key: string): { id: string; state: TaskState } | null;

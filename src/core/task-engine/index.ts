@@ -398,7 +398,7 @@ export class TaskEngine implements ITaskEngine {
     }
   }
 
-  /** Check if a non-terminal task exists with the given idempotency key (durable dedup). */
+  /** Whether a task still holding the given idempotency key exists (durable re-trigger dedup; a failed task holds its key). */
   findByIdempotencyKey(key: string): boolean {
     return this.queries.findByIdempotencyKey(key);
   }

@@ -450,25 +450,27 @@ export class Orchestrator {
     // so the dashboard renders the same text. The outreach directory is the blocking sub-phase's own (not
     // just requirements'), so a question from any phase delivers; resolving from it consumes the files, so a
     // later block cannot re-send a stale ask. Any non-human block carries its `needed` unchanged.
-    const needed =
-      detail.category === BlockCategories.awaiting_human || detail.category === BlockCategories.awaiting_human_decision
-        ? deliverBlockedQuestion(
-            {
-              peopleDirectory: this.ctx.peopleDirectory,
-              notifications: this.ctx.notifications,
-              observer: ctx.observer,
-            },
-            {
-              taskId: ctx.task.id,
-              subPhase: detail.sub_phase,
-              outreachDir: ctx.worktreePath && ctx.thoughtsDir ? outreachDirForSubPhase(ctx, detail.sub_phase) : null,
-              needed: detail.needed,
-              // The question is emitted inside this dispatch — carry its trace context so the delivery
-              // observation lands on the task's timeline instead of orphaned with an empty trace/phase.
-              correlation: correlationFromTraceScope(traceScope(ctx)),
-            },
-          )
-        : detail.needed;
+    const isHumanWait =
+      detail.category === BlockCategories.awaiting_human || detail.category === BlockCategories.awaiting_human_decision;
+    const hasWorktree = !!(ctx.worktreePath && ctx.thoughtsDir);
+    const needed = isHumanWait
+      ? deliverBlockedQuestion(
+          {
+            peopleDirectory: this.ctx.peopleDirectory,
+            notifications: this.ctx.notifications,
+            observer: ctx.observer,
+          },
+          {
+            taskId: ctx.task.id,
+            subPhase: detail.sub_phase,
+            outreachDir: hasWorktree ? outreachDirForSubPhase(ctx, detail.sub_phase) : null,
+            needed: detail.needed,
+            // The question is emitted inside this dispatch — carry its trace context so the delivery
+            // observation lands on the task's timeline instead of orphaned with an empty trace/phase.
+            correlation: correlationFromTraceScope(traceScope(ctx)),
+          },
+        )
+      : detail.needed;
     this.ctx.taskEngine.requestTransition(ctx.task.id, TaskStates.blocked, null, detail.category, "orchestrator");
     this.ctx.taskEngine.updateTaskField(ctx.task.id, "blocked", {
       reason,

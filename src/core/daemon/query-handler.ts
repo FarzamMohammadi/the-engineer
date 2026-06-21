@@ -33,18 +33,15 @@ const COMMAND_RE = /^!(status|cost|help|progress)\b/i;
 
 /** Classify an inbound message into a supported command form, or `"unknown"` when it is not a command. */
 export function classifyQuery(content: string): QueryKind {
-  const trimmed = content.trim();
-  const match = COMMAND_RE.exec(trimmed);
-  if (!match) {
+  const keyword = COMMAND_RE.exec(content.trim())?.[1];
+  if (!keyword) {
     return "unknown";
   }
-  const keyword = match[1]?.toLowerCase();
-  // `!progress` is a command with or without a `#N`: bare `!progress` lists the tasks (so the owner can
-  // discover the number), `!progress #N` drills into one. The handler branches on the extracted number.
-  if (keyword === "progress" || keyword === "status" || keyword === "cost" || keyword === "help") {
-    return keyword;
-  }
-  return "unknown";
+  // The regex's alternation guarantees the captured token is one of the known keywords; lowercasing
+  // normalizes the case-insensitive match (`!STATUS` → `status`) back onto the QueryKind literal. `progress`
+  // is returned with or without a `#N`: bare `!progress` lists the tasks so the owner can discover the
+  // number, `!progress #N` drills into one — the handler branches on the extracted number.
+  return keyword.toLowerCase() as Exclude<QueryKind, "unknown">;
 }
 
 /**

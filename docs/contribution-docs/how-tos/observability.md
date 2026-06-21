@@ -163,7 +163,7 @@ Pick the type that names what you're recording — never overload `lifecycle` as
 
 | Type | When to use |
 |------|-------------|
-| `task_execution` | The root span of one dispatch — the whole task, start to outcome. Every other observation for the dispatch nests under it. |
+| `task_execution` | The root span of one dispatch — the whole task, start to outcome. The pipeline spine (each phase entry and `sub_phase_started`) nests directly under it; a run's own observations nest one level deeper, under their `sub_phase_started` (see [The End-to-End Trace](#the-end-to-end-trace)). |
 | `agent_call` | One agent run — emitted per agent sub-phase, carrying the prompt, the result/transcript as blob refs, and the run's cost/token spend |
 | `agent_activity` | One element of an agent's live conversation *inside* a single `agent_call` — an assistant message, a thinking block, a tool the agent invoked, or that tool's result. Children of the open `agent_call` span (see [Live Agent Activity](#live-agent-activity)). **Distinct from `tool_execution`:** `agent_activity` is what the *agent* did (parsed from its stream); `tool_execution` is what the *engine* did to the outside world. |
 | `tool_execution` | One external action — a verify gate, a git push, a PR create, a merge call, a branch delete |
@@ -212,7 +212,7 @@ interface SpanOptions {
 
 ## The End-to-End Trace
 
-Every task dispatch is one trace. The orchestrator opens a root `task_execution` span at the start of `executeTask`; its id is threaded into the pipeline context, and every observation the pipeline emits carries the dispatch's `trace_id` and points its `parent_observation_id` at that root. The result is a single nested tree per task — from intake to outcome — that the dashboard renders and that an external tracing tool can consume whole (see [External Trace Export](#external-trace-export-otlp) below).
+Every task dispatch is one trace. The orchestrator opens a root `task_execution` span at the start of `executeTask`; its id is threaded into the pipeline context, and every observation the pipeline emits carries the dispatch's `trace_id`. Parentage is two levels: the pipeline **spine** — each phase entry and each sub-phase start (`sub_phase_started`) — points its `parent_observation_id` at the root, and every observation a sub-phase **run** then emits (its `agent_call`, the verify gates and verdict, the `route:`/`loop_` decisions, its `sub_phase_result`, an `autonomy_policy` verdict, the `task_blocked`) points its `parent_observation_id` at **that run's `sub_phase_started` id**. The result is a clean two-level tree per task — root → each sub_phase_started → that run's observations — so a consumer can *look up* which call/gate/verdict/decision belongs to which run by parentage, rather than inferring it from timing. The dashboard renders it and an external tracing tool can consume it whole (see [External Trace Export](#external-trace-export-otlp) below).
 
 **What the pipeline emits, by construction:**
 
@@ -223,7 +223,7 @@ Every task dispatch is one trace. The orchestrator opens a root `task_execution`
 - **auto-merge** records a `merge_readiness` decision (the live PR status, the disposition chosen, its alternatives) and a `tool_execution` span for the merge call.
 - The **PR-event poller** records `pr_event_arbitration` (which event won among competitors) and `approve_comment_promotion` (a `/approve` turned into a merge).
 
-The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, phase, parent_observation_id}` scope so the runner and every sub-phase stitch into the same tree.
+The shared `traceScope(ctx)` helper builds the `{task_id, session_id, trace_id, phase, parent_observation_id}` scope so the runner and every sub-phase stitch into the same tree. It resolves `parent_observation_id` to the **current sub-phase run's id** while a run is open (`Ctx.subPhaseRunObsId`, which the runner stamps from each `sub_phase_started` and clears between runs) and falls back to the **root** for the spine — so the two-level tree above is automatic and a sub-phase never has to thread a parent by hand.
 
 ### Trace continuity across dispatches
 

@@ -250,9 +250,10 @@ export class Orchestrator {
 
     // Root span for the whole dispatch — the end-to-end "tracer bullet", chained to the prior dispatch's
     // trace for continuity. Opened BEFORE workspace setup so the setup belongs to the trace (see
-    // openRootSpan). Every phase, sub-phase, agent run, decision, and action nests under it (via
-    // Ctx.rootObservationId), so the observer can open one task and see its complete trace from intake to
-    // outcome, and so the trace can later be exported whole.
+    // openRootSpan). The pipeline spine (each phase entry and sub_phase_started) nests directly under it via
+    // Ctx.rootObservationId; each run's own observations (agent run, gates, verdict, decisions) nest one level
+    // deeper under their sub_phase_started via Ctx.subPhaseRunObsId — a two-level tree the observer can open as
+    // one task's complete trace from intake to outcome, and that can later be exported whole.
     const rootSpan = this.openRootSpan(dispatch, tracedObserver, traceId, sessionId);
 
     // Workspace setup. A failure here (git, disk, auth) ends the root span as crashed and closes the
@@ -372,6 +373,8 @@ export class Orchestrator {
       worktreePath,
       thoughtsDir: record?.thoughtsDir ?? null,
       rootObservationId,
+      // No sub-phase run is open at dispatch start; the runner stamps this per sub-phase (see Ctx.subPhaseRunObsId).
+      subPhaseRunObsId: undefined,
       ...(dispatch.signal ? { signal: dispatch.signal } : {}),
     };
   }

@@ -425,18 +425,48 @@ export function readGate(observation: ToolExecutionLike): GateExecution | null {
   };
 }
 
+// ── state_transition / task_blocked ─────────────────────────────────────────────
+// emitBlock (runner.ts) records a `state_transition` named `task_blocked` with `input = { category, sub_phase,
+// needed }`. It is what turns a bare "implement, implement" gap in the feed into an explained block → resume.
+
+/** The narrowed `task_blocked` payload the step feed's block marker renders: why the run stopped. */
+export interface BlockShape {
+  /** The block cause (e.g. `awaiting_human_decision`, `awaiting_pr_review`); empty when absent. */
+  readonly category: string;
+  /** The sub-phase the task blocked in; empty when absent. */
+  readonly subPhase: string;
+  /** The operator-facing next step that unblocks the task (the question asked / what is needed); empty when absent. */
+  readonly needed: string;
+}
+
+/** Narrow a `task_blocked` `state_transition` into its block reason, or null when it is not that observation. */
+export function readBlock(observation: ObservationLike & { readonly name: string }): BlockShape | null {
+  if (observation.type !== "state_transition" || observation.name !== "task_blocked") {
+    return null;
+  }
+  const input = asRecord(observation.input) ?? {};
+  return {
+    category: asString(input["category"]),
+    subPhase: asString(input["sub_phase"]),
+    needed: asString(input["needed"]),
+  };
+}
+
 // ── step feed ───────────────────────────────────────────────────────────────────
 // One row per sub-phase the engine actually ran — LLM and non-LLM alike — so the feed reads as the true
 // executed sequence (e.g. implement → verify → implement), not just the LLM calls.
 
 /**
  * The structural slice the step-feed builders read from each observation — any `Observation` is assignable.
- * Richer than the per-type reader slices above because the builders correlate across rows by phase, trace, and
- * time, and key React elements by id. Kept here (not imported from `types/api`) so this module stays free of
- * the client's extensionless import chain, which the test compiler cannot resolve (see the file header).
+ * Richer than the per-type reader slices above because the builders correlate across rows by the run's id
+ * (`parent_observation_id`) and key React elements by id. Kept here (not imported from `types/api`) so this
+ * module stays free of the client's extensionless import chain, which the test compiler cannot resolve (see
+ * the file header).
  */
 export interface StepObservationLike {
   readonly id: string;
+  /** The id of the run that spawned this observation — its `sub_phase_started`'s id. The feed's grouping key. */
+  readonly parent_observation_id: string | null;
   readonly type: string;
   readonly name: string;
   readonly phase: string | null;
@@ -448,10 +478,13 @@ export interface StepObservationLike {
 
 /**
  * One reconstructed sub-phase run across the whole task: its phase/name, terminal outcome, timing, and trace.
- * Carries the timing and trace that `SubPhaseRun` drops (it does not replace `SubPhaseRun`, which the Phases
- * tab still uses) so the feed can correlate each run's enriching observations to it by a time window.
+ * Its `id` is the run's `sub_phase_started` observation id — the correlation key every enrichment the run
+ * emitted carries as its `parent_observation_id`. Carries timing/trace that `SubPhaseRun` drops (it does not
+ * replace `SubPhaseRun`, which the Phases tab still uses).
  */
 export interface StepRun {
+  /** The run's `sub_phase_started` observation id — what its enrichments parent on. Empty for a result-only run. */
+  readonly id: string;
   readonly phase: string;
   readonly subPhase: string;
   /** ok = finished cleanly, error = finished with an error outcome, pending = started but no result yet. */
@@ -465,10 +498,11 @@ export interface StepRun {
 }
 
 /**
- * A reconstructed run enriched with the observations it owns, ready to render. `kind` is `llm` exactly when the
- * run has a correlated `agent_call` — self-maintaining, with no hardcoded list of non-LLM sub-phases to keep in
- * sync with the pipeline. Generic over the observation type so callers passing `Observation[]` get
- * `Observation` back in every payload field (the reused `AgentTraceRow` needs a real `Observation`).
+ * A reconstructed run enriched with the observations it owns (those that parent on the run's id), ready to
+ * render. `kind` is `llm` exactly when the run has a correlated `agent_call` — self-maintaining, with no
+ * hardcoded list of non-LLM sub-phases to keep in sync with the pipeline. Generic over the observation type so
+ * callers passing `Observation[]` get `Observation` back in every payload field (the reused `AgentTraceRow`
+ * needs a real `Observation`).
  */
 export interface EnrichedStep<T extends StepObservationLike> extends StepRun {
   readonly kind: "llm" | "nonllm";
@@ -480,6 +514,20 @@ export interface EnrichedStep<T extends StepObservationLike> extends StepRun {
   readonly tools: readonly T[];
   /** The `route:*` / `loop_*` decisions the run led to — the "why it advanced/looped". */
   readonly decisions: readonly T[];
+  /**
+   * The block this run ended in, when it did — the explanation for a gap before the next step. `transition` is
+   * the `task_blocked` state_transition (the reason/category); `policy` is the `autonomy_policy` decision that
+   * triggered it (the question asked), present only for an autonomy escalation. Both parent on the run's id.
+   * Null when the run did not block. The feed renders a distinct marker beneath the step from this.
+   */
+  readonly block: StepBlock<T> | null;
+}
+
+/** The block a step ended in: its `task_blocked` transition and the optional `autonomy_policy` decision behind it. */
+export interface StepBlock<T extends StepObservationLike> {
+  readonly transition: T;
+  /** The `autonomy_policy` decision that asked the owner to confirm — present only on an autonomy block. */
+  readonly policy: T | null;
 }
 
 /**
@@ -499,6 +547,7 @@ export function buildStepRuns(transitions: readonly StepObservationLike[]): Step
     }
     if (shape.event === "sub_phase_started") {
       list.push({
+        id: obs.id,
         phase: shape.phase,
         subPhase: shape.subPhase,
         status: "pending",
@@ -519,7 +568,10 @@ export function buildStepRuns(transitions: readonly StepObservationLike[]): Step
       if (pending) {
         list[list.indexOf(pending)] = { ...pending, ...resolution };
       } else {
+        // A result with no matching start (its start fell outside the fetched window). It has no run id, so its
+        // own enrichments cannot be looked up by parentage — it renders from the result alone.
         list.push({
+          id: "",
           phase: shape.phase,
           subPhase: shape.subPhase,
           startTime: obs.start_time,
@@ -532,55 +584,16 @@ export function buildStepRuns(transitions: readonly StepObservationLike[]): Step
   return list;
 }
 
-/** True when two trace ids are the same dispatch — non-null equality, with null===null as the safe fallback. */
-function sameTrace(a: string | null, b: string | null): boolean {
-  return a === b;
-}
-
-/**
- * The run a closing `route:`/`loop_` decision belongs to.
- *
- * A run's `agent_call`/`safety_verdict`/gate spans fall INSIDE its `[start, nextStart)` window, but routing
- * decisions are CLOSING events emitted at a sub-phase's hand-off: `route:<X>` fires the instant sub-phase X
- * finishes, which is the SAME instant the next run starts. The window's lower bound is inclusive (tuned so an
- * opening `agent_call` keeps its own start instant), so it would hand that decision to the NEXT run — verify
- * would show implement's route and implement none. Attribute by the decision's meaning instead:
- *   route:<X> → the latest run of sub-phase X started by the decision (matched by NAME, so a verify never
- *               claims a `route:implement` that shares its start instant; an `await-review` block, emitted at
- *               its own run's start, still lands on it via `>=`);
- *   loop_*    → the latest run started STRICTLY before the decision (its name carries no sub-phase to match on;
- *               the loop belongs to the run that just closed, never the next run opening on the same instant).
- * Returns the owning run's index, or -1 when none matches (different phase/trace, or it precedes every run).
- */
-function closingDecisionOwner<T extends StepObservationLike>(decision: T, runs: readonly StepRun[]): number {
-  const isRoute = decision.name.startsWith("route:");
-  const subPhase = isRoute ? decision.name.slice("route:".length) : "";
-  let owner = -1;
-  for (const [index, run] of runs.entries()) {
-    if ((decision.phase ?? "") !== run.phase || !sameTrace(decision.trace_id, run.traceId)) {
-      continue;
-    }
-    const owns = isRoute
-      ? run.subPhase === subPhase && decision.start_time >= run.startTime
-      : decision.start_time > run.startTime;
-    if (owns) {
-      owner = index;
-    }
-  }
-  return owner;
-}
-
 /**
  * Build the ordered step feed: every sub-phase run with the observations it owns.
  *
- * Correlation model — there is NO parent link from a run to its observations (`traceScope` stamps every
- * pipeline observation with the same `parent_observation_id = rootObservationId`), so each run claims its
- * enrichments by `(phase, trace_id)` plus timing. A run's `agent_call`/`safety_verdict`/`tool_execution` spans
- * fall inside a half-open window `[run.startTime, nextRun.startTime)`: lower bound inclusive so an `agent_call`
- * sharing its `sub_phase_started`'s millisecond lands in its own run, upper bound exclusive so it never bleeds
- * into the next. Routing decisions are CLOSING events emitted at the hand-off instant, so they are attributed by
- * meaning rather than this window (see {@link closingDecisionOwner}). If a future runner change emits a run's
- * enrichments outside this window, drill-in would mis-attribute — keep the emission order and this in sync.
+ * Correlation model — each enrichment is LOOKED UP by the run that spawned it: the engine stamps every
+ * observation a sub-phase emits with that run's id (its `sub_phase_started`'s id) as `parent_observation_id`,
+ * so an `agent_call`/`safety_verdict`/`tool_execution`/`route:`/`loop_` row belongs to the run whose `id` it
+ * parents on — no phase/trace/time-window guessing, no same-instant tie-break. This is what the Core
+ * correlation fix made possible (see `pipeline/observability.ts` `traceScope` and `Ctx.subPhaseRunObsId`);
+ * before it, every pipeline observation shared the dispatch root as parent and the feed had to infer ownership
+ * from timing, which broke when a closing `route:` fired in the same millisecond the next run started.
  */
 export function buildStepFeed<T extends StepObservationLike>(
   transitions: readonly T[],
@@ -588,45 +601,51 @@ export function buildStepFeed<T extends StepObservationLike>(
   verdicts: readonly T[],
   toolExecutions: readonly T[],
   decisions: readonly T[],
+  stateTransitions: readonly T[] = [],
 ): EnrichedStep<T>[] {
   const runs = buildStepRuns(transitions);
 
-  // Assign each route:/loop_ decision to the single run it belongs to, up front — a closing decision sharing
-  // the next run's start instant must not be claimed by that next run (see closingDecisionOwner).
-  const decisionsByRun = new Map<number, T[]>();
-  for (const obs of decisions) {
-    if (obs.type !== "decision_point" || !(obs.name.startsWith("route:") || obs.name.startsWith("loop_"))) {
-      continue;
-    }
-    const owner = closingDecisionOwner(obs, runs);
-    if (owner < 0) {
-      continue;
-    }
-    const bucket = decisionsByRun.get(owner);
-    if (bucket) {
-      bucket.push(obs);
-    } else {
-      decisionsByRun.set(owner, [obs]);
-    }
-  }
+  return runs.map((run) => {
+    // An enrichment belongs to this run exactly when it parents on the run's id. A result-only run (no start in
+    // the fetched window) has an empty id and so owns nothing — it renders from its result alone.
+    const ownedBy = (obs: T): boolean => run.id !== "" && obs.parent_observation_id === run.id;
 
-  return runs.map((run, index) => {
-    // The window closes at the next run's start (exclusive); the last run's window is open-ended (+∞).
-    const nextStart = runs[index + 1]?.startTime ?? null;
-    const inWindow = (obs: T): boolean =>
-      (obs.phase ?? "") === run.phase &&
-      sameTrace(obs.trace_id, run.traceId) &&
-      obs.start_time >= run.startTime &&
-      (nextStart === null || obs.start_time < nextStart);
-
-    const agentCall = agentCalls.find((obs) => obs.type === "agent_call" && inWindow(obs)) ?? null;
+    const agentCall = agentCalls.find((obs) => obs.type === "agent_call" && ownedBy(obs)) ?? null;
     return {
       ...run,
       kind: agentCall ? "llm" : "nonllm",
       agentCall,
-      verdict: verdicts.find((obs) => obs.type === "safety_verdict" && inWindow(obs)) ?? null,
-      tools: toolExecutions.filter((obs) => obs.type === "tool_execution" && inWindow(obs)),
-      decisions: decisionsByRun.get(index) ?? [],
+      verdict: verdicts.find((obs) => obs.type === "safety_verdict" && ownedBy(obs)) ?? null,
+      tools: toolExecutions.filter((obs) => obs.type === "tool_execution" && ownedBy(obs)),
+      decisions: decisions.filter(
+        (obs) =>
+          obs.type === "decision_point" &&
+          (obs.name.startsWith("route:") || obs.name.startsWith("loop_")) &&
+          ownedBy(obs),
+      ),
+      block: findBlock(stateTransitions, decisions, ownedBy),
     };
   });
+}
+
+/**
+ * The block the current run ended in, when it did — the explanation for a gap before the next step. The
+ * `task_blocked` state_transition carries the reason/category; the `autonomy_policy` decision (when an autonomy
+ * escalation caused the block) carries the question the owner was asked. Both parent on the run's id, so
+ * `ownedBy` selects them. Returns null for a run that did not block.
+ */
+function findBlock<T extends StepObservationLike>(
+  stateTransitions: readonly T[],
+  decisions: readonly T[],
+  ownedBy: (obs: T) => boolean,
+): StepBlock<T> | null {
+  const transition = stateTransitions.find(
+    (obs) => obs.type === "state_transition" && obs.name === "task_blocked" && ownedBy(obs),
+  );
+  if (!transition) {
+    return null;
+  }
+  const policy =
+    decisions.find((obs) => obs.type === "decision_point" && obs.name === "autonomy_policy" && ownedBy(obs)) ?? null;
+  return { transition, policy };
 }

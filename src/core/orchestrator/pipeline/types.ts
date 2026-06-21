@@ -133,12 +133,26 @@ export interface Ctx extends OrchestratorContext {
    */
   readonly currentPhase?: Phase;
   /**
-   * The id of the dispatch's root `task_execution` span, set by the orchestrator. Threaded into every
-   * pipeline observation as its parent (via {@link traceScope}) so the whole task forms one end-to-end
-   * trace tree — the dashboard's "tracer bullet" view and the seam for exporting to an external tracing
-   * tool. Absent when a sub-phase runs outside a dispatch (e.g. a unit test driving it directly).
+   * The id of the dispatch's root `task_execution` span, set by the orchestrator. The parent of the
+   * spine observations only — each `sub_phase_started` and the bare `phase_entered` (via {@link traceScope}
+   * when no run is open) — so they hang directly off the root. Absent when a sub-phase runs outside a
+   * dispatch (e.g. a unit test driving it directly).
    */
   readonly rootObservationId?: string;
+  /**
+   * The id of the CURRENT sub-phase run's `sub_phase_started` observation — the per-run correlation id this
+   * fix introduces. The runner stamps it the instant a sub-phase starts (the id `emitSubPhaseStart` returns)
+   * and clears it the instant the next one does, so {@link traceScope} can parent every observation a run
+   * emits afterward (the agent_call, the verify gates and verdict, the route:/loop_ decisions, the
+   * sub_phase_result, an autonomy_policy verdict, the block) on that run's id. The result is a clean two-level
+   * tree — dispatch root → each sub_phase_started → that run's observations — so the dashboard LOOKS UP a
+   * run's enrichments by parentage instead of inferring ownership from a (phase, trace, time-window) guess.
+   * Mutable (the one mutable field on Ctx) because it changes per sub-phase within a single dispatch context;
+   * `undefined` before the first run starts and between runs (the runner clears it so the spine parents on the
+   * root). Typed `string | undefined` rather than optional so the runner can assign `undefined` to reset it
+   * under `exactOptionalPropertyTypes`.
+   */
+  subPhaseRunObsId: string | undefined;
 }
 
 /**

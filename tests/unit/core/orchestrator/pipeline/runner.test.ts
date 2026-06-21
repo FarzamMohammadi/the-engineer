@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { traceScope } from "../../../../../src/core/orchestrator/pipeline/observability.js";
 import { InvalidRouteError, runPipeline } from "../../../../../src/core/orchestrator/pipeline/runner.js";
 import type { Route, SubPhase, SubPhaseResult } from "../../../../../src/core/orchestrator/pipeline/types.js";
 import { createMockPipeline, mockOwner, mockPhase, mockSubPhase } from "../../../../helpers/test-mock-pipeline.js";
@@ -509,6 +510,104 @@ describe("runPipeline", () => {
 
       const result = observer.observations.find((o) => o.name === "sub_phase_result");
       expect(result?.data["data"]).toEqual({ verdict: "ship" });
+    });
+  });
+
+  describe("per-sub-phase-run correlation", () => {
+    // The correlation invariant this fix introduces: each observation a run emits carries that run's id
+    // (its sub_phase_started's id) as parent_observation_id, so the dashboard LOOKS UP a run's enrichments by
+    // parentage instead of inferring ownership from a (phase, trace, time-window) guess. The spine itself —
+    // every sub_phase_started and the bare phase_entered — parents on the dispatch root, not a run.
+
+    /** The parent_observation_id a captured emission was recorded under (the runner's traceScope). */
+    function parentOf(opts: Record<string, unknown> | undefined): unknown {
+      return opts?.["parent_observation_id"];
+    }
+
+    it("parents phase_entered and sub_phase_started on the root, and the run's result/route on the run's id", async () => {
+      const order: string[] = [];
+      const pipeline = [mockPhase("execution", [recording("implement", order)])];
+      // The orchestrator stamps the dispatch root id onto the ctx; the runner threads it as the spine's parent.
+      const { ctx, observer } = createMockPipeline({ task: { id: "task-x" }, rootObservationId: "root-1" });
+
+      await runPipeline(pipeline, ctx);
+
+      const phaseEntered = observer.observations.find((o) => o.name === "phase_entered");
+      const started = observer.observations.find((o) => o.name === "sub_phase_started");
+      const result = observer.observations.find((o) => o.name === "sub_phase_result");
+      const route = observer.decisions.find((d) => d.name === "route:implement");
+      // The spine hangs off the root.
+      expect(parentOf(phaseEntered?.opts)).toBe("root-1");
+      expect(parentOf(started?.opts)).toBe("root-1");
+      // The run's own emissions hang off that run's sub_phase_started id, not the root.
+      expect(started?.id).toBeTruthy();
+      expect(parentOf(result?.opts)).toBe(started?.id);
+      expect(parentOf(route?.opts)).toBe(started?.id);
+    });
+
+    it("parents an agent run's own observations on its run, never on the root or a sibling run", async () => {
+      // A sub-phase that records its own observation through the threaded ctx, the way an agent step does.
+      const emitting = mockSubPhase("implement", {
+        run: (ctx) => {
+          // Record through the SAME traceScope an agent step uses, so the run's own observation inherits the
+          // run id the runner threaded onto ctx (via the spread copy) — exactly the production path.
+          ctx.observer.observe("agent_call", "implement", { step: "implement" }, traceScope(ctx));
+          return Promise.resolve<SubPhaseResult>({ outcome: "ok", summary: "built" });
+        },
+        next: () => ({ go: "done" }) satisfies Route,
+      });
+      const { ctx, observer } = createMockPipeline({ rootObservationId: "root-1" });
+
+      await runPipeline([mockPhase("execution", [emitting])], ctx);
+
+      const started = observer.observations.find((o) => o.name === "sub_phase_started");
+      const agentCall = observer.observations.find((o) => o.type === "agent_call");
+      expect(parentOf(agentCall?.opts)).toBe(started?.id);
+      expect(parentOf(agentCall?.opts)).not.toBe("root-1");
+    });
+
+    it("resets the run id per sub-phase so a later run never inherits an earlier run's id", async () => {
+      const order: string[] = [];
+      const pipeline = [mockPhase("execution", [recording("implement", order), recording("verify", order)])];
+      const { ctx, observer } = createMockPipeline({ rootObservationId: "root-1" });
+
+      await runPipeline(pipeline, ctx);
+
+      const starts = observer.observations.filter((o) => o.name === "sub_phase_started");
+      const results = observer.observations.filter((o) => o.name === "sub_phase_result");
+      expect(starts).toHaveLength(2);
+      // Two distinct run ids; each result parents on its OWN run's start, not the first run's.
+      expect(starts[0]?.id).not.toBe(starts[1]?.id);
+      expect(parentOf(results[0]?.opts)).toBe(starts[0]?.id);
+      expect(parentOf(results[1]?.opts)).toBe(starts[1]?.id);
+      // Both sub_phase_started hang off the root, never off the prior run.
+      expect(parentOf(starts[0]?.opts)).toBe("root-1");
+      expect(parentOf(starts[1]?.opts)).toBe("root-1");
+    });
+
+    it("parents the task_blocked state_transition on the run that blocked", async () => {
+      const blocking = mockSubPhase("gather", {
+        run: () => Promise.resolve<SubPhaseResult>({ outcome: "needs_human", summary: "need scope" }),
+        next: () => ({ go: "block", category: "awaiting_human", needed: "answer" }) satisfies Route,
+      });
+      const { ctx, observer } = createMockPipeline({ rootObservationId: "root-1" });
+
+      await runPipeline([mockPhase("requirements", [blocking])], ctx);
+
+      const started = observer.observations.find((o) => o.name === "sub_phase_started");
+      const blocked = observer.observations.find((o) => o.name === "task_blocked");
+      expect(parentOf(blocked?.opts)).toBe(started?.id);
+    });
+
+    it("parents an orchestrator-throw error observation on the run that threw", async () => {
+      const throwing = mockSubPhase("push", { run: () => Promise.reject(new Error("git push rejected")) });
+      const { ctx, observer } = createMockPipeline({ rootObservationId: "root-1" });
+
+      await runPipeline([mockPhase("delivery", [throwing])], ctx);
+
+      const started = observer.observations.find((o) => o.name === "sub_phase_started");
+      const recordedError = observer.errors.find((e) => e.operation === "sub_phase:push");
+      expect(parentOf(recordedError?.opts)).toBe(started?.id);
     });
   });
 });

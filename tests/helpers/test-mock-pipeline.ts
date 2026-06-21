@@ -46,6 +46,10 @@ export interface RecordedObservation {
   readonly type: string;
   readonly name: string;
   readonly data: Record<string, unknown>;
+  /** The id this observation was assigned (what `observe` returned) — the parent key for the run's children. */
+  readonly id: string;
+  /** The trace-correlation scope it was recorded under (parent_observation_id, phase) — lets a test assert parentage. */
+  readonly opts?: Record<string, unknown> | undefined;
 }
 
 /** A captured `startSpan` call and the state it ended in. */
@@ -67,6 +71,8 @@ export interface RecordedLog {
 export interface RecordedError {
   readonly operation: string;
   readonly component: string;
+  /** The trace-correlation scope it was recorded under — lets a test assert it parents on the failing run. */
+  readonly opts?: Record<string, unknown> | undefined;
 }
 
 /** An IObserver that records every emission so tests can assert what the runner produced. */
@@ -138,16 +144,19 @@ export function createRecordingObserver(): RecordingObserver {
         },
       };
     },
-    observe: (type, name, data) => {
-      observations.push({ type, name, data });
-      return "";
+    observe: (type, name, data, opts) => {
+      // Hand back a real, unique id (not "") so the runner's per-run correlation can thread it: a
+      // sub_phase_started's id becomes the parent the run's later observations are recorded under.
+      const id = `obs-${String(observations.length + 1)}`;
+      observations.push({ type, name, data, id, opts: opts as Record<string, unknown> | undefined });
+      return id;
     },
     recordDecision: (name, _context, options, chosen, reasoning, _confidence, opts) => {
       decisions.push({ name, chosen, reasoning, options: [...options], opts });
       return "";
     },
-    recordError: (_error, context) => {
-      errors.push({ operation: context.operation, component: context.component });
+    recordError: (_error, context, _recovery, opts) => {
+      errors.push({ operation: context.operation, component: context.component, opts });
       return "";
     },
     storeBlob: (content) => {
@@ -230,6 +239,8 @@ export interface MockCtxOptions {
   readonly safetyConfig?: Partial<SafetyConfig>;
   /** Override the safety layer's autonomy verdict. Defaults to "proceed" (no escalation). */
   readonly consultJudgment?: MockConsultJudgment;
+  /** The dispatch's root observation id — the parent of the pipeline spine. Default null (no root). */
+  readonly rootObservationId?: string;
 }
 
 /** Everything a test needs to drive the runner or agentStep and assert what it emitted. */
@@ -290,6 +301,9 @@ export function createMockPipeline(options: MockCtxOptions = {}): MockPipeline {
     traceId: "trace-test",
     worktreePath: options.worktreePath ?? null,
     thoughtsDir: options.thoughtsDir ?? null,
+    // The dispatch root id (the spine's parent) and the per-run id the runner stamps each sub-phase.
+    rootObservationId: options.rootObservationId,
+    subPhaseRunObsId: undefined,
     ...(options.signal ? { signal: options.signal } : {}),
   } as unknown as Ctx;
 

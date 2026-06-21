@@ -117,7 +117,11 @@ export async function runPipeline(
     }
 
     // ── run ──
-    emitSubPhaseStart(ctx, phaseDef.phase, subPhase.name);
+    // Open this run. emitSubPhaseStart clears the prior run's id first (so the new sub_phase_started parents on
+    // the dispatch root — the spine hangs off root) and returns its own id; stamping that onto ctx makes every
+    // observation the sub-phase emits afterward (the agent_call, verify's gates and verdict, the route:/loop_
+    // decisions, the block) parent on THIS run via traceScope. Set before the spread so it reaches the run's ctx.
+    ctx.subPhaseRunObsId = emitSubPhaseStart(ctx, phaseDef.phase, subPhase.name);
     persistTaskPosition(ctx, phaseDef.phase, subPhase.name, phaseIteration, totalReworks);
     let result: SubPhaseResult;
     try {
@@ -557,6 +561,9 @@ function synthesizeBatchedQuestion(decisions: readonly SurfacedDecision[]): stri
 // these runner emissions and every sub-phase's own observations stitch together on the dashboard.
 
 function emitPhaseEnter(ctx: Ctx, phase: Phase): void {
+  // A bare phase entry is a spine event with no run open — clear any prior run's id so traceScope parents
+  // it on the dispatch root, not the last sub-phase that ran in the phase we just left.
+  ctx.subPhaseRunObsId = undefined;
   ctx.observer.info("Phase entered", { taskId: ctx.task.id, phase });
   ctx.observer.observe(ObservationTypes.phase_transition, "phase_entered", { phase }, traceScope(ctx, phase));
   ctx.sessionMemory.journal.addEntry({
@@ -569,9 +576,17 @@ function emitPhaseEnter(ctx: Ctx, phase: Phase): void {
   });
 }
 
-function emitSubPhaseStart(ctx: Ctx, phase: Phase, subPhase: string): void {
+/**
+ * Open a sub-phase run: record its `sub_phase_started` observation and return that observation's id. The id
+ * is this run's correlation key — the runner stamps it onto {@link Ctx.subPhaseRunObsId} so every later
+ * observation the run emits parents on it. The start clears the prior run's id first so it itself parents on
+ * the dispatch root (no run is open at the moment it records), keeping the tree two levels: root → this
+ * sub_phase_started → the run's observations.
+ */
+function emitSubPhaseStart(ctx: Ctx, phase: Phase, subPhase: string): string {
+  ctx.subPhaseRunObsId = undefined;
   ctx.observer.debug("Sub-phase starting", { taskId: ctx.task.id, phase, subPhase });
-  ctx.observer.observe(
+  return ctx.observer.observe(
     ObservationTypes.phase_transition,
     "sub_phase_started",
     { phase, subPhase },

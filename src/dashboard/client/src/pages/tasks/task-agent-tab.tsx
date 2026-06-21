@@ -7,6 +7,8 @@ import {
   ChevronRight,
   Cog,
   MessageSquare,
+  PauseCircle,
+  Play,
   Radio,
   RotateCcw,
   Terminal,
@@ -29,16 +31,18 @@ import { useSseSubscription } from "../../hooks/use-sse";
 import { useTaskAgentActivity, useTaskAgentTraces } from "../../hooks/use-tasks";
 import { fetchBlob, isBlobRef } from "../../lib/blob";
 import { cn } from "../../lib/cn";
-import { SUB_PHASE_LABELS } from "../../lib/constants";
+import { BLOCK_CATEGORY_LABELS, SUB_PHASE_LABELS } from "../../lib/constants";
 import { modelsFromCostEvents } from "../../lib/cost-events";
 import { formatDuration, formatTimestamp, formatTokens } from "../../lib/formatters";
 import {
   type AgentActivityShape,
   type AgentCallShape,
   type EnrichedStep,
+  type StepBlock,
   buildStepFeed,
   readAgentActivity,
   readAgentCall,
+  readBlock,
   readGate,
   readVerdict,
 } from "../../lib/observation-shapes";
@@ -58,11 +62,14 @@ interface TaskAgentTabProps {
  * step's `route:`/`loop_*` routing decision — so an observer never sees an unexplained gap (e.g. two `implement`
  * rows with the `verify` that looped them back hidden between).
  *
- * The rows are correlated client-side by {@link buildStepFeed}: runs come from `phase_transition` observations;
- * each run claims its `agent_call`/`safety_verdict`/`tool_execution`/`decision_point` enrichments by phase,
- * trace, and a time window (there is no parent link to lean on — see that function's note). Each `agent_call`
- * still carries its cost/tokens/blob refs in `output` (never `metadata`); the model id is not on the span, so
- * it rides the task's `cost.incurred` events and shows as header context, not a per-step label.
+ * The rows are correlated client-side by {@link buildStepFeed}: runs come from `phase_transition` observations,
+ * and each run LOOKS UP its `agent_call`/`safety_verdict`/`tool_execution`/`decision_point` enrichments by the
+ * run's id — every observation a sub-phase emits parents on that run's `sub_phase_started` id (the Core
+ * correlation fix), so there is no phase/trace/time-window guessing. A step that ended in a block (e.g. an
+ * autonomy escalation) renders a distinct {@link BlockMarker} beneath it — the explained block → resume that
+ * removes the "two implements with nothing between" gap. Each `agent_call` still carries its cost/tokens/blob
+ * refs in `output` (never `metadata`); the model id is not on the span, so it rides the task's `cost.incurred`
+ * events and shows as header context, not a per-step label.
  */
 export function TaskAgentTab({ taskId, taskActive }: TaskAgentTabProps): React.JSX.Element {
   const { steps, isLoading } = useStepFeed(taskId, taskActive);
@@ -81,7 +88,10 @@ export function TaskAgentTab({ taskId, taskActive }: TaskAgentTabProps): React.J
       <StepFeedHeader steps={steps} models={modelsFromCostEvents(costEvents ?? [])} />
       <div className="space-y-2">
         {steps.map((step, index) => (
-          <StepFeedRow key={stepKey(step, index)} step={step} taskId={taskId} taskActive={taskActive} />
+          <div key={stepKey(step, index)} className="space-y-2">
+            <StepFeedRow step={step} taskId={taskId} taskActive={taskActive} />
+            {step.block && <BlockMarker block={step.block} hasResume={index < steps.length - 1} />}
+          </div>
         ))}
       </div>
     </div>
@@ -118,10 +128,26 @@ function useStepFeed(taskId: string, taskActive: boolean): { steps: EnrichedStep
     limit: 1000,
     active: taskActive,
   });
+  // state_transition rows carry the `task_blocked` markers, so a step that ended in a block (e.g. an autonomy
+  // escalation) renders an explained block → resume between it and the next step — no unexplained gap.
+  const { data: stateTransitions } = useObservations({
+    type: "state_transition",
+    task_id: taskId,
+    limit: 1000,
+    active: taskActive,
+  });
 
   const steps = useMemo(
-    () => buildStepFeed(phaseTransitions ?? [], agentTraces ?? [], verdicts ?? [], toolExecs ?? [], decisions ?? []),
-    [phaseTransitions, agentTraces, verdicts, toolExecs, decisions],
+    () =>
+      buildStepFeed(
+        phaseTransitions ?? [],
+        agentTraces ?? [],
+        verdicts ?? [],
+        toolExecs ?? [],
+        decisions ?? [],
+        stateTransitions ?? [],
+      ),
+    [phaseTransitions, agentTraces, verdicts, toolExecs, decisions, stateTransitions],
   );
   return { steps, isLoading: transitionsLoading || tracesLoading };
 }
@@ -388,6 +414,64 @@ function StepDecision({ decision }: { decision: Observation }): React.JSX.Elemen
     );
   }
   return <DecisionCard observation={decision} />;
+}
+
+/**
+ * The block → resume marker between two steps. When a step ended in a block — most tellingly an autonomy
+ * escalation that paused the task awaiting the owner's decision — this is what turns the "implement, implement"
+ * gap into an explained boundary: the run blocked, someone unblocked it, and the next step is the resume. It
+ * drills into the reason/category (from the `task_blocked` transition) and the question asked (from the
+ * `autonomy_policy` decision), bringing the Steps tab to parity with the Timeline. `hasResume` is false for a
+ * block that is still the task's last step (waiting now), so the marker says "waiting" instead of "resumed".
+ */
+function BlockMarker({ block, hasResume }: { block: StepBlock<Observation>; hasResume: boolean }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const reason = readBlock(block.transition);
+  const category = reason?.category ?? "";
+  // `||` not `??` for the final fallback: an empty-string category is falsy but not nullish, so `??` would
+  // keep "" and render an empty badge — `||` falls through to "Blocked".
+  const label = BLOCK_CATEGORY_LABELS[category as keyof typeof BLOCK_CATEGORY_LABELS] || category || "Blocked";
+  return (
+    <div className="mx-3 rounded-md border border-amber-500/30 bg-amber-500/5">
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleTrigger asChild={true}>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-amber-300 transition-colors hover:bg-amber-500/10"
+          >
+            <PauseCircle size={14} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">Blocked</span>
+                <Badge variant="outline" className="border-amber-500/40 text-amber-300 text-[10px]">
+                  {label}
+                </Badge>
+                {hasResume ? (
+                  <span className="flex items-center gap-1 text-[11px] text-emerald-400">
+                    <Play size={10} />
+                    resumed below
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-[11px] text-amber-400/80">
+                    <ArrowRight size={10} className="animate-pulse" />
+                    waiting
+                  </span>
+                )}
+              </div>
+              {reason?.needed && <p className="mt-0.5 truncate text-xs text-amber-200/70">{reason.needed}</p>}
+            </div>
+            <ChevronDown size={14} className={cn("shrink-0 transition-transform", open && "rotate-180")} />
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="space-y-2.5 border-t border-amber-500/20 px-3 py-2.5">
+            {reason?.needed && <p className="text-sm text-foreground/80">{reason.needed}</p>}
+            {block.policy && <DecisionCard observation={block.policy} />}
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
 }
 
 function AgentTraceRow({

@@ -10,6 +10,7 @@ import {
   buildSubPhaseRuns,
   readAgentActivity,
   readAgentCall,
+  readBlock,
   readDecision,
   readGate,
   readPhaseTransition,
@@ -416,12 +417,14 @@ describe("buildSubPhaseRuns", () => {
 
 // ── step feed (buildStepRuns / buildStepFeed / readGate) ──────────────────────────
 //
-// The feed reconstructs every sub-phase run across the whole task (LLM and non-LLM) and correlates each run's
-// enriching observations to it by (phase, trace_id) + the half-open time window [run.start, nextRun.start).
-// The canonical target is the execution loop implement → verify → implement → verify: the verify steps must be
-// visible between the implements, each owning ONLY its own gates/verdict/route — that is the bug this fixes.
+// The feed reconstructs every sub-phase run across the whole task (LLM and non-LLM) and LOOKS UP each run's
+// enriching observations by the run's id: every observation a sub-phase emits carries that run's
+// `sub_phase_started` id as its `parent_observation_id` (the Core correlation fix). There is no time-window
+// guessing and no same-instant tie-break — ownership is by parentage. The canonical target is the execution
+// loop implement → verify → implement → verify: the verify steps must be visible between the implements, each
+// owning ONLY the gates/verdict/route that parent on its own run.
 
-/** A fixed-width, lexicographically-orderable timestamp — string `<`/`>=` then matches the real store order. */
+/** A fixed-width, lexicographically-orderable timestamp — keeps fixtures readable; ownership is by id, not time. */
 function at(tick: number): string {
   return tick.toString().padStart(4, "0");
 }
@@ -429,9 +432,13 @@ function at(tick: number): string {
 function makeStepObs(
   partial: Partial<StepObservationLike> & Pick<StepObservationLike, "id" | "type" | "name" | "start_time">,
 ): StepObservationLike {
-  return { phase: "execution", trace_id: "t1", input: null, output: null, ...partial };
+  return { parent_observation_id: null, phase: "execution", trace_id: "t1", input: null, output: null, ...partial };
 }
 
+/**
+ * A `phase_transition` row. A `sub_phase_started` gets a deterministic id of `run:<subPhase>:<tick>` — that id
+ * is the run's correlation key, so enrichments set `parent_observation_id` to it via {@link runId}.
+ */
 function transition(
   name: "sub_phase_started" | "sub_phase_result",
   subPhase: string,
@@ -440,13 +447,18 @@ function transition(
   over: Partial<StepObservationLike> = {},
 ): StepObservationLike {
   return makeStepObs({
-    id: `${name}-${subPhase}-${String(tick)}`,
+    id: name === "sub_phase_started" ? runId(subPhase, tick) : `${name}-${subPhase}-${String(tick)}`,
     type: "phase_transition",
     name,
     start_time: at(tick),
     input: { phase: over.phase ?? "execution", subPhase, ...extra },
     ...over,
   });
+}
+
+/** The id a `sub_phase_started` at `(subPhase, tick)` carries — the parent every enrichment of that run sets. */
+function runId(subPhase: string, tick: number): string {
+  return `run:${subPhase}:${String(tick)}`;
 }
 
 describe("buildStepRuns", () => {
@@ -466,6 +478,7 @@ describe("buildStepRuns", () => {
 
     expect(buildStepRuns(transitions)).toEqual([
       {
+        id: runId("implement", 1),
         phase: "execution",
         subPhase: "implement",
         status: "ok",
@@ -476,6 +489,7 @@ describe("buildStepRuns", () => {
         data: null,
       },
       {
+        id: runId("self-review", 3),
         phase: "review",
         subPhase: "self-review",
         status: "ok",
@@ -488,11 +502,12 @@ describe("buildStepRuns", () => {
     ]);
   });
 
-  it("leaves a started-without-result run pending (the step running now)", () => {
+  it("leaves a started-without-result run pending (the step running now), carrying its run id", () => {
     const runs = buildStepRuns([transition("sub_phase_started", "verify", 1)]);
     expect(runs).toHaveLength(1);
     expect(runs[0]?.status).toBe("pending");
     expect(runs[0]?.startTime).toBe("0001");
+    expect(runs[0]?.id).toBe(runId("verify", 1));
   });
 
   it("marks an error outcome as error", () => {
@@ -503,10 +518,11 @@ describe("buildStepRuns", () => {
     expect(runs[0]?.status).toBe("error");
   });
 
-  it("emits a result with no matching start as its own resolved run rather than dropping it", () => {
+  it("emits a result with no matching start as its own resolved run (empty id — it owns no enrichments)", () => {
     const runs = buildStepRuns([transition("sub_phase_result", "push", 1, { outcome: "ok", summary: "Pushed." })]);
     expect(runs).toEqual([
       {
+        id: "",
         phase: "execution",
         subPhase: "push",
         status: "ok",
@@ -521,7 +537,15 @@ describe("buildStepRuns", () => {
 });
 
 describe("buildStepFeed", () => {
-  // The canonical execution loop: implement → verify(repeat) → implement → verify(advance).
+  // The canonical execution loop: implement → verify(repeat) → implement → verify(advance). Every enrichment
+  // sets `parent_observation_id` to its owning run's id (runId(subPhase, startTick)) — that parentage is the
+  // only thing the feed groups on. Timestamps are incidental.
+  function enrichment(
+    over: Partial<StepObservationLike> & Pick<StepObservationLike, "id" | "type" | "name">,
+    parent: string,
+  ): StepObservationLike {
+    return makeStepObs({ start_time: at(1), parent_observation_id: parent, ...over });
+  }
   function loopTransitions(): StepObservationLike[] {
     return [
       transition("sub_phase_started", "implement", 1),
@@ -534,86 +558,65 @@ describe("buildStepFeed", () => {
       transition("sub_phase_result", "verify", 13, { outcome: "ok", summary: "Gates passed.", data: { passed: true } }),
     ];
   }
+  // ac1/ac2 parent on the two implement runs; the verdicts and gates on the two verify runs.
   const agentCalls = [
-    makeStepObs({ id: "ac1", type: "agent_call", name: "implement", start_time: at(1), input: { step: "implement" } }),
-    makeStepObs({ id: "ac2", type: "agent_call", name: "implement", start_time: at(8), input: { step: "implement" } }),
+    enrichment(
+      { id: "ac1", type: "agent_call", name: "implement", input: { step: "implement" } },
+      runId("implement", 1),
+    ),
+    enrichment(
+      { id: "ac2", type: "agent_call", name: "implement", input: { step: "implement" } },
+      runId("implement", 8),
+    ),
   ];
   const verdicts = [
-    makeStepObs({
-      id: "v1",
-      type: "safety_verdict",
-      name: "verify_gates",
-      start_time: at(6),
-      input: { passed: false },
-    }),
-    makeStepObs({
-      id: "v2",
-      type: "safety_verdict",
-      name: "verify_gates",
-      start_time: at(12),
-      input: { passed: true },
-    }),
+    enrichment(
+      { id: "v1", type: "safety_verdict", name: "verify_gates", input: { passed: false } },
+      runId("verify", 4),
+    ),
+    enrichment(
+      { id: "v2", type: "safety_verdict", name: "verify_gates", input: { passed: true } },
+      runId("verify", 10),
+    ),
   ];
   const tools = [
-    makeStepObs({
-      id: "lint1",
-      type: "tool_execution",
-      name: "gate:lint",
-      start_time: at(5),
-      output: { passed: false },
-    }),
-    makeStepObs({
-      id: "test1",
-      type: "tool_execution",
-      name: "gate:test",
-      start_time: at(5),
-      output: { passed: true },
-    }),
-    makeStepObs({
-      id: "lint2",
-      type: "tool_execution",
-      name: "gate:lint",
-      start_time: at(11),
-      output: { passed: true },
-    }),
-    makeStepObs({
-      id: "test2",
-      type: "tool_execution",
-      name: "gate:test",
-      start_time: at(11),
-      output: { passed: true },
-    }),
+    enrichment(
+      { id: "lint1", type: "tool_execution", name: "gate:lint", output: { passed: false } },
+      runId("verify", 4),
+    ),
+    enrichment(
+      { id: "test1", type: "tool_execution", name: "gate:test", output: { passed: true } },
+      runId("verify", 4),
+    ),
+    enrichment(
+      { id: "lint2", type: "tool_execution", name: "gate:lint", output: { passed: true } },
+      runId("verify", 10),
+    ),
+    enrichment(
+      { id: "test2", type: "tool_execution", name: "gate:test", output: { passed: true } },
+      runId("verify", 10),
+    ),
   ];
+  // Each closing route:/loop_ decision parents on the run that MADE it — exactly what the same-millisecond
+  // tie-break used to chase by timing. route:implement → the implement run; route:verify/loop_repeat → verify.
   const decisions = [
-    makeStepObs({
-      id: "ri1",
-      type: "decision_point",
-      name: "route:implement",
-      start_time: at(3),
-      input: { chosen: "advance" },
-    }),
-    makeStepObs({
-      id: "rv1",
-      type: "decision_point",
-      name: "route:verify",
-      start_time: at(7),
-      input: { chosen: "repeat" },
-    }),
-    makeStepObs({ id: "lr1", type: "decision_point", name: "loop_repeat", start_time: at(7), input: { count: 1 } }),
-    makeStepObs({
-      id: "ri2",
-      type: "decision_point",
-      name: "route:implement",
-      start_time: at(9),
-      input: { chosen: "advance" },
-    }),
-    makeStepObs({
-      id: "rv2",
-      type: "decision_point",
-      name: "route:verify",
-      start_time: at(13),
-      input: { chosen: "advance" },
-    }),
+    enrichment(
+      { id: "ri1", type: "decision_point", name: "route:implement", input: { chosen: "advance" } },
+      runId("implement", 1),
+    ),
+    enrichment(
+      { id: "rv1", type: "decision_point", name: "route:verify", input: { chosen: "repeat" } },
+      runId("verify", 4),
+    ),
+    enrichment({ id: "lr1", type: "decision_point", name: "loop_repeat", input: { count: 1 } }, runId("verify", 4)),
+    enrichment(
+      { id: "ri2", type: "decision_point", name: "route:implement", input: { chosen: "advance" } },
+      runId("implement", 8),
+    ),
+    enrichment(
+      { id: "rv2", type: "decision_point", name: "route:verify", input: { chosen: "advance" } },
+      runId("verify", 10),
+    ),
   ];
 
   it("emits the verify steps between the implements, in true executed order", () => {
@@ -622,7 +625,7 @@ describe("buildStepFeed", () => {
     expect(feed.map((step) => step.kind)).toEqual(["llm", "nonllm", "llm", "nonllm"]);
   });
 
-  it("attaches each implement's own agent_call and nothing it does not own", () => {
+  it("attaches each implement's own agent_call by parentage and nothing it does not own", () => {
     const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
     expect(feed[0]?.agentCall?.id).toBe("ac1");
     expect(feed[2]?.agentCall?.id).toBe("ac2");
@@ -630,7 +633,7 @@ describe("buildStepFeed", () => {
     expect(feed[0]?.tools).toEqual([]);
   });
 
-  it("gives each verify only its own gates and verdict", () => {
+  it("gives each verify only the gates and verdict that parent on its run", () => {
     const feed = buildStepFeed(loopTransitions(), agentCalls, verdicts, tools, decisions);
     expect(feed[1]?.agentCall).toBeNull();
     expect(feed[1]?.verdict?.id).toBe("v1");
@@ -645,114 +648,133 @@ describe("buildStepFeed", () => {
     const secondRoute = feed[3]?.decisions.find((d) => d.name === "route:verify");
     expect(firstRoute?.input?.["chosen"]).toBe("repeat");
     expect(secondRoute?.input?.["chosen"]).toBe("advance");
-    // The loop counter sits under the verify that drove the loop, not the next step.
+    // The loop counter sits under the verify that drove the loop (it parents on that run), not the next step.
     expect(feed[1]?.decisions.some((d) => d.name === "loop_repeat")).toBe(true);
     expect(feed[3]?.decisions.some((d) => d.name === "loop_repeat")).toBe(false);
   });
 
-  it("attaches an agent_call sharing its sub_phase_started's instant to its own run, not the previous one", () => {
-    const transitions = [
-      transition("sub_phase_started", "verify", 1),
-      transition("sub_phase_result", "verify", 2, { outcome: "ok", summary: "ok", data: { passed: true } }),
-      transition("sub_phase_started", "implement", 3),
-    ];
-    // The agent_call opens in the same millisecond the runner recorded the sub_phase_started.
-    const sameInstant = [
-      makeStepObs({ id: "ac", type: "agent_call", name: "implement", start_time: at(3), input: { step: "implement" } }),
-    ];
-    const feed = buildStepFeed(transitions, sameInstant, [], [], []);
-    expect(feed[0]?.subPhase).toBe("verify");
-    expect(feed[0]?.agentCall).toBeNull(); // the inclusive lower bound keeps it OUT of the prior verify run
-    expect(feed[1]?.subPhase).toBe("implement");
-    expect(feed[1]?.agentCall?.id).toBe("ac"); // and IN its own implement run
-  });
-
-  it("attributes a route:<prev> sharing the next run's start instant to the prev step, not the next", () => {
-    // The real runner emits route:implement in the SAME millisecond the next sub-phase (verify) starts — the
-    // closing decision and the next sub_phase_started share an instant. The window's inclusive lower bound would
-    // hand it to verify; by name it belongs to implement, and verify must show only its own route.
+  it("groups a closing route:/loop_ by parentage even when it shares the next run's start instant", () => {
+    // The real runner emits route:implement in the SAME millisecond the next sub-phase (verify) starts. With id
+    // grouping there is no tie-break to tune: each decision parents on the run that made it, so it lands there
+    // regardless of timestamps. (This replaces the old same-instant route and loop tie-break tests.)
     const transitions = [
       transition("sub_phase_started", "implement", 1),
       transition("sub_phase_result", "implement", 3, { outcome: "ok", summary: "Done." }),
       transition("sub_phase_started", "verify", 3),
-      transition("sub_phase_result", "verify", 5, { outcome: "ok", summary: "ok", data: { passed: true } }),
-    ];
-    const agentCalls = [
-      makeStepObs({ id: "ac", type: "agent_call", name: "implement", start_time: at(1), input: { step: "implement" } }),
-    ];
-    const decisions = [
-      makeStepObs({
-        id: "ri",
-        type: "decision_point",
-        name: "route:implement",
-        start_time: at(3),
-        input: { chosen: "advance" },
-      }),
-      makeStepObs({
-        id: "rv",
-        type: "decision_point",
-        name: "route:verify",
-        start_time: at(5),
-        input: { chosen: "advance" },
-      }),
-    ];
-    const feed = buildStepFeed(transitions, agentCalls, [], [], decisions);
-    expect(feed.map((step) => step.subPhase)).toEqual(["implement", "verify"]);
-    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["ri"]); // route:implement stays with implement…
-    expect(feed[1]?.decisions.map((d) => d.id)).toEqual(["rv"]); // …and never leaks onto verify's start instant
-  });
-
-  it("keeps a loop_* decision on the run that closed, not the next run opening on the same instant", () => {
-    // verify fails and loops back: loop_repeat fires as the next implement starts, sharing its instant. The loop
-    // belongs to the verify that drove it, never the re-entered implement.
-    const transitions = [
-      transition("sub_phase_started", "verify", 1),
-      transition("sub_phase_result", "verify", 3, { outcome: "ok", summary: "Gates failed.", data: { passed: false } }),
+      transition("sub_phase_result", "verify", 3, { outcome: "ok", summary: "ok", data: { passed: false } }),
       transition("sub_phase_started", "implement", 3),
     ];
-    const decisions = [
-      makeStepObs({ id: "lr", type: "decision_point", name: "loop_repeat", start_time: at(3), input: { count: 1 } }),
+    // Both closing decisions and an opening agent_call all share the instant at(3) — yet parentage is exact.
+    const calls = [
+      enrichment(
+        { id: "ac", type: "agent_call", name: "implement", input: { step: "implement" } },
+        runId("implement", 1),
+      ),
     ];
-    const feed = buildStepFeed(transitions, [], [], [], decisions);
-    expect(feed[0]?.subPhase).toBe("verify");
-    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["lr"]); // the loop sits under verify…
-    expect(feed[1]?.decisions).toEqual([]); // …not the implement it looped back to
+    const sameInstantDecisions = [
+      enrichment(
+        { id: "ri", type: "decision_point", name: "route:implement", input: { chosen: "advance" } },
+        runId("implement", 1),
+      ),
+      enrichment({ id: "lr", type: "decision_point", name: "loop_repeat", input: { count: 1 } }, runId("verify", 3)),
+    ];
+    const feed = buildStepFeed(transitions, calls, [], [], sameInstantDecisions);
+    expect(feed.map((step) => step.subPhase)).toEqual(["implement", "verify", "implement"]);
+    expect(feed[0]?.agentCall?.id).toBe("ac"); // the agent_call lands on its own implement run
+    expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["ri"]); // route:implement stays with implement
+    expect(feed[1]?.decisions.map((d) => d.id)).toEqual(["lr"]); // loop_repeat stays with the verify that drove it
+    expect(feed[2]?.decisions).toEqual([]); // the re-entered implement claims neither
   });
 
-  it("ignores skip: decisions and observations from a different trace", () => {
+  it("ignores skip: decisions and any observation that parents on a different run", () => {
     const transitions = [
       transition("sub_phase_started", "verify", 1),
       transition("sub_phase_result", "verify", 5, { outcome: "ok", summary: "ok", data: { passed: true } }),
     ];
-    const otherTrace = [
-      makeStepObs({
-        id: "v-other",
-        type: "safety_verdict",
-        name: "verify_gates",
-        start_time: at(2),
-        input: { passed: true },
-        trace_id: "t2",
-      }),
+    const otherRun = [
+      enrichment(
+        { id: "v-other", type: "safety_verdict", name: "verify_gates", input: { passed: true } },
+        "run:elsewhere:99",
+      ),
     ];
     const mixedDecisions = [
-      makeStepObs({
-        id: "skip",
-        type: "decision_point",
-        name: "skip:research",
-        start_time: at(2),
-        input: { chosen: "skip" },
-      }),
-      makeStepObs({
-        id: "route",
-        type: "decision_point",
-        name: "route:verify",
-        start_time: at(2),
-        input: { chosen: "advance" },
-      }),
+      enrichment(
+        { id: "skip", type: "decision_point", name: "skip:research", input: { chosen: "skip" } },
+        runId("verify", 1),
+      ),
+      enrichment(
+        { id: "route", type: "decision_point", name: "route:verify", input: { chosen: "advance" } },
+        runId("verify", 1),
+      ),
     ];
-    const feed = buildStepFeed(transitions, [], otherTrace, [], mixedDecisions);
-    expect(feed[0]?.verdict).toBeNull(); // the other-trace verdict does not attach
+    const feed = buildStepFeed(transitions, [], otherRun, [], mixedDecisions);
+    expect(feed[0]?.verdict).toBeNull(); // the verdict parenting on another run does not attach
     expect(feed[0]?.decisions.map((d) => d.id)).toEqual(["route"]); // skip: is dropped, route: kept
+  });
+
+  it("attaches nothing to a result-only run (empty id owns no enrichments)", () => {
+    // A result with no start in the window has an empty id; an enrichment parenting on a real run must not bleed
+    // onto it (an empty parent_observation_id would otherwise spuriously match an empty run id).
+    const transitions = [transition("sub_phase_result", "push", 1, { outcome: "ok", summary: "Pushed." })];
+    const strays = [enrichment({ id: "t", type: "tool_execution", name: "git_push", output: {} }, "")];
+    const feed = buildStepFeed(transitions, [], [], strays, []);
+    expect(feed[0]?.id).toBe("");
+    expect(feed[0]?.tools).toEqual([]);
+  });
+
+  // ── block → resume (Part 3) ────────────────────────────────────────────────────
+  // An autonomy block leaves the run with a `task_blocked` state_transition and (for an autonomy escalation) an
+  // `autonomy_policy` decision, both parenting on the run's id. The feed surfaces them as the step's `block` so
+  // the tab renders an explained marker between the blocked step and the resume step — the exact "implement,
+  // implement with nothing between" gap issue #27 set out to eliminate.
+  describe("block / resume", () => {
+    // implement (blocks on autonomy) → resume → implement again.
+    const transitions = [
+      transition("sub_phase_started", "implement", 1),
+      transition("sub_phase_result", "implement", 2, { outcome: "ok", summary: "Touched 6 files." }),
+      transition("sub_phase_started", "implement", 5),
+      transition("sub_phase_result", "implement", 6, { outcome: "ok", summary: "Done." }),
+    ];
+    const stateTransitions = [
+      enrichment(
+        {
+          id: "blk",
+          type: "state_transition",
+          name: "task_blocked",
+          input: { category: "awaiting_human_decision", sub_phase: "implement", needed: "Confirm the 6-file scope?" },
+        },
+        runId("implement", 1),
+      ),
+    ];
+    const policyDecision = enrichment(
+      {
+        id: "pol",
+        type: "decision_point",
+        name: "autonomy_policy",
+        input: { chosen: "ask_human", reasoning: "scope_expansion over threshold (6 > 5)" },
+      },
+      runId("implement", 1),
+    );
+
+    it("attaches the block (transition + autonomy_policy) to the run that blocked, by parentage", () => {
+      const feed = buildStepFeed(transitions, [], [], [], [policyDecision], stateTransitions);
+      expect(feed[0]?.block?.transition.id).toBe("blk");
+      expect(feed[0]?.block?.policy?.id).toBe("pol");
+      // The resumed implement did not block, so it carries no marker.
+      expect(feed[1]?.block).toBeNull();
+    });
+
+    it("leaves block null for a run that did not block", () => {
+      const feed = buildStepFeed(transitions, [], [], [], [], []);
+      expect(feed[0]?.block).toBeNull();
+      expect(feed[1]?.block).toBeNull();
+    });
+
+    it("surfaces the block without an autonomy_policy decision (a non-autonomy block)", () => {
+      const feed = buildStepFeed(transitions, [], [], [], [], stateTransitions);
+      expect(feed[0]?.block?.transition.id).toBe("blk");
+      expect(feed[0]?.block?.policy).toBeNull();
+    });
   });
 });
 
@@ -770,5 +792,33 @@ describe("readGate", () => {
   it("returns null for a non-gate tool_execution and for a non-tool observation", () => {
     expect(readGate({ type: "tool_execution", name: "git_push", output: { pushed: true } })).toBeNull();
     expect(readGate({ type: "safety_verdict", name: "gate:lint", output: { passed: true } })).toBeNull();
+  });
+});
+
+describe("readBlock", () => {
+  it("narrows a task_blocked state_transition into its category, sub-phase, and needed step", () => {
+    const obs = {
+      type: "state_transition",
+      name: "task_blocked",
+      input: { category: "awaiting_human_decision", sub_phase: "implement", needed: "Confirm the 6-file scope?" },
+    };
+    expect(readBlock(obs)).toEqual({
+      category: "awaiting_human_decision",
+      subPhase: "implement",
+      needed: "Confirm the 6-file scope?",
+    });
+  });
+
+  it("returns empty strings for absent fields rather than throwing", () => {
+    expect(readBlock({ type: "state_transition", name: "task_blocked", input: null })).toEqual({
+      category: "",
+      subPhase: "",
+      needed: "",
+    });
+  });
+
+  it("returns null for a non-block state_transition and for a non-transition observation", () => {
+    expect(readBlock({ type: "state_transition", name: "cost_window_rolled_over", input: {} })).toBeNull();
+    expect(readBlock({ type: "decision_point", name: "task_blocked", input: {} })).toBeNull();
   });
 });

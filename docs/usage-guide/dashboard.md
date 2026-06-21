@@ -50,7 +50,7 @@ A task's detail page opens on its title, state, and current position in the pipe
 | **Timeline** | One chronological feed of everything — state changes, journal entries, agent calls, decisions, and gate verdicts — each rendered in its own legible form rather than raw JSON. |
 | **Phases** | The per-phase breakdown: each pipeline phase with its sub-step sequence, the routing and skip decisions taken inside it, and its cost and duration. |
 | **Decisions** | Every fork the engine recorded — the context, every option it weighed with the chosen one highlighted, the reasoning, and its confidence. The richest "why did it do that" view. |
-| **Agent Calls** | Each call out to the coding agent, with its cost and tokens. Expand a call to watch the agent's full conversation — see [Watching the agent work](#watching-the-agent-work). |
+| **Steps** | The step feed: one row per sub-phase the engine actually ran, in true executed order (e.g. `implement → verify → implement`), not just the agent calls. An agent step shows its cost and tokens and expands to the full conversation ([Watching the agent work](#watching-the-agent-work)); a non-agent step (verify, push, create-pr) expands to what it did and produced — gates, verdict, the routing decision. Where a step paused the task — most tellingly an autonomy decision awaiting your approval — a **block → resume** marker sits between it and the next step, drilling into the question asked and the reason, so there is never an unexplained gap. |
 | **Tools** | The tool-execution log: every command and gate the agent ran, with status, duration, and expandable input/output. |
 
 ### Activity
@@ -67,7 +67,7 @@ One consolidated log of everything the engine flagged as an error or a warning, 
 
 ## Watching the Agent Work
 
-The flagship view lives in a task's **Agent Calls** tab. Expand any call and you see the agent's whole conversation — assistant messages, its thinking, the tool calls it makes and the results that come back — rendered as a chat-style feed.
+The flagship view lives in a task's **Steps** tab. Expand an agent step and you see the agent's whole conversation — assistant messages, its thinking, the tool calls it makes and the results that come back — rendered as a chat-style feed.
 
 - While the call is **live**, the conversation streams in as the agent works, with a "streaming" pulse and the feed following the newest line. Scroll up to read back and it pins in place, with a "Jump to latest" affordance to return.
 - Once the call is **done**, the same conversation is fully re-watchable — nothing is lost when the run ends.

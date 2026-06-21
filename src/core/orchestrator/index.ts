@@ -10,7 +10,11 @@ import {
   GitPrMergedPayloadSchema,
 } from "../../schemas/events.js";
 import type { PrEventType } from "../../schemas/git-hosting-event-types.js";
-import { NotificationKinds } from "../../schemas/notifications.js";
+import {
+  type NotificationCorrelation,
+  NotificationKinds,
+  correlationFromTraceScope,
+} from "../../schemas/notifications.js";
 import { ObservationTypes } from "../../schemas/observer.js";
 import { type SessionEndReason, SessionEndReasons } from "../../schemas/session-memory.js";
 import {
@@ -28,6 +32,7 @@ import type { EventDeclaration } from "../event-bus/topology.js";
 import type { ObservationSpan } from "../observer/index.js";
 import { emitAgentCost } from "./agent-cost.js";
 import { deliverBlockedQuestion } from "./outreach.js";
+import { traceScope } from "./pipeline/observability.js";
 import { PIPELINE } from "./pipeline/pipeline.js";
 import { entryFor, reentryCarry } from "./pipeline/pr-events.js";
 import { type Cursor, type ResumeState, type RunnerOutcome, runPipeline } from "./pipeline/runner.js";
@@ -284,7 +289,10 @@ export class Orchestrator {
       { title: dispatch.task.title, isResume },
       pickupScope,
     );
-    this.notifyPickup(taskId, dispatch.task.title, isResume);
+    // The pickup notification is emitted inside this dispatch — carry the same trace context as the
+    // task_picked_up observation (no phase yet; the pipeline has not entered one) so its delivery
+    // observation anchors to the task's trace rather than orphaning with an empty trace.
+    this.notifyPickup(taskId, dispatch.task.title, isResume, correlationFromTraceScope(pickupScope));
 
     const ctx = this.buildContext(dispatch, tracedObserver, sessionId, traceId, rootSpan.id);
     const resume = this.resolveDispatchStart(dispatch, tracedObserver);
@@ -418,17 +426,19 @@ export class Orchestrator {
   }
 
   /** Tell the owner work has started — or resumed — on their channels and on the source ticket. */
-  private notifyPickup(taskId: string, title: string, isResume: boolean): void {
+  private notifyPickup(taskId: string, title: string, isResume: boolean, correlation: NotificationCorrelation): void {
     const messages = pickupMessages(title, isResume);
     this.ctx.notifications.notify({
       kind: NotificationKinds.milestone,
       taskId,
       message: messages.milestone,
+      correlation,
     });
     this.ctx.notifications.notify({
       kind: NotificationKinds.ticket_comment,
       taskId,
       message: messages.ticket,
+      correlation,
     });
   }
 
@@ -453,6 +463,9 @@ export class Orchestrator {
               subPhase: detail.sub_phase,
               outreachDir: ctx.worktreePath && ctx.thoughtsDir ? outreachDirForSubPhase(ctx, detail.sub_phase) : null,
               needed: detail.needed,
+              // The question is emitted inside this dispatch — carry its trace context so the delivery
+              // observation lands on the task's timeline instead of orphaned with an empty trace/phase.
+              correlation: correlationFromTraceScope(traceScope(ctx)),
             },
           )
         : detail.needed;

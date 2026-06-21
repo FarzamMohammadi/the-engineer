@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SpanOptions } from "./observer.js";
 
 // ── Notification Kinds ──────────────────────────────────────────────────────
 
@@ -24,10 +25,46 @@ export type NotificationKind = z.infer<typeof NotificationKindSchema>;
 /** Constant enum values for NotificationKind. Use instead of raw strings. */
 export const NotificationKinds = NotificationKindSchema.enum;
 
+// ── Trace Correlation ───────────────────────────────────────────────────────
+
+/**
+ * The pipeline trace context a notification was emitted within, so the router can place its delivery
+ * observation on the task's timeline instead of orphaning it. Only the call sites that run inside a live
+ * dispatch carry one (the blocked-task question, the pickup/PR-created/merged milestones) — they copy it
+ * from the pipeline's {@link import("../core/orchestrator/pipeline/observability.js").traceScope}. The
+ * daemon's background services (completion, reminders, cost limits, the reaper) fire outside any dispatch,
+ * so they carry no correlation and their observations are task-scoped only — never a fabricated phase.
+ */
+export interface NotificationCorrelation {
+  readonly trace_id?: string;
+  readonly session_id?: string;
+  readonly phase?: string;
+  readonly parent_observation_id?: string;
+}
+
+/**
+ * Derive a notification's correlation from the pipeline's trace scope, so the in-dispatch call sites reuse
+ * the single trace-scope derivation rather than rebuilding the fields. The `task_id` is dropped — the
+ * notification already carries its own — leaving only the trace context that places its observation on the
+ * task's timeline.
+ */
+export function correlationFromTraceScope(scope: SpanOptions): NotificationCorrelation {
+  // Omit absent fields rather than setting them to `undefined` — `exactOptionalPropertyTypes` distinguishes
+  // "key missing" from "key present, value undefined", and the former is the honest shape for a correlation
+  // that simply has no phase yet (the pickup, before any phase is entered).
+  return {
+    ...(scope.trace_id !== undefined ? { trace_id: scope.trace_id } : {}),
+    ...(scope.session_id !== undefined ? { session_id: scope.session_id } : {}),
+    ...(scope.phase !== undefined ? { phase: scope.phase } : {}),
+    ...(scope.parent_observation_id !== undefined ? { parent_observation_id: scope.parent_observation_id } : {}),
+  };
+}
+
 // ── Notification Discriminated Union ────────────────────────────────────────
 
 /**
- * Typed notification payload. Each kind carries exactly the fields it needs.
+ * Typed notification payload. Each kind carries exactly the fields it needs; every kind may additionally
+ * carry the {@link NotificationCorrelation} of the dispatch it was emitted within.
  *
  * This union is a purely in-process message contract — built and consumed inside the daemon, never parsed
  * from YAML, an API, or a plugin return — so it never crosses a parse boundary. A hand-typed (compiler
@@ -35,7 +72,9 @@ export const NotificationKinds = NotificationKindSchema.enum;
  * edges, and there is no edge for these. `NotificationKindSchema` above stays a Zod enum because the kind
  * string does reach durable storage and config-facing surfaces.
  */
-export type Notification =
+export type Notification = NotificationPayload & { readonly correlation?: NotificationCorrelation };
+
+type NotificationPayload =
   // Daemon lifecycle — resolved from taskId (title looked up internally)
   | { kind: "completion"; taskId: string }
   | { kind: "review_pending"; taskId: string }

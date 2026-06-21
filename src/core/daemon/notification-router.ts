@@ -7,6 +7,7 @@ import type { DaemonConfig } from "../../schemas/config.js";
 import type { TaskStateChangedPayload } from "../../schemas/events.js";
 import { type Notification, NotificationKinds, recipientsForKind } from "../../schemas/notifications.js";
 import { ObservationTypes } from "../../schemas/observer.js";
+import type { ObservationLevel, SpanOptions } from "../../schemas/observer.js";
 import { isTerminal } from "../../schemas/task.js";
 import type { Clock } from "../../utils/clock.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
@@ -307,7 +308,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         "suppress",
         "An identical notification (same kind and scope) was delivered inside the suppress window — dropping it avoids flooding the owner",
         1,
-        { task_id: notification.taskId ?? undefined },
+        observationScope(notification, "info"),
       );
       observer.debug("Notification suppressed as duplicate", { kind: notification.kind, key, sinceLastMs });
       return true;
@@ -317,6 +318,25 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
   }
 
   // ── Core Dispatch ──────────────────────────────────────────────────────
+
+  /**
+   * The correlation scope for a notification's delivery observations: always its `task_id`, plus the
+   * pipeline trace context (`trace_id`/`phase`/`session_id`/`parent_observation_id`) when the notification
+   * was emitted inside a live dispatch and carried one. Without this, an in-pipeline notification's
+   * observation (the blocked-task question, a milestone) is orphaned — empty trace and phase — and the
+   * dashboard cannot place it on the task's timeline. Background-service notifications carry no correlation,
+   * so they stay task-scoped only: no phase is invented for an event that has none.
+   */
+  function observationScope(notification: Notification, level: ObservationLevel): SpanOptions {
+    return {
+      task_id: notification.taskId ?? undefined,
+      trace_id: notification.correlation?.trace_id,
+      session_id: notification.correlation?.session_id,
+      phase: notification.correlation?.phase,
+      parent_observation_id: notification.correlation?.parent_observation_id,
+      level,
+    };
+  }
 
   function notify(notification: Notification): void {
     try {
@@ -410,7 +430,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
             plugin_id: plugin.manifest.id,
             content_summary: safeContent,
           },
-          { task_id: notification.taskId ?? undefined, level: "info" },
+          observationScope(notification, "info"),
         );
         eventBus.publish({
           type: "comm.message_sent",
@@ -506,7 +526,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       ObservationTypes.tool_execution,
       "notification_send_failed",
       { kind: notification.kind, person_id: personId, channels_tried: channelsTried, retryable: anyRetryable },
-      { task_id: notification.taskId ?? undefined, level: "warn" },
+      observationScope(notification, "warn"),
     );
 
     const taskId = notification.taskId ?? "";
@@ -568,7 +588,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
         attempts: entry.attempts,
         reason,
       },
-      { task_id: taskId, level: "warn" },
+      observationScope(entry.notification, "warn"),
     );
     observer.debug("Retry entry removed", { taskId, personId: entry.personId, attempts: entry.attempts, reason });
   }
@@ -591,7 +611,7 @@ export function createNotificationRouter(ctx: NotificationRouterContext): INotif
       ObservationTypes.tool_execution,
       "notification_retry_succeeded",
       { kind: entry.notification.kind, person_id: entry.personId, channel, attempt },
-      { task_id: taskId, level: "info" },
+      observationScope(entry.notification, "info"),
     );
   }
 

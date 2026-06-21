@@ -6,7 +6,7 @@ import {
   type PRStatus,
 } from "../../../../schemas/adapters.js";
 import { EventTypes } from "../../../../schemas/events.js";
-import { NotificationKinds } from "../../../../schemas/notifications.js";
+import { NotificationKinds, correlationFromTraceScope } from "../../../../schemas/notifications.js";
 import { ObservationTypes } from "../../../../schemas/observer.js";
 import type { ReviewState } from "../../../../schemas/task.js";
 import { sanitizeErrorMessage } from "../../../../utils/sanitize.js";
@@ -451,6 +451,7 @@ function recordMerge(ctx: Ctx, input: RecordMergeInput): void {
       kind: NotificationKinds.milestone,
       taskId: ctx.task.id,
       message: `Merged PR #${String(prNumber)}`,
+      correlation: correlationFromTraceScope(traceScope(ctx)),
     });
   }
   ctx.observer.info("Pull request merge recorded — the reaper deletes the branch per branch_retention_days", {

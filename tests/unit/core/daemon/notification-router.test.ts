@@ -1251,6 +1251,60 @@ describe("NotificationRouter", () => {
       expect(tools.find((o) => o.name === "notification_delivered")).toBeDefined();
     });
 
+    it("stamps the dispatch correlation on the delivery observation for an in-pipeline notification", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task" });
+
+      const router = createNotificationRouter(ctx);
+      router.notify({
+        kind: NotificationKinds.milestone,
+        taskId: "corr-task",
+        message: "PR created",
+        correlation: {
+          trace_id: "trace-xyz",
+          session_id: "session-xyz",
+          phase: "delivery",
+          parent_observation_id: "root-obs",
+        },
+      });
+      await flush();
+
+      const delivered = obs.observer.query({ type: "tool_execution" }).find((o) => o.name === "notification_delivered");
+      expect(delivered).toBeDefined();
+      expect(delivered?.task_id).toBe("corr-task");
+      expect(delivered?.trace_id).toBe("trace-xyz");
+      expect(delivered?.session_id).toBe("session-xyz");
+      expect(delivered?.phase).toBe("delivery");
+      expect(delivered?.parent_observation_id).toBe("root-obs");
+    });
+
+    it("leaves trace and phase null for a background notification with no correlation", async () => {
+      const commPlugin = createMockCommPlugin({ channel: "telegram" });
+      const ctx = createObservableContext([commPlugin]);
+      (ctx.peopleDirectory.getOwner as ReturnType<typeof vi.fn>).mockReturnValue({
+        id: "owner-1",
+        contacts: [{ channel: "telegram", handle: "@owner" }],
+      });
+      (ctx.taskEngine.getTask as ReturnType<typeof vi.fn>).mockReturnValue({ title: "Task" });
+
+      const router = createNotificationRouter(ctx);
+      // A daemon background service (completion) fires outside any dispatch — task-scoped, no trace/phase.
+      router.notify({ kind: NotificationKinds.completion, taskId: "bg-task" });
+      await flush();
+
+      const delivered = obs.observer.query({ type: "tool_execution" }).find((o) => o.name === "notification_delivered");
+      expect(delivered).toBeDefined();
+      expect(delivered?.task_id).toBe("bg-task");
+      expect(delivered?.trace_id).toBeNull();
+      expect(delivered?.phase).toBeNull();
+      expect(delivered?.parent_observation_id).toBeNull();
+    });
+
     it("emits a tool_execution observation when no channel is reachable", async () => {
       const commPlugin = createMockCommPlugin({ channel: "telegram" });
       (commPlugin.sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({

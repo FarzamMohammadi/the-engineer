@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { NotificationKinds } from "../../schemas/notifications.js";
+import { type NotificationCorrelation, NotificationKinds } from "../../schemas/notifications.js";
 import type { NotificationRouter } from "../daemon/notification-router.js";
 import type { IPeopleDirectory } from "../interfaces/people-directory.interface.js";
 import type { IObserver } from "../observer/index.js";
@@ -32,15 +32,22 @@ export interface QuestionDelivery {
  */
 export function deliverBlockedQuestion(
   deps: QuestionDelivery,
-  input: { taskId: string; subPhase: string; outreachDir: string | null; needed: string },
+  input: {
+    taskId: string;
+    subPhase: string;
+    outreachDir: string | null;
+    needed: string;
+    correlation?: NotificationCorrelation;
+  },
 ): string {
   const { peopleDirectory, notifications, observer } = deps;
-  const { taskId, subPhase, outreachDir, needed } = input;
+  const { taskId, subPhase, outreachDir, needed, correlation } = input;
 
   const question = (outreachDir ? consumeOutreach(outreachDir) : null) ?? needed;
   const message = `${question}\n\n[Task: ${taskId.slice(0, 8)}]`;
+  const trace = correlation ? { correlation } : {};
 
-  notifications.notify({ kind: NotificationKinds.ticket_comment, taskId, message });
+  notifications.notify({ kind: NotificationKinds.ticket_comment, taskId, message, ...trace });
 
   const owner = peopleDirectory.getOwner();
   if (!owner) {
@@ -50,7 +57,7 @@ export function deliverBlockedQuestion(
     });
     return question;
   }
-  notifications.notify({ kind: NotificationKinds.question, taskId, personId: owner.id, message });
+  notifications.notify({ kind: NotificationKinds.question, taskId, personId: owner.id, message, ...trace });
   return question;
 }
 

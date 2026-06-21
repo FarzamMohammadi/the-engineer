@@ -3,7 +3,7 @@ import path from "node:path";
 
 import type { GitHostingAdapter } from "../../../../adapters/git-hosting.js";
 import { AdapterTypes, type PRResult } from "../../../../schemas/adapters.js";
-import { NotificationKinds } from "../../../../schemas/notifications.js";
+import { NotificationKinds, correlationFromTraceScope } from "../../../../schemas/notifications.js";
 import { ObservationTypes } from "../../../../schemas/observer.js";
 import type { ExternalRef } from "../../../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../../../utils/sanitize.js";
@@ -276,6 +276,7 @@ async function openNewPr(ctx: Ctx, hosting: GitHostingAdapter, record: Workspace
     kind: NotificationKinds.milestone,
     taskId: ctx.task.id,
     message: `PR created: ${result.url}`,
+    correlation: correlationFromTraceScope(traceScope(ctx)),
   });
   ctx.notifications.notify({
     kind: NotificationKinds.ticket_comment,

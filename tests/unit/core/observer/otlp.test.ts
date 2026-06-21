@@ -153,21 +153,26 @@ describe("buildAttributes", () => {
 
   it("converts a blob ref to a dashboard URL attribute, never inlining the ref", () => {
     const ref = `ab/${"a".repeat(64)}`;
-    const attrs = buildAttributes({ prompt_ref: ref }, { response_ref: ref }, CTX);
+    // The engine writes blob refs under the `*_blob` convention: prompt_blob in input, result_blob /
+    // transcript_blob in output (see agent-step.ts). Each must URL-ize, none inline.
+    const attrs = buildAttributes({ prompt_blob: ref }, { result_blob: ref, transcript_blob: ref }, CTX);
 
-    expect(attr(attrs, "input.prompt_ref")).toBeUndefined();
-    expect(attr(attrs, "input.prompt_ref.url")?.value).toEqual({
+    expect(attr(attrs, "input.prompt_blob")).toBeUndefined();
+    expect(attr(attrs, "input.prompt_blob.url")?.value).toEqual({
       stringValue: `http://127.0.0.1:3847/api/blob/${ref}`,
     });
-    expect(attr(attrs, "output.response_ref.url")?.value).toEqual({
+    expect(attr(attrs, "output.result_blob.url")?.value).toEqual({
+      stringValue: `http://127.0.0.1:3847/api/blob/${ref}`,
+    });
+    expect(attr(attrs, "output.transcript_blob.url")?.value).toEqual({
       stringValue: `http://127.0.0.1:3847/api/blob/${ref}`,
     });
   });
 
   it("does not treat a malformed ref value as a blob ref", () => {
-    const attrs = buildAttributes({ prompt_ref: "not-a-real-ref" }, null, CTX);
-    expect(attr(attrs, "input.prompt_ref.url")).toBeUndefined();
-    expect(attr(attrs, "input.prompt_ref")?.value).toEqual({ stringValue: "not-a-real-ref" });
+    const attrs = buildAttributes({ prompt_blob: "not-a-real-ref" }, null, CTX);
+    expect(attr(attrs, "input.prompt_blob.url")).toBeUndefined();
+    expect(attr(attrs, "input.prompt_blob")?.value).toEqual({ stringValue: "not-a-real-ref" });
   });
 
   it("sanitizes a planted secret in a string value", () => {

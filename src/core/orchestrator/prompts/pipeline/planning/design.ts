@@ -26,6 +26,7 @@ export const PLANNING_INSTRUCTIONS = [
   "3. Pre-mortem: assume the implementation ships with a subtle flaw. Name the two or three most likely failure modes — concurrency, crash recovery, unbounded growth, stale state. Mitigate each in the plan, or say why it is acceptable.",
   "",
   "4. Write a precise, ordered plan with concrete file paths and a verification step per part. Use checkboxes so execution can track progress. Record each meaningful decision — what you chose, what you rejected, and what it locks in — so execution inherits the reasoning, not just the result. Do not write code.",
+  "   - **Regression Strategy:** Ensure your verification steps are designed to catch future regressions. Specify not just how to prove the feature works now, but what automated tests (unit, integration, or end-to-end) must be added to guard this behavior permanently.",
   "",
   "Report `needs_human` only if a decision the plan genuinely depends on is not yours to make.",
 ].join("\n");

@@ -485,12 +485,24 @@ export const AutonomyDecisionSchema = z.object({
 export type AutonomyDecision = z.infer<typeof AutonomyDecisionSchema>;
 
 /**
+ * The canonical spelling of the `premise_conflict` autonomy category — the one category referenced by
+ * code, not just taught to the agent as vocabulary. The pipeline wires it into intake's
+ * `escalatedCategories`, and the research + surface-decisions prompts interpolate it, so the runner's
+ * `escalated.includes(category)` match holds only while all three use the same string. Defined once here
+ * and imported by every consumer, so a rename cannot leave the prompt asking for a category the runner no
+ * longer escalates. Every other category is plain vocabulary the agent reads from the policy and needs no
+ * constant.
+ */
+export const PREMISE_CONFLICT_CATEGORY = "premise_conflict";
+
+/**
  * The curated default autonomy policy for the known decision categories the pipeline agent surfaces.
  * Conservative but not paralyzing: small local reversible calls proceed; size-dependent calls ask once
  * the blast radius grows; high-stakes or hard-to-reverse calls always ask. This is the source of truth
- * — zero-config gets it, the safety template mirrors it for editing, and the agent prompt teaches the
- * same vocabulary (cli/bundled/templates.ts, src/core/orchestrator/pipeline/agent-prompt.ts). Any
- * category outside this set still resolves to always_ask (fail-safe), so the set stays freely extensible.
+ * for the policy defaults — zero-config gets it, the safety template mirrors it for editing (a test pins
+ * the template's category set to these keys), and the agent prompt teaches the same vocabulary
+ * (cli/bundled/templates.ts, src/core/orchestrator/pipeline/agent-prompt.ts). Any category outside this
+ * set still resolves to always_ask (fail-safe), so the set stays freely extensible.
  */
 export const DEFAULT_AUTONOMY_DECISIONS = {
   code_style: { level: "always_decide", threshold: null, description: "Formatting and naming within touched code" },
@@ -512,7 +524,7 @@ export const DEFAULT_AUTONOMY_DECISIONS = {
   public_api: { level: "always_ask", threshold: null, description: "Changing a public interface or contract" },
   destructive: { level: "always_ask", threshold: null, description: "Deleting data, files, or history" },
   security: { level: "always_ask", threshold: null, description: "Anything touching auth, secrets, or permissions" },
-  premise_conflict: {
+  [PREMISE_CONFLICT_CATEGORY]: {
     level: "always_ask",
     threshold: null,
     description: "Intake found the task's premise wrong or already satisfied — reconfirm before building",

@@ -3,6 +3,8 @@
 // "What To Do" instructions body. Held here as readable text; the logic in
 // pipeline/research/investigate.ts composes it into the agent prompt.
 
+import { PREMISE_CONFLICT_CATEGORY } from "../../../../../schemas/config.js";
+
 /** The system-prompt role line for the research sub-phase. */
 export const RESEARCH_ROLE =
   "Your role is research: study the code until you understand what this task touches and how it works. Investigate only — do not design a solution or change code. Later phases do that.";
@@ -23,7 +25,7 @@ export const RESEARCH_INSTRUCTIONS = [
   "",
   "Then challenge what you found: What is the genuinely simplest approach? Are these patterns actually good, or legacy you should not copy? Which assumptions have you not verified? Is there an existing mechanism that already solves part of this? The best code is the code you do not write.",
   "",
-  "There is one thing you must NOT quietly engineer around: a wrong premise. If your investigation turns up material evidence that the task's stated premise is factually wrong, or that the need is already satisfied elsewhere in the codebase, do not silently narrow the goal to build around what you found — that is how a confidently-worded but mistaken ticket ships a PR for a problem nobody had. Instead surface a `premise_conflict` decision: `summary` = what you found and where; `chosen` = the narrowed or default action you would otherwise have taken; `reasoning` = exactly how it conflicts with the premise. The owner is then asked to proceed / redirect / drop before any build. Reserve this for a material conflict — a genuine contradiction of the premise's core claim, or a substantial capability that already exists — not every minor discrepancy; ordinary 'is there a simpler way' simplification is not a premise conflict and still applies.",
+  `There is one thing you must NOT quietly engineer around: a wrong premise. If your investigation turns up material evidence that the task's stated premise is factually wrong, or that the need is already satisfied elsewhere in the codebase, do not silently narrow the goal to build around what you found — that is how a confidently-worded but mistaken ticket ships a PR for a problem nobody had. Instead surface a \`${PREMISE_CONFLICT_CATEGORY}\` decision: \`summary\` = what you found and where; \`chosen\` = the narrowed or default action you would otherwise have taken; \`reasoning\` = exactly how it conflicts with the premise. The owner is then asked to proceed / redirect / drop before any build. Reserve this for a material conflict — a genuine contradiction of the premise's core claim, or a substantial capability that already exists — not every minor discrepancy; ordinary 'is there a simpler way' simplification is not a premise conflict and still applies.`,
   "",
   "Do not change code and do not plan the solution. Report `needs_human` only if you uncover something only a person can answer.",
 ].join("\n");

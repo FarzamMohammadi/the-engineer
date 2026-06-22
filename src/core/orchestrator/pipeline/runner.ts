@@ -299,6 +299,10 @@ function planRoute(
         cursor: moved.cursor,
         phaseIteration: moved.enteredNewPhase ? 0 : phaseIteration,
         totalReworks,
+        // Load-bearing beyond "no carry to render": a fresh advance leaving carry undefined is what ARMS
+        // the next intent-forming phase's premise_conflict gate (it fires only when `carry === undefined`,
+        // see the gateNow guard in runPipeline). A resume instead carries a value, which suppresses the
+        // re-ask. Seeding a carry here would silently stop intake from reconfirming a wrong premise.
         carry: undefined,
         enteredNewPhase: moved.enteredNewPhase,
       };

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parse as yamlParse } from "yaml";
 
 import { EXAMPLE_SAFETY, SAFETY_TEMPLATE } from "../../../../src/cli/bundled/templates.js";
-import { CostLimitsSchema } from "../../../../src/schemas/config.js";
+import { CostLimitsSchema, DEFAULT_AUTONOMY_DECISIONS } from "../../../../src/schemas/config.js";
 
 // ── Safety Templates: Cost Limits ────────────────────────────────────────────
 // These templates ship as ~/.engineer/config/safety.yaml. The loader parses them
@@ -39,4 +39,17 @@ describe("safety template cost limits", () => {
       });
     });
   }
+});
+
+// ── Safety Templates: Autonomy Categories ────────────────────────────────────
+// DEFAULT_AUTONOMY_DECISIONS is the source of truth for the policy's category set. The bundled
+// SAFETY_TEMPLATE ships autonomy commented out, so it inherits those defaults — nothing to drift. But
+// EXAMPLE_SAFETY documents the full, uncommented autonomy block users copy and edit; it must list exactly
+// the default categories so a category added in code (e.g. premise_conflict) cannot leave the reference
+// stale, and one dropped from the defaults cannot linger in it. This pins that mirror.
+describe("EXAMPLE_SAFETY autonomy categories", () => {
+  it("lists exactly the DEFAULT_AUTONOMY_DECISIONS categories, mirroring the source of truth", () => {
+    const raw = yamlParse(EXAMPLE_SAFETY) as { autonomy: { decisions: Record<string, unknown> } };
+    expect(Object.keys(raw.autonomy.decisions).sort()).toEqual(Object.keys(DEFAULT_AUTONOMY_DECISIONS).sort());
+  });
 });

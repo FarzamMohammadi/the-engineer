@@ -1,3 +1,4 @@
+import { PREMISE_CONFLICT_CATEGORY } from "../../../schemas/config.js";
 import { autoMerge } from "./delivery/auto-merge.js";
 import { awaitReview } from "./delivery/await-review.js";
 import { createPr } from "./delivery/create-pr.js";
@@ -13,7 +14,7 @@ import { codeQuality } from "./review/code-quality.js";
 import { refine } from "./review/refine.js";
 import { security } from "./review/security.js";
 import { selfReview } from "./review/self-review.js";
-import { PREMISE_CONFLICT_CATEGORY, type PhaseDefinition, Phases } from "./types.js";
+import { type PhaseDefinition, Phases } from "./types.js";
 
 // ── Iteration Caps ───────────────────────────────────────────────────────────
 

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { PIPELINE } from "../../../../../src/core/orchestrator/pipeline/pipeline.js";
-import { PREMISE_CONFLICT_CATEGORY, type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
+import { type Phase, Phases } from "../../../../../src/core/orchestrator/pipeline/types.js";
+import { PREMISE_CONFLICT_CATEGORY } from "../../../../../src/schemas/config.js";
 
 // The pipeline map is the heart of the system — folders are phases, files are sub-phases.
 // This pins the shape so an accidental reorder or a dropped sub-phase is caught.

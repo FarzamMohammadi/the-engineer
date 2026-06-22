@@ -68,6 +68,21 @@ export function mapActivity(event: AgentActivityEvent): ActivityParts {
   }
 }
 
+/**
+ * Whether an event carries content worth recording. A `thinking` or `assistant_text` chunk whose text is
+ * empty (or only whitespace) is dropped: some agents stream content-less reasoning/answer blocks when their
+ * CLI withholds the text — e.g. a coding agent that no longer exposes its reasoning and emits a
+ * signature-only thinking block — and a hollow conversation line helps no observer. This keys off the empty
+ * payload, never which agent produced it, so it holds for every agent under Plugin Opacity. Every other kind
+ * (`session`, `tool_use`, `tool_result`) always carries content and is always recorded.
+ */
+export function activityHasContent(event: AgentActivityEvent): boolean {
+  if (event.kind === "thinking" || event.kind === "assistant_text") {
+    return event.text.trim().length > 0;
+  }
+  return true;
+}
+
 // ── Per-kind builders ────────────────────────────────────────────────────────────
 
 /** A text or thinking block: the canonical kind plus a bounded, sanitized preview (full value to a blob when long). */

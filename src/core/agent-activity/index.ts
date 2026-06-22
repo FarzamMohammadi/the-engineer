@@ -9,4 +9,4 @@
  * fail the agent run (see {@link createActivitySink}).
  */
 export { createActivitySink } from "./sink.js";
-export { type ActivityParts, type BlobDirective, mapActivity } from "./mapping.js";
+export { type ActivityParts, activityHasContent, type BlobDirective, mapActivity } from "./mapping.js";

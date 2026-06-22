@@ -75,6 +75,7 @@ max_cli_output_bytes: 500000000
 - The 30-minute quota cache means utilization percentages can be stale during heavy usage.
 - Non-zero exit codes from the CLI trigger output salvage: if valid NDJSON was produced, the result is used. Signal kills (SIGTERM/SIGKILL) are not retried.
 - A per-invocation timeout (`command_timeout_ms`, default 2 hours) kills a single CLI call that runs too long; the daemon's `max_active_duration_ms` and stuck detection are the higher-level backstops for a runaway task across calls.
+- The live Agent Calls feed shows **no reasoning text** for this agent. Current Claude Code versions (since 2.1.72) emit signature-only `thinking` blocks in `--output-format stream-json`: the block structure and `signature` are present but the `thinking` text is empty (upstream [claude-code#32810](https://github.com/anthropics/claude-code/issues/32810)). Per the [adapter contract](README.md#what-core-does-with-the-stream), Core drops these content-less blocks, so the feed simply omits the Thinking line rather than rendering a hollow one. Tool calls, results, and answer text are unaffected. If a future CLI version restores the text, it flows through with no change here.
 
 ## Related Plugins
 

@@ -105,7 +105,7 @@ This is **optional**, **capability-gated**, and **best-effort**:
 |--------|--------|---------|
 | `session` | `model: string \| null`, `tools: number \| null`, `cwd: string \| null` | Optional session-start marker: what the agent booted with. Each field is nullable because a CLI may report some, all, or none. |
 | `assistant_text` | `text: string` | A chunk of the agent's user-facing answer. |
-| `thinking` | `text: string` | A chunk of the agent's reasoning, when the CLI exposes it. |
+| `thinking` | `text: string` | A chunk of the agent's reasoning, when the CLI exposes it. The **single** canonical reasoning slot: a plugin maps whatever its CLI calls reasoning (Claude Code's `thinking`, OpenCode's `reasoning`) into this one kind, so the varied native names never leak above the plugin boundary. |
 | `tool_use` | `tool_call_id: string`, `name: string`, `input: unknown` | The agent invoked a tool. `input` is the raw arguments (may carry file contents, shell commands, env) — opaque in the contract, sanitized by Core before it is ever persisted. |
 | `tool_result` | `tool_call_id: string`, `status: "ok" \| "error"`, `output: unknown` | A tool returned. `tool_call_id` pairs it with its `tool_use`; `output` is opaque and sanitized by Core. |
 
@@ -117,6 +117,7 @@ The plugin's only job is to *map and emit*. What happens next lives entirely in 
 
 - **Each event becomes a durable observation.** Core writes one `agent_activity` row per event, nested under the run's open `agent_call` span. The dashboard's Agent Calls tab plays the conversation **live** while the run is in flight and lets the owner **re-watch** it afterward — same rows, one source of truth.
 - **Core sanitizes and bounds.** Every text, tool input, and tool output is run through secret sanitization before it is stored; large payloads are offloaded to the blob store with a bounded inline preview. This is why the contract leaves `input`/`output` as raw `unknown` — the plugin must **not** pre-scrub or truncate; it passes the CLI's values through and Core does the rest at one chokepoint.
+- **Core drops content-less reasoning and answer chunks.** A `thinking` or `assistant_text` event whose text is empty or only whitespace is recorded as *nothing*, so the conversation never shows a hollow line. Some agents stream empty reasoning blocks when the CLI withholds the text (e.g. a coding agent that exposes only a signature for its reasoning, not the prose). **The boundary:** Core recognizes *empty/whitespace* as "no content" — it cannot know an agent-specific sentinel. If your CLI signals withheld reasoning some other way (a placeholder like `"[redacted]"` or `"(no content)"`), normalize it in your mapper — emit `""` or skip the event — so Core stays agent-agnostic and never surfaces a junk line.
 - **The path can never fail your run.** Core wraps every write best-effort: a malformed event or a storage hiccup degrades to a debug log, never a throw back into your `on_activity` call. You can emit freely without defensive code.
 - **Opacity is preserved.** Core's module depends only on `AgentActivityEvent` and its observer — never on any plugin. Delete every agent plugin and the module still compiles; it just has nothing to observe.
 

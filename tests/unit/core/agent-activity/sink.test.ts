@@ -106,6 +106,48 @@ describe("createActivitySink", () => {
     expect(fake.observes[0]?.data["text_blob"]).toBeUndefined();
   });
 
+  // ── Content-less text/thinking is dropped, not recorded (agent-agnostic) ────────
+
+  it("records nothing for a content-less thinking block (an agent withholding its reasoning)", () => {
+    const fake = fakeObserver();
+    const sink = createActivitySink(fake.observer, SCOPE, "span-1");
+
+    sink({ kind: "thinking", text: "" });
+    sink({ kind: "thinking", text: "   \n  " });
+
+    expect(fake.observes).toHaveLength(0);
+    expect(fake.debugs).toHaveLength(0);
+  });
+
+  it("records nothing for a content-less assistant_text chunk", () => {
+    const fake = fakeObserver();
+    const sink = createActivitySink(fake.observer, SCOPE, "span-1");
+
+    sink({ kind: "assistant_text", text: "" });
+
+    expect(fake.observes).toHaveLength(0);
+  });
+
+  it("still records a thinking block that carries reasoning", () => {
+    const fake = fakeObserver();
+    const sink = createActivitySink(fake.observer, SCOPE, "span-1");
+
+    sink({ kind: "thinking", text: "weighing the options" });
+
+    expect(fake.observes).toHaveLength(1);
+    expect(fake.observes[0]?.data).toMatchObject({ kind: "thinking", text: "weighing the options" });
+  });
+
+  it("still records a tool_result with empty output (only text kinds are content-gated)", () => {
+    const fake = fakeObserver();
+    const sink = createActivitySink(fake.observer, SCOPE, "span-1");
+
+    sink({ kind: "tool_result", tool_call_id: "c", status: "ok", output: "" });
+
+    expect(fake.observes).toHaveLength(1);
+    expect(fake.observes[0]?.name).toBe("tool_result");
+  });
+
   // ── Invariant: the sink can never throw into the agent run ──────────────────────
 
   describe("best-effort: never throws into the run", () => {

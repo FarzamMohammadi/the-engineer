@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mapActivity } from "../../../../src/core/agent-activity/index.js";
+import { activityHasContent, mapActivity } from "../../../../src/core/agent-activity/index.js";
 import type { AgentActivityEvent } from "../../../../src/schemas/adapters.js";
 
 // A real-looking GitHub token (ghp_ + 36 chars) the pattern sanitizer redacts with no registry setup.
@@ -135,5 +135,39 @@ describe("mapActivity", () => {
       expect(parts.name).toBe("bash");
       expect(typeof parts.data["input"]).toBe("string");
     });
+  });
+});
+
+describe("activityHasContent", () => {
+  it("drops a thinking block with no text (the agent withheld its reasoning)", () => {
+    expect(activityHasContent({ kind: "thinking", text: "" })).toBe(false);
+  });
+
+  it("drops a thinking block that is only whitespace", () => {
+    expect(activityHasContent({ kind: "thinking", text: "  \n\t " })).toBe(false);
+  });
+
+  it("drops an assistant_text block with no text", () => {
+    expect(activityHasContent({ kind: "assistant_text", text: "" })).toBe(false);
+  });
+
+  it("keeps a thinking block that carries reasoning", () => {
+    expect(activityHasContent({ kind: "thinking", text: "First I should read the file." })).toBe(true);
+  });
+
+  it("keeps an assistant_text block that carries an answer", () => {
+    expect(activityHasContent({ kind: "assistant_text", text: "Done." })).toBe(true);
+  });
+
+  it("always keeps a session marker", () => {
+    expect(activityHasContent({ kind: "session", model: "m", tools: 1, cwd: "/" })).toBe(true);
+  });
+
+  it("always keeps a tool_use", () => {
+    expect(activityHasContent({ kind: "tool_use", tool_call_id: "c", name: "bash", input: "" })).toBe(true);
+  });
+
+  it("always keeps a tool_result, even with empty output", () => {
+    expect(activityHasContent({ kind: "tool_result", tool_call_id: "c", status: "ok", output: "" })).toBe(true);
   });
 });

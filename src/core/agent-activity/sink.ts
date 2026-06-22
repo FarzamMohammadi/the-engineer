@@ -10,7 +10,7 @@ import type { AgentActivityEvent } from "../../schemas/adapters.js";
 import { ObservationTypes, type SpanOptions } from "../../schemas/observer.js";
 import { sanitizeErrorMessage } from "../../utils/sanitize.js";
 import type { IObserver } from "../observer/index.js";
-import { type BlobDirective, mapActivity } from "./mapping.js";
+import { type BlobDirective, activityHasContent, mapActivity } from "./mapping.js";
 
 /**
  * Build the best-effort `on_activity` sink for one agent run. Each event the plugin emits becomes an
@@ -29,6 +29,12 @@ export function createActivitySink(
   const options: SpanOptions = { ...scope, parent_observation_id: agentCallSpanId };
   return (event) => {
     try {
+      // An agent that withholds its reasoning/answer text streams a content-less chunk (e.g. a coding agent
+      // whose CLI emits a signature-only thinking block). Record nothing for it so the conversation never
+      // shows a hollow line — agent-agnostic, keyed off the empty payload, not the plugin behind it.
+      if (!activityHasContent(event)) {
+        return;
+      }
       const parts = mapActivity(event);
       const data = { ...parts.data, ...storeBlobs(observer, parts.blobs) };
       observer.observe(ObservationTypes.agent_activity, parts.name, data, options);

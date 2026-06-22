@@ -725,7 +725,7 @@ function buildConversation(recorded: readonly Observation[], streamed: readonly 
   const lines: ConversationLine[] = [];
 
   for (const { id, activity } of activities) {
-    if (activity.kind === "session" || claimed.has(activity)) {
+    if (activity.kind === "session" || claimed.has(activity) || isContentlessText(activity)) {
       continue;
     }
     const result = activity.kind === "tool_use" ? (resultByCallId.get(activity.toolCallId) ?? null) : null;
@@ -772,6 +772,17 @@ function dedupeById(rows: readonly Observation[]): Observation[] {
     seen.add(row.id);
     return [row];
   });
+}
+
+/**
+ * A text/thinking row the agent emitted with no text — some agents withhold their reasoning/answer (e.g. a
+ * coding agent whose CLI exposes only a signature-only thinking block), so the row carries nothing to read.
+ * Core already drops these at the sink, but this also hides any such rows recorded before that guard existed.
+ * Truncated rows are never empty (their full text lives in the blob), so a non-empty preview is always kept.
+ */
+function isContentlessText(activity: AgentActivityShape): boolean {
+  const isText = activity.kind === "thinking" || activity.kind === "assistant_text";
+  return isText && !activity.truncated && activity.text.trim().length === 0;
 }
 
 // ── Line renderers ───────────────────────────────────────────────────────────

@@ -13,10 +13,15 @@ import { ulid } from "ulid";
 import type { AgentAdapter } from "../../src/adapters/agent.js";
 import type { Ctx } from "../../src/core/orchestrator/pipeline/types.js";
 import type { SessionMemory } from "../../src/core/session-memory/index.js";
-import type { AgentRunRequest, AgentRunResult } from "../../src/schemas/adapters.js";
+import type { AgentRunRequest, AgentRunResult, Person } from "../../src/schemas/adapters.js";
 import { OrchestratorConfigSchema, SafetyConfigSchema, WorkspaceConfigSchema } from "../../src/schemas/config.js";
 import { createMockTask } from "./mock-factories.js";
-import { type RecordingObserver, createRecordingObserver, fakeAgent } from "./test-mock-pipeline.js";
+import {
+  type MockConsultJudgment,
+  type RecordingObserver,
+  createRecordingObserver,
+  fakeAgent,
+} from "./test-mock-pipeline.js";
 import { createTestSessionMemory } from "./test-session-memory.js";
 import { createTestWorkspaceManager } from "./test-workspace-manager.js";
 
@@ -79,6 +84,10 @@ export interface PipelineHarness {
 export interface PipelineHarnessOptions {
   /** Drive delivery in push-only mode (skip_pr_creation): only `push` runs, the PR sub-phases skip. */
   readonly pushOnly?: boolean;
+  /** People the directory resolves — an `owner`-role person enables the autonomy ask path. Default none. */
+  readonly people?: readonly Person[];
+  /** Override the safety layer's autonomy verdict. Default: no consult wired (no escalation). */
+  readonly consultJudgment?: MockConsultJudgment;
 }
 
 /** Stand up the pipeline over a real worktree and a real session database, driven by `agent`. */
@@ -98,6 +107,12 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
   memory.insertTask("Pipeline integration task", taskId);
   const session = memory.sessionMemory.sessions.create({ taskId });
   const observer = createRecordingObserver();
+
+  // Resolve people so getOwner() reflects what a test configures (the runner's autonomy ask/no-owner edge
+  // reads it), and wire the safety layer's consult only when a test supplies one. Defaults preserve the
+  // original behavior: no owner, no consult — so existing tests are unaffected.
+  const people = options.people ?? [];
+  const owner = people.find((person) => person.roles.includes("owner")) ?? null;
 
   // Minimal git-hosting stub: in PR mode, create-pr opens a PR through it so the runner can advance
   // past create-pr to await-review. The create-pr unit tests assert its body (composition, rework) in detail.
@@ -123,7 +138,7 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
     tracesDir: null,
     // Live-context collaborators the runner and agentStep touch: gate the agent run, record cost, mirror position.
     eventBus: { publish: () => undefined },
-    safetyLayer: {},
+    safetyLayer: options.consultJudgment ? { consultJudgment: options.consultJudgment } : {},
     actionPipeline: {
       execute: async (input: { executeFn: () => unknown }) => ({
         outcome: "executed",
@@ -133,11 +148,11 @@ export function createPipelineHarness(agent: AgentAdapter, options: PipelineHarn
     taskEngine: { updateTaskField: () => undefined, updateTracking: () => undefined },
     skillsManager: { getDir: () => path.join(workspace.workspaceRoot, "skills") },
     peopleDirectory: {
-      getAll: () => [],
-      getPerson: () => null,
-      getByRole: () => [],
-      getOwner: () => null,
-      getReviewers: () => [],
+      getAll: () => people,
+      getPerson: (id: string) => people.find((person) => person.id === id) ?? null,
+      getByRole: (role: string) => people.filter((person) => person.roles.includes(role)),
+      getOwner: () => owner,
+      getReviewers: () => people.filter((person) => person.roles.includes("reviewer")),
       resolveContact: () => null,
     },
     notifications: { notify: () => undefined },

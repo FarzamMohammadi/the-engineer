@@ -512,6 +512,11 @@ export const DEFAULT_AUTONOMY_DECISIONS = {
   public_api: { level: "always_ask", threshold: null, description: "Changing a public interface or contract" },
   destructive: { level: "always_ask", threshold: null, description: "Deleting data, files, or history" },
   security: { level: "always_ask", threshold: null, description: "Anything touching auth, secrets, or permissions" },
+  premise_conflict: {
+    level: "always_ask",
+    threshold: null,
+    description: "Intake found the task's premise wrong or already satisfied — reconfirm before building",
+  },
 } as const;
 
 export const AutonomyBoundariesSchema = z.object({

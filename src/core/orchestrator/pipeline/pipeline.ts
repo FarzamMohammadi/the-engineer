@@ -13,7 +13,7 @@ import { codeQuality } from "./review/code-quality.js";
 import { refine } from "./review/refine.js";
 import { security } from "./review/security.js";
 import { selfReview } from "./review/self-review.js";
-import { type PhaseDefinition, Phases } from "./types.js";
+import { PREMISE_CONFLICT_CATEGORY, type PhaseDefinition, Phases } from "./types.js";
 
 // ── Iteration Caps ───────────────────────────────────────────────────────────
 
@@ -56,8 +56,25 @@ export const PIPELINE: readonly PhaseDefinition[] = [
   // decision raised here is premature (the work it concerns has not happened yet) and is recorded for
   // the trail, not asked. The call is consulted later, in the phase that actually makes it. Without this,
   // requirements' deliberately ask-biased intake re-surfaces a settled choice every resume and loops the owner.
-  { phase: Phases.requirements, subPhases: [gather], maxIterations: SINGLE_PASS, consultsDecisions: false },
-  { phase: Phases.research, subPhases: [investigate], maxIterations: SINGLE_PASS, consultsDecisions: false },
+  //
+  // The single exception is a `premise_conflict` (escalatedCategories below): when intake's own
+  // investigation finds the task's premise wrong or already satisfied elsewhere, no later phase recovers
+  // it — so the owner is asked proceed/redirect/drop once, before any build, rather than the agent
+  // silently narrowing scope. The runner suppresses it on the answered resume, so it stays a one-time ask.
+  {
+    phase: Phases.requirements,
+    subPhases: [gather],
+    maxIterations: SINGLE_PASS,
+    consultsDecisions: false,
+    escalatedCategories: [PREMISE_CONFLICT_CATEGORY],
+  },
+  {
+    phase: Phases.research,
+    subPhases: [investigate],
+    maxIterations: SINGLE_PASS,
+    consultsDecisions: false,
+    escalatedCategories: [PREMISE_CONFLICT_CATEGORY],
+  },
   { phase: Phases.planning, subPhases: [design], maxIterations: SINGLE_PASS },
   { phase: Phases.execution, subPhases: [implement, verify], maxIterations: EXECUTION_MAX_ITERATIONS },
   {

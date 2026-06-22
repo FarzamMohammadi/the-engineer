@@ -312,6 +312,167 @@ describe("runPipeline", () => {
       expect(noted?.reasoning).toContain("fetchUser");
     });
 
+    describe("premise_conflict in an intent-forming phase", () => {
+      // An intent-forming phase records (does not gate) ordinary decisions — but it DOES escalate the one
+      // category it lists in escalatedCategories: a premise_conflict (the agent's own investigation found
+      // the premise wrong or already solved). The owner is asked proceed/redirect/drop before any build,
+      // and the ask is suppressed on the answered resume so it fires at most once.
+
+      /** A research sub-phase that surfaces one premise_conflict (the #27→#37 shape: need already visible). */
+      function surfacingConflict(): SubPhase {
+        return mockSubPhase("investigate", {
+          run: () =>
+            Promise.resolve<SubPhaseResult>({
+              outcome: "ok",
+              summary: "the reported step is already visible elsewhere",
+              data: {
+                decisions: [
+                  {
+                    category: "premise_conflict",
+                    summary: "verify already shows on the Phases and Timeline tabs",
+                    chosen: "narrow the goal to a combined feed",
+                    reasoning: "the bug's 'verify is hidden' premise is contradicted by those tabs",
+                  },
+                ],
+              },
+            }),
+        });
+      }
+
+      /** A research phase that gates only premise_conflict, exempt from gating everything else. */
+      function intakePhase(sub: SubPhase) {
+        return mockPhase("research", [sub], 1, {
+          consultsDecisions: false,
+          escalatedCategories: ["premise_conflict"],
+        });
+      }
+
+      it("escalates a premise_conflict to the owner even though the phase is exempt from gating", async () => {
+        const next = vi.fn(() => ({ go: "advance" }) satisfies Route);
+        const sub = { ...surfacingConflict(), next };
+        const { ctx, consultJudgment } = createMockPipeline({
+          people: [mockOwner()],
+          consultJudgment: () => ({ action: "ask_human", reason: "premise_conflict always asks" }),
+        });
+
+        const outcome = await runPipeline([intakePhase(sub)], ctx);
+
+        expect(consultJudgment).toHaveBeenCalledTimes(1);
+        expect(next).not.toHaveBeenCalled();
+        // Asked through the same awaiting_human_decision channel as any consulting-phase escalation.
+        expect(outcome).toMatchObject({
+          kind: "blocked",
+          detail: { category: "awaiting_human_decision", sub_phase: "investigate" },
+        });
+        if (outcome.kind === "blocked") {
+          expect(outcome.detail.needed).toContain("premise_conflict");
+          expect(outcome.detail.needed).toContain("combined feed");
+        }
+      });
+
+      it("still records — does not gate — a non-escalated decision in the same phase", async () => {
+        const next = vi.fn(() => ({ go: "done" }) satisfies Route);
+        const sub = { ...surfacing("scope_expansion", { files: 12 }), next };
+        const { ctx, consultJudgment, observer } = createMockPipeline({
+          people: [mockOwner()],
+          consultJudgment: () => ({ action: "ask_human", reason: "would escalate if consulted" }),
+        });
+
+        const outcome = await runPipeline([intakePhase(sub)], ctx);
+
+        // scope_expansion is not in escalatedCategories, so the exemption still holds — never consulted.
+        expect(consultJudgment).not.toHaveBeenCalled();
+        expect(outcome).toEqual({ kind: "completed" });
+        expect(observer.decisions.find((d) => d.name === "autonomy_not_gated")?.chosen).toBe("record_only");
+      });
+
+      it("proceeds and records autonomy_no_owner for a premise_conflict when no owner is configured", async () => {
+        const next = vi.fn(() => ({ go: "advance" }) satisfies Route);
+        const sub = { ...surfacingConflict(), next };
+        // No `people` — getOwner() is null. Blocking would strand the task, so the runner proceeds loudly.
+        const { ctx, observer } = createMockPipeline({
+          consultJudgment: () => ({ action: "ask_human", reason: "premise_conflict always asks" }),
+        });
+
+        const outcome = await runPipeline([intakePhase(sub)], ctx);
+
+        expect(outcome).toEqual({ kind: "completed" });
+        expect(next).toHaveBeenCalled();
+        const decision = observer.decisions.find((d) => d.name === "autonomy_no_owner");
+        expect(decision?.chosen).toBe("proceed_without_owner");
+        expect(decision?.reasoning).toContain("combined feed");
+      });
+
+      it("suppresses the ask on a resume that carries the owner's answer — asked at most once", async () => {
+        const next = vi.fn(() => ({ go: "advance" }) satisfies Route);
+        const sub = { ...surfacingConflict(), next };
+        const { ctx, consultJudgment, observer } = createMockPipeline({
+          people: [mockOwner()],
+          consultJudgment: () => ({ action: "ask_human", reason: "premise_conflict always asks" }),
+        });
+
+        // Resume INTO the sub-phase carrying the owner's reply — the re-run re-derives the same conflict
+        // from the unchanged repo, but the carry guard means it is recorded, never re-asked (no loop).
+        const outcome = await runPipeline([intakePhase(sub)], ctx, {
+          cursor: { phaseIndex: 0, subIndex: 0 },
+          phaseIteration: 0,
+          totalReworks: 0,
+          carry: { summary: "The owner answered: proceed with the combined feed" },
+        });
+
+        expect(consultJudgment).not.toHaveBeenCalled();
+        expect(outcome).toEqual({ kind: "completed" });
+        expect(observer.decisions.find((d) => d.name === "autonomy_not_gated")?.chosen).toBe("record_only");
+      });
+
+      it("gates the premise_conflict and notes an ordinary decision surfaced alongside it", async () => {
+        const sub = mockSubPhase("investigate", {
+          run: () =>
+            Promise.resolve<SubPhaseResult>({
+              outcome: "ok",
+              summary: "a conflict and an ordinary call",
+              data: {
+                decisions: [
+                  {
+                    category: "premise_conflict",
+                    summary: "the need is already met by the Timeline tab",
+                    chosen: "narrow to a combined feed",
+                    reasoning: "contradicts the 'hidden' premise",
+                  },
+                  {
+                    category: "scope_expansion",
+                    summary: "touched extra files for context",
+                    chosen: "expand the read scope",
+                    reasoning: "needed to trace the path",
+                    details: { files: 9 },
+                  },
+                ],
+              },
+            }),
+        });
+        const { ctx, consultJudgment, observer } = createMockPipeline({
+          people: [mockOwner()],
+          consultJudgment: () => ({ action: "ask_human", reason: "always asks" }),
+        });
+
+        const outcome = await runPipeline([intakePhase(sub)], ctx);
+
+        // Only the premise_conflict is consulted and blocks; the scope_expansion is recorded, never asked.
+        expect(consultJudgment).toHaveBeenCalledTimes(1);
+        expect(consultJudgment).toHaveBeenCalledWith(
+          expect.objectContaining({ context: expect.objectContaining({ decision_category: "premise_conflict" }) }),
+        );
+        expect(outcome).toMatchObject({ kind: "blocked", detail: { category: "awaiting_human_decision" } });
+        if (outcome.kind === "blocked") {
+          expect(outcome.detail.needed).toContain("combined feed");
+          expect(outcome.detail.needed).not.toContain("expand the read scope");
+        }
+        expect(observer.decisions.find((d) => d.name === "autonomy_not_gated")?.reasoning).toContain(
+          "expand the read scope",
+        );
+      });
+    });
+
     it("does not consult the policy when no decisions are surfaced", async () => {
       const order: string[] = [];
       const { ctx, consultJudgment } = createMockPipeline();

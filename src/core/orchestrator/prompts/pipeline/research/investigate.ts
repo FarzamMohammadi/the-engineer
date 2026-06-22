@@ -23,5 +23,7 @@ export const RESEARCH_INSTRUCTIONS = [
   "",
   "Then challenge what you found: What is the genuinely simplest approach? Are these patterns actually good, or legacy you should not copy? Which assumptions have you not verified? Is there an existing mechanism that already solves part of this? The best code is the code you do not write.",
   "",
+  "There is one thing you must NOT quietly engineer around: a wrong premise. If your investigation turns up material evidence that the task's stated premise is factually wrong, or that the need is already satisfied elsewhere in the codebase, do not silently narrow the goal to build around what you found — that is how a confidently-worded but mistaken ticket ships a PR for a problem nobody had. Instead surface a `premise_conflict` decision: `summary` = what you found and where; `chosen` = the narrowed or default action you would otherwise have taken; `reasoning` = exactly how it conflicts with the premise. The owner is then asked to proceed / redirect / drop before any build. Reserve this for a material conflict — a genuine contradiction of the premise's core claim, or a substantial capability that already exists — not every minor discrepancy; ordinary 'is there a simpler way' simplification is not a premise conflict and still applies.",
+  "",
   "Do not change code and do not plan the solution. Report `needs_human` only if you uncover something only a person can answer.",
 ].join("\n");

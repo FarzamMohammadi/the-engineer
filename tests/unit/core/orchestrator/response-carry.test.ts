@@ -17,4 +17,11 @@ describe("responseCarry", () => {
     expect(carry.summary.toLowerCase()).toContain("authoritative");
     expect(carry.summary.toLowerCase()).toContain("overrides");
   });
+
+  it("is phase-neutral — the same carry serves a research reconfirm or any later-phase decision", () => {
+    // This carry is used for EVERY pending_response resume, not just requirements (e.g. a research
+    // premise_conflict reconfirm). It must not hardcode the phase, or it mislabels a non-requirements ask.
+    const carry = responseCarry("proceed with the combined feed");
+    expect(carry.summary.toLowerCase()).not.toContain("gathering requirements");
+  });
 });

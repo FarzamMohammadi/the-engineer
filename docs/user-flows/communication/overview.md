@@ -19,7 +19,7 @@ and it lives in two modules: the **notification-router** (outbound) and the **re
 | Inbound poller + classifier | `src/core/daemon/response-poller.ts` | Poll comm plugins, classify each message as reply or query |
 | Query handler | `src/core/daemon/query-handler.ts` | Answer `!status` / `!cost` / `!progress #N` / `!help` |
 | Reaching out | `src/core/orchestrator/outreach.ts` | Resolve a block's one canonical question and deliver it to the owner's chat + the source ticket |
-| The autonomy consult | `src/core/orchestrator/pipeline/runner.ts` | `consultDecisions` — ask the owner about a discretionary call |
+| The autonomy consult | `src/core/orchestrator/pipeline/runner.ts` | `consultSurfacedDecisions` — ask the owner about a discretionary call |
 | Router wiring | `src/cli/commands/start/bootstrap.ts` | Builds one router at startup, shared by daemon + orchestrator |
 
 ---
@@ -143,7 +143,7 @@ reaches out in **two** distinct situations, and the difference is worth keeping 
 
 This is the mechanism behind the discretionary ask. While running, the agent makes calls it could
 make alone and **surfaces** them in its result (a category, what it chose, why). After a sub-phase
-result in a phase that *makes* such calls, the runner's `consultDecisions` reads those surfaced
+result in a phase that *makes* such calls, the runner's `consultSurfacedDecisions` reads those surfaced
 decisions and consults the safety policy per decision:
 
 ```
@@ -165,6 +165,9 @@ is caught no matter which of them raised it. The **intent-forming** phases — r
 — are deliberately exempt: there the agent is still understanding the task, so a decision it surfaces
 is premature. It is recorded for the trail (an `autonomy_not_gated` decision), not asked — which is what
 stops requirements' ask-biased intake from re-surfacing a settled choice on every resume and looping you.
+One signal escapes that exemption: a `premise_conflict` — when intake's own investigation finds the task's
+premise wrong or already satisfied elsewhere, the runner *does* escalate it (proceed / redirect / drop)
+before any build, asked once and suppressed on the answered resume.
 
 ### Delivery, and the answer returning
 

@@ -1,0 +1,11 @@
+{
+  "status": "ok",
+  "summary": "Plan complete: add a distinct checks_state 'unknown' (schema + plugin catch), fix the auto-merge decideReadiness fall-through (unknown -> retry_wait), audit all fall-through consumers, update docs + regenerate the bundle, and lock it with regression tests that drive the real error path. Resolved the delegated confirmation policy to P0 (no confirmation-before-rework) with recorded reasoning; kept Promise.all (any lookup error -> unknown, never salvage a partial 'passing').",
+  "details": {
+    "chosen_approach": "Additive 'unknown' enum member on checks_state, mirroring the existing merge_state.unknown precedent — simplest and idiomatic; boolean-flag and catch-further-out alternatives rejected.",
+    "delegated_decision_resolved": "Confirmation-before-rework policy = P0 (none). A genuine failing value reworks immediately; the unknown fix resolves the reported lookup-error bug, P2 cross-poll confirmation would break the stateless-poller invariant (an architecture change), and existing max_blocker_reentries already bounds any flaky-value damage. Not surfaced for owner sign-off because the owner delegated the choice and P0 introduces no high-stakes change.",
+    "latent_bug_confirmed": "auto-merge.ts decideReadiness falls through to disposition:'merge' on checks_state 'unknown' — must add an unknown -> retry_wait branch or the enum change silently enables merging on unverified CI.",
+    "consumer_audit": "Re-grepped all checks_state consumers; inventory is exhaustive (6 branching sites + the fake-plugin test double + log-only sites). Only adapters.ts, github-hosting.ts, and auto-merge.ts need code; the rest fall through correctly and get regression tests.",
+    "gates": "Plan verifies via pnpm run typecheck, pnpm run lint, pnpm test, pnpm run test:integration; the key AC-#10 regression drives a real Octokit rejection so it fails if the catch reverts to 'failing'."
+  }
+}

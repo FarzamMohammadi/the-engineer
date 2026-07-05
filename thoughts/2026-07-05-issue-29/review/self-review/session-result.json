@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "summary": "Self-review found no issues: the issue-29 change (add `unknown` checks_state) is correct, complete against all 11 acceptance criteria, minimal, and drift-free; typecheck + the four touched test files (208) pass independently.",
+  "details": {
+    "findings_count": 0,
+    "shipping_diff": "ccb7e56..HEAD — 18 files (3 production, 2 docs + regenerated bundle, 4 tests, thoughts trail)",
+    "note": "Local `main` ref is stale (7 commits behind origin/main); `git diff main...HEAD` is misleading. True PR diff is `git diff ccb7e56..HEAD` and is exactly the issue-29 scope.",
+    "independent_checks": [
+      "re-grepped all checks_state consumers — audit complete, no exhaustive switch, no missed reader",
+      "verified resolve helpers never emit `unknown`, so combineCheckStates `unknown:0` is required-for-exhaustiveness (not dead noise)",
+      "confirmed decideReadiness routes `unknown` to retry_wait before the merge fall-through",
+      "pnpm run typecheck — green",
+      "four touched test files — 208 tests pass",
+      "pnpm run docs:bundle — no drift"
+    ]
+  }
+}

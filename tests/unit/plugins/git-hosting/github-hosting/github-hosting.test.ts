@@ -433,6 +433,26 @@ describe("GitHubHostingPlugin", () => {
       const status = await plugin.getPRStatus("acme/webapp", 51);
       expect(status.checks_state).toBe("passing");
     });
+
+    // ── Lookup error → unknown (never failing) ──
+
+    it("reports checks_state unknown (never failing) when the Checks API lookup errors transiently", async () => {
+      // Regression (issue #29): a transient lookup error (ECONNRESET / dropped connection / rate-limit)
+      // means we could NOT read the checks — the state is `unknown`, NOT `failing`. Returning `failing`
+      // here misreads a network blip as a red check and drives a phantom rework. Drives the real `catch`,
+      // so it fails if the fallback ever reverts to `"failing"`.
+      mockOctokit.checks.listForRef.mockRejectedValueOnce(new Error("read ECONNRESET"));
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("unknown");
+      expect(status.checks_state).not.toBe("failing");
+    });
+
+    it("reports checks_state unknown when the Status API lookup errors transiently", async () => {
+      // Any error in the lookup → unknown; we never salvage the other source's answer on a partial failure.
+      mockOctokit.repos.getCombinedStatusForRef.mockRejectedValueOnce(new Error("read ECONNRESET"));
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.checks_state).toBe("unknown");
+    });
   });
 
   describe("getReviewStatus()", () => {
@@ -600,6 +620,16 @@ describe("GitHubHostingPlugin", () => {
       const events = await plugin.detectPrEvents("acme/webapp", 51);
       expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merged]);
     });
+
+    it("derives no pr_ci_failure when the CI-status lookup errors transiently — the task waits", async () => {
+      // Regression (issue #29), end to end: a transient checks-lookup error yields checks_state `unknown`,
+      // which must derive NO pr_ci_failure (no phantom rework) and NO pr_ready_to_merge (never merge on
+      // unverified CI). The default mock is an approved, mergeable PR, so the unknown CI is the only thing
+      // withholding readiness — and nothing else fires, so the task simply stays waiting.
+      mockOctokit.checks.listForRef.mockRejectedValueOnce(new Error("read ECONNRESET"));
+      const events = await plugin.detectPrEvents("acme/webapp", 51);
+      expect(events).toEqual([]);
+    });
   });
 });
 
@@ -662,6 +692,13 @@ describe("derivePrEvents", () => {
     // push. Reading that as a conflict re-enters the pipeline to resolve a conflict that does not exist,
     // looping on every poll. `unknown` must emit no merge-conflict event and no readiness.
     expect(derivePrEvents(status({ merge_state: "unknown" }), approved, [])).toEqual([]);
+  });
+
+  it("treats unknown CI as neither failure nor readiness — withholds both while the lookup is unresolved", () => {
+    // Regression (issue #29): a transient CI-status lookup error surfaces as checks_state `unknown`. It must
+    // emit no pr_ci_failure (a network blip must not drive rework) and no pr_ready_to_merge (never merge on
+    // unverified CI) — the task simply stays waiting and re-checks next poll.
+    expect(derivePrEvents(status({ checks_state: "unknown" }), approved, [])).toEqual([]);
   });
 
   it("surfaces changes-requested as feedback", () => {

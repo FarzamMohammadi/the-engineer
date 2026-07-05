@@ -206,7 +206,16 @@ function decideReadiness(ctx: Ctx, repo: string, status: PRStatus): MergeReadine
   if (status.merge_state === "unknown") {
     return { disposition: "retry_wait", reasoning: "mergeability is not yet computed" };
   }
-  // "passing" and "none" (a repo with no CI — nothing to wait on) proceed; only "pending" returns to the wait.
+  // `unknown` CI is a lookup that errored — the live re-check here can hit the same transient blip. We do
+  // not know the checks, so wait and re-check rather than merge on unverified CI. This is the twin of the
+  // `merge_state === "unknown"` branch above and preserves "never auto-merge on unverified status".
+  if (status.checks_state === "unknown") {
+    return {
+      disposition: "retry_wait",
+      reasoning: "CI status could not be determined — waiting to re-check rather than merging on unverified checks",
+    };
+  }
+  // "passing" and "none" (a repo with no CI — nothing to wait on) proceed; "pending" and "unknown" wait.
   if (status.checks_state === "pending") {
     return { disposition: "retry_wait", reasoning: "CI checks are still running" };
   }

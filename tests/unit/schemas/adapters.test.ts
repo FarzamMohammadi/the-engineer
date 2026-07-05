@@ -777,6 +777,33 @@ describe("PRStatusSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects an invalid checks_state and accepts the five valid ones (including unknown)", () => {
+    // `unknown` (issue #29) = the CI-status lookup errored, so the state could not be read — distinct from
+    // `failing`. It must be a first-class, parseable value alongside passing/failing/pending/none.
+    for (const checks_state of ["passing", "failing", "pending", "none", "unknown"]) {
+      expect(
+        PRStatusSchema.parse({
+          number: 1,
+          state: "open",
+          draft: false,
+          merge_state: "mergeable",
+          checks_state,
+          url: "x",
+        }).checks_state,
+      ).toBe(checks_state);
+    }
+    expect(
+      PRStatusSchema.safeParse({
+        number: 1,
+        state: "open",
+        draft: false,
+        merge_state: "mergeable",
+        checks_state: "borked",
+        url: "x",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("ReviewerStateSchema", () => {

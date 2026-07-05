@@ -544,7 +544,7 @@ function mapMergeState(mergeable: boolean | null | undefined): "mergeable" | "co
   return "unknown";
 }
 
-type ChecksState = "passing" | "failing" | "pending" | "none";
+type ChecksState = "passing" | "failing" | "pending" | "none" | "unknown";
 
 /**
  * Resolve CI status by querying BOTH the Status API (legacy commit statuses)
@@ -574,15 +574,18 @@ async function getChecksState(
 
     return combineCheckStates(statusState, checksState);
   } catch (error) {
-    // Pessimistic fallback — treat a checks API failure as "failing" so we never
-    // claim CI is passing on bad data. Log so an operator can distinguish a real
-    // CI failure from an API outage.
-    logger.warn("Checks-state lookup failed — reporting CI as failing", {
+    // The lookup itself errored (network blip, dropped connection, rate-limit) — we did NOT read the
+    // checks, so the state is genuinely `unknown`, not `failing`. Reporting `unknown` (never `failing`)
+    // means a transient blip leaves the task waiting to re-check next poll instead of driving a phantom
+    // rework, while still never claiming `passing` on an unverified lookup. Any error → `unknown`: if one
+    // of the two API calls failed we cannot know what it would have reported, so we never salvage the
+    // other's answer. Log so an operator can distinguish a real CI failure from a lookup outage.
+    logger.warn("CI status lookup failed — reporting checks_state as unknown (will re-check next poll)", {
       repo: `${owner}/${repo}`,
       sha,
       error: error instanceof Error ? error.message : String(error),
     });
-    return "failing";
+    return "unknown";
   }
 }
 
@@ -630,7 +633,10 @@ function resolveChecksApiState(checkRuns: Array<{ status: string; conclusion: st
 
 /** Worst state wins: failing > pending > passing > none. */
 function combineCheckStates(a: ChecksState, b: ChecksState): ChecksState {
-  const priority: Record<ChecksState, number> = { failing: 3, pending: 2, passing: 1, none: 0 };
+  // `unknown` is only ever produced by the `catch` above, which returns it directly and never reaches
+  // here — the resolve helpers only yield failing/pending/passing/none. Its entry keeps the record
+  // exhaustive over `ChecksState`; a priority of 0 makes it never win were it ever combined.
+  const priority: Record<ChecksState, number> = { failing: 3, pending: 2, passing: 1, none: 0, unknown: 0 };
   return priority[a] >= priority[b] ? a : b;
 }
 

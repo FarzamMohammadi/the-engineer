@@ -407,7 +407,11 @@ export const PRStatusSchema = z.object({
   // "not yet computed" is a real, distinct answer, NOT a conflict. `unknown` must never be read as
   // `conflicting`: a freshly-pushed branch reads `unknown` for a few seconds before the host resolves it.
   merge_state: z.enum(["mergeable", "conflicting", "unknown"]),
-  checks_state: z.enum(["passing", "failing", "pending", "none"]),
+  // Tri-plus-state CI status. `unknown` means the CI status could NOT be determined — the lookup itself
+  // errored (a network blip, dropped connection, or rate-limit), so we genuinely do not know. It is NOT
+  // `failing`: Core treats `unknown` as a wait — never rework, never merge — so a transient lookup error
+  // cannot trigger a phantom rework, while we still never claim `passing` on an unverified lookup.
+  checks_state: z.enum(["passing", "failing", "pending", "none", "unknown"]),
   url: z.string(),
 });
 export type PRStatus = z.infer<typeof PRStatusSchema>;

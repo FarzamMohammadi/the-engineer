@@ -263,6 +263,15 @@ describe("PrEventPoller", () => {
       expect(requestTransition).not.toHaveBeenCalled();
     });
 
+    it("does not promote on an /approve when the CI status could not be determined (unknown)", async () => {
+      // Regression (issue #29): the /approve re-check can hit a transient lookup error, yielding
+      // checks_state `unknown`. `unknown` is not `passing`, so the promotion is withheld — the task keeps
+      // waiting and re-checks next poll, never merging on an unverified CI status.
+      const { poller, requestTransition } = setup({ events: [approve()], prStatus: { checks_state: "unknown" } });
+      await poller.poll();
+      expect(requestTransition).not.toHaveBeenCalled();
+    });
+
     it("does not promote when comment approval is disabled", async () => {
       const { poller, requestTransition, getPRStatus } = setup({ events: [approve()], commentApproval: false });
       await poller.poll();

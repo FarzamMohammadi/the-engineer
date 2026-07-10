@@ -1,0 +1,4 @@
+{
+  "status": "ok",
+  "summary": "Wrote PR title and body from the full diff against main — narrative covers the whole change (contract blocked state, GitHub plugin signal, auto-merge hand-off, poller escalation) with verification and risks."
+}

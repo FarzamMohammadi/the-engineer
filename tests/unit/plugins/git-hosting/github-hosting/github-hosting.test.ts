@@ -304,6 +304,45 @@ describe("GitHubHostingPlugin", () => {
       expect(status.merge_state).toBe("conflicting");
     });
 
+    it("maps a mergeable PR the host will not complete (mergeable_state=blocked) to merge_state blocked", async () => {
+      // Branch protection needs a formal review a `/approve` comment cannot satisfy: `mergeable` is still
+      // true (protection does not flip the boolean), but `mergeable_state` is "blocked". Must NOT read as
+      // mergeable — that is the doomed-merge that loops.
+      mockOctokit.pulls.get.mockResolvedValueOnce({
+        data: {
+          number: 51,
+          state: "open",
+          draft: false,
+          mergeable: true,
+          mergeable_state: "blocked",
+          merged: false,
+          html_url: "https://github.com/acme/webapp/pull/51",
+          head: { sha: "abc123" },
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.merge_state).toBe("blocked");
+    });
+
+    it("maps an out-of-date branch (mergeable_state=behind) to merge_state mergeable, not blocked", async () => {
+      // `behind` is not a textual conflict and GitHub merges it when protection does not require up-to-date
+      // branches — so it must stay mergeable, never blocked (which would stall PRs the host would merge).
+      mockOctokit.pulls.get.mockResolvedValueOnce({
+        data: {
+          number: 51,
+          state: "open",
+          draft: false,
+          mergeable: true,
+          mergeable_state: "behind",
+          merged: false,
+          html_url: "https://github.com/acme/webapp/pull/51",
+          head: { sha: "abc123" },
+        },
+      });
+      const status = await plugin.getPRStatus("acme/webapp", 51);
+      expect(status.merge_state).toBe("mergeable");
+    });
+
     it("reports merged state", async () => {
       mockOctokit.pulls.get.mockResolvedValueOnce({
         data: {
@@ -685,6 +724,13 @@ describe("derivePrEvents", () => {
   it("reports a merge conflict and withholds readiness", () => {
     const events = derivePrEvents(status({ merge_state: "conflicting" }), approved, []);
     expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merge_conflict]);
+  });
+
+  it("treats a blocked PR as neither ready nor conflict — the host will not merge it, so it withholds both", () => {
+    // A PR blocked by branch protection (mergeable in shape, but the host will not complete the merge) must
+    // emit NO pr_ready_to_merge (a doomed merge that re-pushes the branch and loops) and NO pr_merge_conflict
+    // (the code is fine, only the merge is gated — reworking would be wrong). Core hands it off instead.
+    expect(derivePrEvents(status({ merge_state: "blocked" }), approved, [])).toEqual([]);
   });
 
   it("treats unknown mergeability as no conflict — withholds the event while the host computes it", () => {

@@ -198,6 +198,27 @@ describe("auto-merge run", () => {
     expect(mergePR).not.toHaveBeenCalled();
   });
 
+  it("hands off to the owner without merging when the host blocks the merge (branch protection) — never reworks", async () => {
+    // The highest-priority guard (issue #47): a `blocked` PR is decided in readiness, BEFORE any mergePR
+    // call. There is no doomed merge (so no branch re-push) and it routes to done, never to execution rework
+    // — the code is fine, only the merge is gated. This is what makes the infinite loop structurally
+    // impossible: the task leaves the poll set on the first detection.
+    const { ctx, mergePR, notify, published, observer } = mockCtx({ status: { merge_state: "blocked" } });
+
+    const result = await autoMerge.run(ctx);
+
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    expect(mergePR).not.toHaveBeenCalled();
+    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
+    // The owner is told once (the host-blocked hand-off), and nothing is recorded/published as merged.
+    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "ticket_comment" }));
+    expect(published).toEqual([]);
+    // The readiness decision records needs_human_merge as chosen, with it among the offered alternatives.
+    const decision = observer.decisions.find((entry) => entry.name === "merge_readiness");
+    expect(decision?.chosen).toBe("needs_human_merge");
+    expect(decision?.options?.map((option: { id: string }) => option.id)).toContain("needs_human_merge");
+  });
+
   it("waits rather than reworking when mergeability is not yet computed (unknown)", async () => {
     const { ctx, mergePR } = mockCtx({ status: { merge_state: "unknown" } });
 

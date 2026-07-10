@@ -175,6 +175,22 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
         `PR #${String(prNumber)} checks are still running (${status.checks_state}) — waiting to retry`,
       );
     }
+    case "needs_human_merge": {
+      // The host will not complete the merge (branch protection). Hand off to the owner *without* attempting
+      // the doomed merge — no `mergePR` call, no branch re-push, no rework. Terminal (`autoMergeNext` → done),
+      // so the task leaves the review-poll set and the loop is structurally impossible. `false`: no cleanup
+      // push happened, so no formal approval could have been dismissed.
+      ctx.observer.info("Host blocks the merge (branch protection) — handing off to the owner without merging", {
+        taskId: ctx.task.id,
+        prNumber,
+        mergeState: status.merge_state,
+      });
+      notifyHostBlockedMerge(ctx, prNumber, false);
+      return resolved(
+        "needs_human_merge",
+        `PR #${String(prNumber)} handed off — the host's branch protection blocks the merge`,
+      );
+    }
     default:
       return performMerge(ctx, hosting, repo, prNumber, record, review);
   }
@@ -200,6 +216,19 @@ function decideReadiness(ctx: Ctx, repo: string, status: PRStatus): MergeReadine
   }
   if (status.merge_state === "conflicting") {
     return { disposition: "merge_conflict", reasoning: "the PR no longer merges cleanly into its base" };
+  }
+  // `blocked` is mergeable in *shape* but the host will not complete the merge (branch protection / a
+  // required review a `/approve` comment cannot satisfy). There is nothing to re-implement — the code is
+  // fine, only the merge is gated — so this must NOT rework. Hand off to the owner *before* any `mergePR`
+  // call: attempting the doomed merge would push a thoughts-cleanup commit (re-pushing the branch) and its
+  // rejection code is unreliable, which is exactly what routed this to rework and looped it. Deciding here,
+  // in readiness, means the doomed attempt never happens.
+  if (status.merge_state === "blocked") {
+    return {
+      disposition: "needs_human_merge",
+      reasoning:
+        "the host's branch protection blocks the merge (a required review the Engineer cannot satisfy) — a human must approve on the host or complete the merge",
+    };
   }
   // `unknown` mergeability is the host still computing it (common right after a push) — wait and re-check,
   // never rework, so a not-yet-resolved merge state cannot send a clean PR back to execution.
@@ -228,6 +257,7 @@ const MERGE_DISPOSITION_OPTIONS = [
   { id: "auto_merge_disabled", description: "Auto-merge disabled — leave the merge to a human" },
   { id: "ci_failure", description: "CI failing — hand back to execution to fix it" },
   { id: "merge_conflict", description: "No longer mergeable — hand back to execution to resolve it" },
+  { id: "needs_human_merge", description: "Host blocks the merge (branch protection) — hand off to the owner" },
   { id: "retry_wait", description: "Checks still running — return to the review wait and retry" },
 ] as const;
 

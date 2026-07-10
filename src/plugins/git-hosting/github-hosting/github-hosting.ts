@@ -197,7 +197,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
     const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha, this.context.logger);
     const state = mapPRState(pr.state, pr.merged);
-    const mergeState = mapMergeState(pr.mergeable);
+    const mergeState = mapMergeState(pr.mergeable, pr.mergeable_state);
 
     this.context.logger.debug("PR status fetched", {
       repo,
@@ -529,19 +529,37 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
 }
 
 /**
- * Map GitHub's tri-state `mergeable` (`true` / `false` / `null`) onto the contract's `merge_state`.
- * `null` (and a missing field) means GitHub has not finished computing mergeability — a distinct
- * `unknown`, never folded into `conflicting`. Folding it would treat every freshly-pushed PR as
- * conflicting until the host catches up.
+ * Map GitHub's `mergeable` (`true` / `false` / `null`) and `mergeable_state` string onto the contract's
+ * `merge_state`. The order matters:
+ *
+ * 1. `null` / missing `mergeable` → `unknown`: GitHub has not finished computing mergeability (common in
+ *    the seconds after a push). A distinct `unknown`, never folded into `conflicting` — folding it would
+ *    treat every freshly-pushed PR as conflicting until the host catches up.
+ * 2. `mergeable === false` → `conflicting`: a definitive textual conflict. Routed to rework.
+ * 3. `mergeable_state === "blocked"` → `blocked`: mergeable in *shape* (`mergeable === true`) but the host
+ *    will not complete the merge — branch protection needs a required review / other gate a `/approve`
+ *    comment cannot satisfy. Core waits or hands off; it must never rework (there is nothing to
+ *    re-implement). This check must come *before* collapsing `mergeable === true` to `mergeable`, because a
+ *    blocked PR reports `mergeable === true` and a naive "true → mergeable" first would mask the block.
+ * 4. otherwise → `mergeable`: the host will merge it (`clean`, `unstable`, `has_hooks`, `behind`, and any
+ *    other non-`blocked` state where GitHub still merges). `behind` is deliberately NOT treated as blocked
+ *    — it is an out-of-date branch, not a textual conflict, and GitHub merges it when protection does not
+ *    require up-to-date branches; mapping it to `blocked` would stall PRs the host would merge.
  */
-function mapMergeState(mergeable: boolean | null | undefined): "mergeable" | "conflicting" | "unknown" {
-  if (mergeable === true) {
-    return "mergeable";
+function mapMergeState(
+  mergeable: boolean | null | undefined,
+  mergeableState: string | null | undefined,
+): "mergeable" | "conflicting" | "blocked" | "unknown" {
+  if (mergeable === null || mergeable === undefined) {
+    return "unknown";
   }
   if (mergeable === false) {
     return "conflicting";
   }
-  return "unknown";
+  if (mergeableState === "blocked") {
+    return "blocked";
+  }
+  return "mergeable";
 }
 
 type ChecksState = "passing" | "failing" | "pending" | "none" | "unknown";

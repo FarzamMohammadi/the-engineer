@@ -22,7 +22,12 @@ import type { PrEventPollerContext } from "./types.js";
 // single-contributor approval path: when a live re-check confirms the PR is green and
 // mergeable, the poller promotes it to a merge (dropping the same-poll comments, which
 // would otherwise win precedence and route to requirements); a not-yet-green /approve
-// keeps the task waiting rather than attempting a doomed merge.
+// keeps the task waiting rather than attempting a doomed merge. When that /approve lands
+// on a PR the host's branch protection *blocks* (green but merge_state=blocked, e.g. a
+// required formal review a comment cannot satisfy), the poller does NOT promote — a merge
+// the host will not honor would re-push the branch and loop — it escalates to the owner
+// with the actionable reason, which moves the task off this poll set and bounds it to one
+// escalation.
 
 /** Polls open PRs for events and re-enters their tasks. */
 export interface PrEventPoller {
@@ -135,9 +140,11 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
    * Narrow the plugin's events to what is genuinely actionable now. An authorized /approve on a PR a live
    * re-check confirms is green and mergeable is promoted to pr_ready_to_merge — the merge path — and the
    * same-poll comments are dropped (an approval is not rework, and precedence would otherwise route the
-   * comments to requirements). Otherwise: drop feedback already accommodated, drop a comments event with
-   * nothing to act on (a bare changes-requested), and drop a comments event carrying an authorized /approve
-   * (the task keeps waiting until the merge preconditions hold).
+   * comments to requirements). When the same /approve lands on a PR the host's branch protection *blocks*,
+   * promoting would attempt a merge the host will not honor — re-pushing the branch and looping forever — so
+   * the task is escalated to the owner instead and no event routes this poll. Otherwise: drop feedback
+   * already accommodated, drop a comments event with nothing to act on (a bare changes-requested), and drop a
+   * comments event carrying an authorized /approve (the task keeps waiting until the merge preconditions hold).
    */
   async function actionableEvents(
     task: Task,
@@ -145,9 +152,17 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     events: readonly PrEvent[],
   ): Promise<PrEvent[]> {
     const deduped = dedupePrEvents(events, task.review?.accommodated_comment_ids ?? []);
-    if (await shouldPromoteApproval(task, hosting, deduped)) {
+    const disposition = await resolveApproveDisposition(task, hosting, deduped);
+    if (disposition === "promote") {
       recordApprovePromotion(task, deduped);
       return [{ type: PrEventTypes.pr_ready_to_merge }];
+    }
+    if (disposition === "escalate_blocked") {
+      // A merge the host will not honor never drives rework. Escalate to the owner (side effect) and route
+      // nothing this poll; the escalation moves the task off the pr_review_pending poll set, so the loop is
+      // structurally bounded to a single escalation.
+      escalateMergeBlocked(task, deduped);
+      return [];
     }
     return deduped.filter(isActionableRework);
   }
@@ -181,34 +196,49 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   }
 
   /**
-   * Whether an authorized /approve in this poll should promote to a merge. /approve is the single-contributor
-   * approval path, gated by the enable_comment_approval safety flag; it triggers a merge only when a live
-   * re-check confirms the PR is open, green, and mergeable — the same preconditions the plugin computes for a
-   * formal approval's pr_ready_to_merge. A not-yet-green /approve does not promote, so the task keeps waiting
-   * rather than attempting a doomed merge.
+   * How an authorized /approve in this poll should be handled, from a single live re-check. /approve is the
+   * single-contributor approval path, gated by the enable_comment_approval safety flag:
+   *   - `promote`  — the PR is open, green, and mergeable: turn the /approve into a merge (the same
+   *     preconditions the plugin computes for a formal approval's pr_ready_to_merge).
+   *   - `escalate_blocked` — the PR is open and green but the host's branch protection *blocks* the merge
+   *     (`merge_state === "blocked"`): a /approve comment cannot satisfy a required formal review, so
+   *     promoting would attempt a doomed merge and loop. Escalate to the owner instead.
+   *   - `wait` — comment-approval disabled, no authorized /approve, the re-check threw, or the PR is not yet
+   *     green/mergeable-or-blocked: the task keeps waiting rather than attempting a doomed merge.
+   * The blocked check is gated on `checks_state === "passing"` (symmetric with `promote`) so a red-CI blocked
+   * PR still falls through to `wait` and the normal CI-rework path, never to this escalation.
    */
-  async function shouldPromoteApproval(
+  async function resolveApproveDisposition(
     task: Task,
     hosting: GitHostingAdapter,
     events: readonly PrEvent[],
-  ): Promise<boolean> {
+  ): Promise<ApproveDisposition> {
     if (!safetyLayer.isCommentApprovalEnabled()) {
-      return false;
+      return "wait";
     }
     const prNumber = task.review?.pr_number;
     if (!(prNumber && task.repo && hasAuthorizedApproval(events))) {
-      return false;
+      return "wait";
     }
     try {
       const status = await hosting.getPRStatus(task.repo, prNumber);
-      return status.state === "open" && status.checks_state === "passing" && status.merge_state === "mergeable";
+      if (status.state !== "open" || status.checks_state !== "passing") {
+        return "wait";
+      }
+      if (status.merge_state === "mergeable") {
+        return "promote";
+      }
+      if (status.merge_state === "blocked") {
+        return "escalate_blocked";
+      }
+      return "wait";
     } catch (error) {
       observer.warn("Failed to re-check PR status for an /approve promotion — leaving the task waiting", {
         taskId: task.id,
         prNumber,
         error: sanitizeErrorMessage(error),
       });
-      return false;
+      return "wait";
     }
   }
 
@@ -266,6 +296,59 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       }
     }
     return null;
+  }
+
+  /**
+   * Escalate an authorized /approve the host's branch protection will not honor. Promoting it would attempt
+   * a merge the host refuses — which re-pushes the branch and loops on every poll — so instead the task is
+   * blocked under `need_more_info` (which takes it off the `pr_review_pending` poll set and onto the
+   * owner-escalation ladder, structurally bounding this to one escalation) and the owner is told the
+   * actionable reason. `pending_pr_event` is cleared defensively so no stale event re-dispatches the task
+   * back into the loop we are escaping. Mirrors `escalateBlockerCap`'s structure.
+   */
+  function escalateMergeBlocked(task: Task, events: readonly PrEvent[]): void {
+    const prNumber = task.review?.pr_number;
+    recordMergeBlockedEscalation(task, approverOf(events));
+    // Defensive: a pending event would re-dispatch this task straight back into the loop we are escaping.
+    taskEngine.updateTaskField(task.id, "pending_pr_event", null);
+    taskEngine.updateTaskField(task.id, "blocked", {
+      reason: BlockReasons.need_more_info,
+      category: BlockCategories.awaiting_human,
+      sub_phase: "await-review",
+      needed: `PR #${String(prNumber)} is approved and green, but the host's branch protection blocks the merge — it needs a formal review approval a "/approve" comment cannot provide. Approve the PR on the host (or adjust its branch protection), then run "engineer retry" to resume and I'll merge it.`,
+    } satisfies BlockedDetails);
+    observer.warn("PR /approve blocked by branch protection — escalating to the owner", {
+      taskId: task.id,
+      prNumber,
+    });
+    notifications.notify({
+      kind: NotificationKinds.alert,
+      taskId: task.id,
+      message: `PR #${String(prNumber)}: your /approve can't merge it — the host's branch protection needs a formal review approval. Approve the PR on the host (or adjust protection), then run "engineer retry" to resume.`,
+    });
+    notifications.notify({
+      kind: NotificationKinds.ticket_comment,
+      taskId: task.id,
+      message: `Your /approve is recorded, but the host's branch protection won't let me merge — it needs a formal review approval a comment can't provide. Approve the PR on the host (or adjust its branch protection), then run "engineer retry" and I'll merge it.`,
+    });
+  }
+
+  /** Record the merge-blocked escalation as a decision — the promote-anyway path was available and deliberately not taken. */
+  function recordMergeBlockedEscalation(task: Task, approver: string | null): void {
+    observer.recordDecision(
+      "approve_comment_merge_blocked",
+      `PR #${String(task.review?.pr_number)} carries an authorized /approve, but a live re-check shows the host's branch protection blocks the merge (merge_state=blocked)`,
+      [
+        { id: "promote_to_merge", description: "Promote the /approve and attempt the merge anyway" },
+        { id: "escalate", description: "Stop and block for the owner to approve on the host" },
+      ],
+      "escalate",
+      approver
+        ? `Authorized /approve by "${approver}" cannot satisfy the host's required formal review — promoting would attempt a doomed merge that re-pushes the branch and loops`
+        : "The host's branch protection needs a formal review a /approve comment cannot satisfy — promoting would loop on a doomed merge",
+      1,
+      { task_id: task.id },
+    );
   }
 
   function routeEvent(task: Task, winner: PrEvent): void {
@@ -414,6 +497,12 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 
   return { poll };
 }
+
+/**
+ * How the poller handles an authorized /approve this poll, from one live re-check: promote it to a merge,
+ * escalate to the owner because the host blocks the merge, or keep waiting.
+ */
+type ApproveDisposition = "promote" | "escalate_blocked" | "wait";
 
 /** The system-detected PR events that must converge or be escalated — distinct from human feedback and the terminal merge events. */
 type BlockerEventType = typeof PrEventTypes.pr_merge_conflict | typeof PrEventTypes.pr_ci_failure;

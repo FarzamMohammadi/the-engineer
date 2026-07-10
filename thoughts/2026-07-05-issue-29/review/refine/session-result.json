@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Independently audited the checks_state 'unknown' change and all consumers, re-ran every gate (typecheck, lint, 2817 unit + 67 integration tests, docs:bundle no drift) — correct, complete, clean; no fixes needed.",
-  "details": { "verdict": "ship" }
-}

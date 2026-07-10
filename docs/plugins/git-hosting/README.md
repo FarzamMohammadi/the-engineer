@@ -89,7 +89,10 @@ type PRStatus = {
   // Tri-state, like checks_state. "unknown" means the host has not finished computing mergeability
   // (common right after a push) — it is NOT a conflict, and Core treats it as a wait, never rework.
   merge_state: "mergeable" | "conflicting" | "unknown";
-  checks_state: "passing" | "failing" | "pending" | "none";
+  // "unknown" means the CI status could not be determined — the lookup itself errored (network blip,
+  // dropped connection, rate-limit). It is NOT "failing": Core treats it as a wait — never rework,
+  // never merge — so a transient blip cannot trigger a phantom rework, and we never claim "passing".
+  checks_state: "passing" | "failing" | "pending" | "none" | "unknown";
   url: string;
 };
 

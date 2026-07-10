@@ -207,6 +207,18 @@ describe("auto-merge run", () => {
     expect(mergePR).not.toHaveBeenCalled();
   });
 
+  it("waits rather than merging when the CI status could not be determined (unknown)", async () => {
+    // Regression (issue #29): the live re-check here can hit the same transient lookup error, yielding
+    // checks_state `unknown`. Without this guard it would fall through to `merge` and merge unverified CI.
+    // It must wait and re-check instead — preserving "never auto-merge on unverified status".
+    const { ctx, mergePR } = mockCtx({ status: { checks_state: "unknown" } });
+
+    const result = await autoMerge.run(ctx);
+
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "retry_wait" } });
+    expect(mergePR).not.toHaveBeenCalled();
+  });
+
   it("waits rather than reworking when checks are still pending", async () => {
     const { ctx, mergePR } = mockCtx({ status: { checks_state: "pending" } });
 

@@ -1,0 +1,37 @@
+{
+  "status": "ok",
+  "summary": "Verified the endless-rework mechanism by reading the code: mapMergeState ignores GitHub's mergeable_state so 'blocked' collapses to 'mergeable', the poller re-promotes /approve every poll via an unbounded pr_ready_to_merge path, and auto-merge's decideReadiness has no 'blocked' branch so a doomed merge's unreliable failure code misroutes to execution rework. Blast radius, host signal (mergeable_state, no extra API call), regression guards, delegated design forks, and the test surface are mapped in research.md. Premise confirmed valid — no premise_conflict.",
+  "details": {
+    "files_in_scope": [
+      "src/schemas/adapters.ts (PRStatus.merge_state enum — add host-agnostic 'blocked')",
+      "src/plugins/git-hosting/github-hosting/github-hosting.ts (mapMergeState/doGetPRStatus/derivePrEvents/classifyMergeError)",
+      "src/core/daemon/pr-event-poller.ts (shouldPromoteApproval + unbounded pr_ready_to_merge routing)",
+      "src/core/orchestrator/pipeline/delivery/auto-merge.ts (decideReadiness has no 'blocked' branch)",
+      "src/cli/bundled/plugin-docs.ts (bundled doc prose duplicates the merge-state/error mapping)"
+    ],
+    "context_files": [
+      "src/core/orchestrator/pipeline/pr-events.ts",
+      "src/schemas/git-hosting-events.ts + git-hosting-event-types.ts",
+      "src/schemas/task.ts (ReviewState.consecutive_blocker_reentries; BlockCategories)",
+      "src/schemas/config.ts (review_polling.max_blocker_reentries)"
+    ],
+    "verification": {
+      "commands": ["pnpm test:all", "pnpm run lint", "pnpm run typecheck"],
+      "note": "node_modules is NOT installed in this worktree; run pnpm install / pnpm setup before gates."
+    },
+    "key_findings": {
+      "host_signal": "pr.mergeable_state (REST, already on the pulls.get response the plugin fetches — no extra call). 'blocked' distinguishes protection-blocked from 'dirty'=conflict. reviewDecision is GraphQL-only, not needed.",
+      "robust_fix_spine": "Detect 'blocked' in readiness BEFORE calling mergePR, since the HTTP code of a doomed merge (405 vs 409) is unreliable and perturbed by the pre-merge thoughts push.",
+      "loop_bound": "Routing blocked -> existing terminal needs_human_merge (done) removes the task from the pr_review_pending poll set, bounding the loop structurally with no new counter.",
+      "two_promotion_paths": "formal-approval (derivePrEvents) and /approve-comment (poller shouldPromoteApproval) both converge on pr_ready_to_merge -> auto-merge; fixing decideReadiness covers both."
+    },
+    "delegated_design_forks": [
+      "escalation site: auto-merge only vs. poller too",
+      "terminal done (hand-off) vs. block-and-retry (resume+auto-merge after formal approval)",
+      "explicit loop bound only needed if task stays in poll set",
+      "'behind'/out-of-date-branch handling (must not land in conflict->rework arm)",
+      "escalation message: generic vs. enriched via getBranchProtection"
+    ],
+    "premise_conflict": false
+  }
+}

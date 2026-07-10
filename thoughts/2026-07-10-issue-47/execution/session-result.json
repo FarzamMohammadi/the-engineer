@@ -1,0 +1,17 @@
+{
+  "status": "ok",
+  "summary": "Implemented Approach A: a first-class `blocked` merge_state routes a host-blocked merge to wait/escalate (auto-merge readiness + poller escalation) instead of rework; all gates green (typecheck, lint, test:all, check:exports); committed as 8a5d87f.",
+  "details": {
+    "commit": "8a5d87f",
+    "files_changed": 10,
+    "decisions": [
+      {
+        "category": "scope_expansion",
+        "summary": "Touched files beyond the single core file: the adapter contract, the GitHub plugin, both Core policy sites (auto-merge + poller), the plugin doc (source + regenerated bundle), and three test files.",
+        "chosen": "Edit contract + plugin + 2 Core sites + docs + tests together as one cohesive fix.",
+        "reasoning": "The fix is inherently cross-layer: the plugin must produce the new `blocked` signal, the contract must carry it, and both Core decision points must consume it — a partial change would leave an enum value nothing produces or consumes. Docs are marked GENERATED-from-source and CI fails on drift, so they must move with the code. This is within my scope_expansion autonomy (decide alone).",
+        "details": { "files": 10 }
+      }
+    ]
+  }
+}

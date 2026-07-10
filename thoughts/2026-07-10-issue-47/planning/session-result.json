@@ -1,0 +1,28 @@
+{
+  "status": "ok",
+  "summary": "Plan written: add a first-class merge_state 'blocked' (plugin reads mergeable_state), route it to needs_human_merge in auto-merge (robust backstop) and to an owner escalation in the poller (front line); no doomed merge, no rework, bounded by leaving the poll set. Includes ordered steps + per-part verification and regression tests.",
+  "details": {
+    "approach": "Approach A — first-class 'blocked' contract value handled at the two Core merge-readiness decision points; rejected a re-entry counter (Approach B) and promote-through-auto-merge (Approach C).",
+    "files_to_change": [
+      "src/plugins/git-hosting/github-hosting/github-hosting.ts (mapMergeState reads mergeable_state)",
+      "src/schemas/adapters.ts (merge_state enum += 'blocked')",
+      "src/core/orchestrator/pipeline/delivery/auto-merge.ts (decideReadiness + runAutoMerge switch: blocked -> needs_human_merge)",
+      "src/core/daemon/pr-event-poller.ts (resolveApproveDisposition tri-state + escalateMergeBlocked)",
+      "src/cli/bundled/plugin-docs.ts (keep merge-state doc in sync)",
+      "tests: github-hosting.test.ts, auto-merge.test.ts, pr-event-poller.test.ts"
+    ],
+    "verification": {
+      "commands": ["pnpm install", "pnpm run typecheck", "pnpm run lint", "pnpm test:all"],
+      "note": "node_modules not installed in this worktree — pnpm install is Step 0."
+    },
+    "decisions": [
+      {
+        "category": "scope_expansion",
+        "summary": "Change spans plugin + adapter contract + two Core files + a bundled doc string + three test files, beyond the single 'core' file.",
+        "chosen": "Touch all listed files in one PR to deliver the fix completely (plugin detection + Core policy + doc sync + regression tests).",
+        "reasoning": "The fix is inherently cross-layer (host-truth in the plugin, wait/escalate policy in Core) as the issue itself mandates; splitting it would ship a partial, unsafe change. No broad refactor, dependency, public-API, destructive, or security change is involved.",
+        "details": { "files": 8 }
+      }
+    ]
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "status": "ok",
+  "summary": "Owner-authored spec-quality issue with clear desired outcomes and design forks explicitly delegated; confirmed the branch-protection rework loop is a genuine, still-open bug on main (mapMergeState drops mergeable_state, poller re-promotes /approve unbounded). No blocking questions.",
+  "details": {
+    "complexity": "complex",
+    "acceptance_criteria": [
+      "A merge the host will not complete (branch protection / required review / not-actually-mergeable) never routes the task into execution/implement rework.",
+      "An authorized /approve that branch protection will not honor is surfaced/escalated to the owner with an actionable reason, not silently re-promoted every poll or looped.",
+      "The pr_ready_to_merge / /approve-promotion re-entry path is bounded or gated so a promotion that structurally cannot complete cannot loop unbounded (closing the gap max_blocker_reentries does not cover).",
+      "Readiness is decided using the host's real 'will this merge?' signal (e.g. GitHub mergeable_state/mergeStateStatus and/or reviewDecision), not just the boolean mergeable, so 'mergeable shape but blocked by protection' is distinguished from 'mergeable and the host will merge'.",
+      "A genuinely approved + green + host-will-merge PR still merges automatically with no behavior change (regression preserved).",
+      "Host-specific merge-blocked detection lives in the git-hosting plugin behind the adapter contract; the wait/escalate/route policy lives in Core so a second hosting plugin inherits the safety.",
+      "A genuine merge conflict (base moved, no longer mergeable) still routes to execution rework as today — the new 'blocked merge never reworks' rule does not swallow real conflicts.",
+      "The change is covered by unit tests for the blocked-merge routing (poller promotion + auto-merge readiness/failure classification) and the project's gates pass (typecheck, lint, tests). The CI non-final debounce (issue #46) is out of scope."
+    ],
+    "verification": {
+      "commands": [
+        { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] },
+        { "name": "lint", "command": "pnpm", "args": ["run", "lint"] },
+        { "name": "test", "command": "pnpm", "args": ["test"] },
+        { "name": "test:integration", "command": "pnpm", "args": ["test:integration"] }
+      ]
+    }
+  }
+}

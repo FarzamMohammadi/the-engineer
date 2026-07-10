@@ -250,7 +250,7 @@ function StepFeedSkeleton(): React.JSX.Element {
 
 /**
  * One non-LLM step (verify, push, create-pr, await-review, auto-merge). Mirrors {@link AgentTraceRow}'s
- * collapsible shell but is visually distinct — a gear icon and a neutral "step" badge instead of the LLM brain
+ * collapsible shell but is visually distinct — a gear icon and a neutral "System" badge instead of the LLM brain
  * — so it never reads as an agent call. Expanding it drills into what the step did and produced, rendering only
  * what was actually correlated: verify's verdict + per-gate output, any tool spans (verify gates, delivery
  * git/PR calls), the structured result data, and the `route:`/`loop_*` decision the step led to.
@@ -285,7 +285,7 @@ function StepRow({ step }: { step: EnrichedStep<Observation> }): React.JSX.Eleme
   );
 }
 
-/** The collapsed-row line for a non-LLM step: its label, a neutral "step" badge, status, phase, and time. */
+/** The collapsed-row line for a non-LLM step: its label, a neutral "System" badge, status, phase, and time. */
 function StepRowHeader({ step }: { step: EnrichedStep<Observation> }): React.JSX.Element {
   const label = SUB_PHASE_LABELS[step.subPhase] ?? step.subPhase;
   const verdict = step.verdict ? readVerdict(step.verdict) : null;
@@ -294,7 +294,7 @@ function StepRowHeader({ step }: { step: EnrichedStep<Observation> }): React.JSX
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{label}</span>
         <Badge variant="outline" className="text-[10px]">
-          step
+          System
         </Badge>
         <StepStatusBadge step={step} />
         {step.phase && <span className="text-[10px] text-muted-foreground">{step.phase}</span>}
@@ -535,12 +535,18 @@ function AgentTraceHeader({
   isLive: boolean;
 }): React.JSX.Element {
   // The honest row label is the step the agent ran (e.g. "implement"), NOT a model id — the model is not on
-  // this span. Fall back to the span name so a malformed row still reads as something.
-  const label = call?.step || trace.name || "agent call";
+  // this span. Fall back to the span name so a malformed row still reads as something, then route the raw
+  // sub-phase through SUB_PHASE_LABELS (mirroring StepRowHeader) so it reads human-readably — "Implement",
+  // "Self Review", "PR Description" — with the raw name as a legible fallback for any unmapped sub-phase.
+  const rawStep = call?.step || trace.name || "agent call";
+  const label = SUB_PHASE_LABELS[rawStep] ?? rawStep;
   return (
     <div className="min-w-0 flex-1">
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{label}</span>
+        <Badge variant="outline" className="text-[10px]">
+          Agent
+        </Badge>
         {isLive ? (
           <Badge variant="default" className="gap-1 text-[10px]">
             <Radio size={10} className="animate-pulse" />

@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "summary": "Reviewed the issue #29 change (transient CI-lookup error -> checks_state 'unknown'); correct, complete, minimal, all consumers audited, bundle has no drift, 208 affected tests pass. No findings.",
+  "details": {
+    "review_base": "origin/main...HEAD (local main is stale and shows a polluted ~70-file diff)",
+    "files_reviewed": 12,
+    "consumers_audited": ["derivePrEvents", "pr_ready_to_merge gate", "pr-event-poller shouldPromoteApproval", "auto-merge decideReadiness"],
+    "verification": "docs:bundle no drift; 208/208 affected unit tests pass; regression tests drive the real catch path",
+    "findings": 0,
+    "non_blocking_notes": [
+      "Confirmation-policy decision record lives in stripped requirements/plan docs; could not verify from tree (traceability only, not a defect)",
+      "Local main is stale — diff against it is misleading; branch merged origin/main cleanly"
+    ]
+  }
+}

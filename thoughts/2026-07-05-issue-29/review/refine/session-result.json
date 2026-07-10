@@ -1,5 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Independently verified the transient-lookup fix (consumer audit, Promise.all no-salvage, unreachable combiner entry, real-error-path tests); all gates green (typecheck, lint, docs-bundle drift-free, 2817 unit, 67 integration); no code fixes needed.",
-  "details": { "verdict": "ship" }
-}

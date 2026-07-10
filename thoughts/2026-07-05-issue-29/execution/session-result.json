@@ -1,0 +1,15 @@
+{
+  "status": "ok",
+  "summary": "Merged origin/main into the branch (clean, no conflicts); all gates green; ready for delivery to re-push.",
+  "details": {
+    "merge": "git merge origin/main resolved cleanly via ort — main only advanced package.json and a dashboard tab file, no overlap with the branch's changes",
+    "gates": {
+      "typecheck": "pass",
+      "lint": "pass",
+      "unit_tests": "2817 passed",
+      "integration_tests": "67 passed",
+      "docs_bundle": "no drift"
+    },
+    "implementation": "issue #29 feature (checks_state 'unknown' on transient lookup error) already committed in prior passes; verified intact after merge"
+  }
+}

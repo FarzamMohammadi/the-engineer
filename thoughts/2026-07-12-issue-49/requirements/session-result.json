@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "summary": "Intent is owner-expressed and complete (four-point 'What we want', four design calls explicitly delegated, #34 scoped out); verified every claim in the issue against the code and found two consequences it did not anticipate — retryability must be set explicitly or the retry still won't fire, and the retry must not re-run a run that already wrote a valid result.",
+  "details": {
+    "complexity": "complex",
+    "acceptance_criteria": [
+      "A Claude Code result event carrying is_error: true fails the run regardless of its subtype — including the observed subtype: \"success\" — at BOTH decision sites: the clean-exit path (claude-code-agent.ts:508) and the non-zero-exit salvage path (claude-code-agent.ts:480).",
+      "A run-ending transient/infrastructure failure (dropped connection, server error, rate limit, timeout) is reported to Core as a retryable failure with AdapterError.retryable === true set explicitly, so agent-step's existing retry loop actually fires. Throwing while leaving retryable at its false default does NOT satisfy this.",
+      "A run-ending failure that is not transient (e.g. authentication failure, a rejected/ask_human pipeline stop) is classified terminal and is not retried.",
+      "When a transient failure is retried and a subsequent attempt succeeds, the sub-phase completes normally: no burned phase, no no_result, no owner involvement, no manual `engineer retry`.",
+      "When retries are exhausted, the surfaced failure names the real cause — an API/connection failure must not be reported as no_result / \"session-result.json was not updated by the agent\".",
+      "The validation boundary does not weaken: a run that genuinely produced no valid result (agent completed but wrote nothing, a template, or a malformed file) still fails exactly as today with no_result, including the existing stray-result hint.",
+      "No cost regression on result-over-error: a run that errored AFTER writing a valid session-result.json still has its work preferred and is not re-run by the new retry path.",
+      "Partial-work recovery / session resume stays out of scope (it belongs to #34) — a retry here restarts the sub-phase, it does not resume the dead session.",
+      "Regression coverage exists for the defect and its edges: is_error true + subtype success maps to a retryable failure; the salvage path; a terminal non-retryable error; a genuinely result-less run still failing no_result; and the errored-but-valid-result run not being re-run.",
+      "The project's own gates are green: pnpm run lint, pnpm run typecheck, pnpm test, pnpm run test:integration."
+    ],
+    "verification": {
+      "commands": [
+        { "name": "lint", "command": "pnpm", "args": ["run", "lint"] },
+        { "name": "typecheck", "command": "pnpm", "args": ["run", "typecheck"] },
+        { "name": "test", "command": "pnpm", "args": ["test"] },
+        { "name": "integration", "command": "pnpm", "args": ["run", "test:integration"] }
+      ]
+    }
+  }
+}

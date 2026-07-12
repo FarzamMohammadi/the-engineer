@@ -1,0 +1,22 @@
+{
+  "status": "ok",
+  "summary": "An errored Claude Code result event now fails the run and transient failures are classified retryable, so agent-step's existing retry loop absorbs a dropped connection instead of burning the phase on no_result; all four gates green.",
+  "details": {
+    "commit": "52d8c07",
+    "files_changed": 6,
+    "gates": {
+      "lint": "pass",
+      "typecheck": "pass",
+      "test": "pass (2865 tests, 148 files)",
+      "test:integration": "pass (67 tests, 8 files)"
+    },
+    "plan_deviations": [
+      "The plan's word-boundary mitigation for bare status codes (F1b) was wrong — \\b500\\b does match 'processed 500 files'. My own guard test caught it on the first run. I fixed the pattern to require an error context rather than deleting the test; it also matches the real 'API Error: 429 {...}' shape the CLI emits.",
+      "Skipped the planned claude-stream-error.ndjson fixture — classification needs one event, so a literal object in the table test plus a mock CLI is clearer coverage than a file nobody opens.",
+      "Found and fixed a stale doc claim (salvage is now conditional on the result event reporting success) that no prior phase flagged. The plugin docs turned out to be bundled into src/cli/bundled/plugin-docs.ts and byte-compared by a unit test, so docs:bundle had to run."
+    ],
+    "verification": "Mutation-tested the fix: removing the retry guard (1 test fails), ignoring is_error (5 fail), and forcing retryable:false (2 fail) each break the suite — the coverage is real, not decorative.",
+    "known_accepted_regression": "A run that now fails no longer reaches emitAgentCost, so its spend leaves the cost ledger (plan's F3). Carrying spend on a failure would need a public_api change to the adapter error contract. Documented in the plugin's Limitations rather than left silent; the status quo was strictly worse — it booked a failed run as a successful $2.28 AND burned the phase.",
+    "out_of_scope": "Gemini CLI and OpenCode share the defect class but were not fixed — no live evidence of their error shapes, and a test against a guessed shape proves nothing. Session resume for a cut-off run belongs to #34."
+  }
+}

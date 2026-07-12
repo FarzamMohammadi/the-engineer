@@ -1,0 +1,27 @@
+{
+  "status": "ok",
+  "summary": "Plan written: classify the run outcome inside the Claude Code plugin (honor is_error at all three decision sites, allowlist-based transient classification setting AdapterError.retryable explicitly) and make agent-step's existing retry loop result-aware so it never re-runs work that already landed. No contract or schema change.",
+  "details": {
+    "approach": "Plugin-local classification on the existing AdapterMethodError/retryable contract; rejected a typed run-outcome on AgentAdapter (reinvents a working channel, and would be a public_api change gating the fix for no benefit).",
+    "core_change": "agent-step.ts: one guard so the retry loop bails when a valid session-result.json already exists — resetResultFile runs once before the loop, so a naive retry would overwrite a good result and turn a passing run into no_result. This is a correctness fix, not just a cost fix.",
+    "found_beyond_prior_phases": [
+      "resultEvent['result'] is not always a string (the repo's own mock emits {type,text}); the error message must reuse the existing extractContent helper, not String(event['result']) — otherwise AC#5 is silently gutted.",
+      "The salvage path sets this.lastRateLimits before resolving; the new reject path must set it too, or a rate-limited run drops its quota headers."
+    ],
+    "accepted_regression": "Cost is no longer attributed for errored runs (a throwing run never reaches emitAgentCost). Fixing it needs a spend field on the adapter error contract (public_api). Documented as a follow-up; the status quo — booking a failed run as a successful $2.28 run AND burning the phase — is strictly worse.",
+    "follow_ups": [
+      "Gemini CLI and OpenCode share the defect class; not fixed here (no live evidence of their error shapes — a test against a guessed shape proves nothing).",
+      "Cost attribution on errored runs.",
+      "A terminal run error still rides the daemon's agent_unavailable ladder (bounded, escalates; a cleaner taxonomy is a Core-wide change)."
+    ],
+    "decisions": [
+      {
+        "category": "scope_expansion",
+        "summary": "Also fix the adjacent no-result-event site (claude-code-agent.ts:503), which is the same dropped-connection bug one line away from the two sites named in the acceptance criteria.",
+        "chosen": "Mark the exit-0-with-no-result-event path retryable, in the same file the fix already touches.",
+        "reasoning": "A connection dropped before the CLI emits its result line is a clean exit with a truncated stream — it lands at :503, currently retryable:false, and would keep burning phases exactly as the issue describes. One field, inside a file already being changed, serving the issue's stated goal. Leaving it means knowingly shipping the same defect next door.",
+        "details": { "files": 1 }
+      }
+    ]
+  }
+}

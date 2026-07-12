@@ -1,1 +1,1 @@
-Route host-blocked merges to wait/escalate instead of rework
+Route host-blocked merges to one resumable owner hand-off, never rework

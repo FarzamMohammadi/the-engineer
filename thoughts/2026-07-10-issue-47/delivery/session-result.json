@@ -1,4 +1,22 @@
 {
   "status": "ok",
-  "summary": "Wrote PR title and body from the full diff against main — narrative covers the whole change (contract blocked state, GitHub plugin signal, auto-merge hand-off, poller escalation) with verification and risks."
+  "summary": "Wrote the PR title and body for the whole diff against main — the host-blocked-merge routing fix plus the one-contract/honest-message reconciliation, presented as one landing rather than round-by-round.",
+  "details": {
+    "title": "Route host-blocked merges to one resumable owner hand-off, never rework",
+    "deliverables": [
+      "thoughts/2026-07-10-issue-47/delivery/pr-description.md",
+      "thoughts/2026-07-10-issue-47/delivery/pr-title.md"
+    ],
+    "sources": [
+      "git diff main...HEAD — 8 commits, 13 source/doc/test files",
+      "requirements/requirements.md — 13 acceptance criteria across three passes",
+      "review/refine/refinements.md — verdict ship; two test-quality defects fixed and mutation-proven"
+    ],
+    "notes": [
+      "Rewrote pr-description.md rather than appending to it. create-pr.ts:336 readPrDescription() reads the whole file VERBATIM as the PR body, so an appended prior section would post a stale, round-by-round narrative onto the PR — the opposite of the 'describe the whole PR as it now stands' instruction. The superseded pass-1 body is preserved in this branch's git history (commit a0848eb).",
+      "The prior body was also factually stale: it presented the 'done vs block asymmetry' as an acceptable risk (this PR now fixes it) and described mapMergeState as a 'blocked'-only denylist (it is now an allowlist).",
+      "Verification figures in the body (typecheck/lint PASS; unit 2837, integration 67, e2e 16; the two mutation tests) come from the refine phase's run on the final tree. This is a presentation-only step: I re-ran no gates and changed no code.",
+      "The body honestly flags that this PR is itself MERGEABLE + BLOCKED + REVIEW_REQUIRED and needs a formal GitHub review approval — a /approve comment cannot merge it. That is the fix working as designed, not a delivery failure."
+    ]
+  }
 }

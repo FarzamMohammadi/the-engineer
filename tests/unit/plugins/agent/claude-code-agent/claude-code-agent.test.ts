@@ -3,11 +3,18 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AdapterMethodError, type AgentActivityEvent } from "../../../../../src/adapters/index.js";
+import {
+  type AdapterError,
+  AdapterMethodError,
+  type AgentActivityEvent,
+  createAdapterError,
+} from "../../../../../src/adapters/index.js";
 import {
   ClaudeCodeAgentPlugin,
   activityEventsFromLine,
+  classifyResultEvent,
   dominantModelId,
+  isTransientRunError,
 } from "../../../../../src/plugins/agent/claude-code-agent/claude-code-agent.js";
 import { buildAgentEnv } from "../../../../../src/plugins/agent/subprocess.js";
 import { PluginManifestSchema } from "../../../../../src/schemas/adapters.js";
@@ -72,6 +79,51 @@ exit 1
 `,
 );
 chmodSync(mockCliHugeStderrPath, 0o755);
+
+// The observed issue-49 failure: the API dropped the connection mid-response, so the CLI exits CLEANLY
+// (code 0) and reports `is_error: true` on a result event whose subtype still says "success".
+const DROPPED_CONNECTION_EVENT =
+  '{"type":"result","subtype":"success","is_error":true,"cost_usd":2.28,"result":"API Error: Connection closed mid-response. The response above may be incomplete."}';
+
+const mockCliResultErrorPath = join(mockCliDir, "claude-result-error");
+writeFileSync(
+  mockCliResultErrorPath,
+  `#!/bin/bash
+echo '${DROPPED_CONNECTION_EVENT}'
+`,
+);
+chmodSync(mockCliResultErrorPath, 0o755);
+
+// The same errored result event, but on the non-zero-exit salvage path — it must NOT be salvaged.
+const mockCliExitOneResultErrorPath = join(mockCliDir, "claude-exit1-result-error");
+writeFileSync(
+  mockCliExitOneResultErrorPath,
+  `#!/bin/bash
+echo '${DROPPED_CONNECTION_EVENT}'
+exit 1
+`,
+);
+chmodSync(mockCliExitOneResultErrorPath, 0o755);
+
+// A terminal (non-transient) run error: retrying an invalid API key just burns money.
+const mockCliAuthErrorPath = join(mockCliDir, "claude-auth-error");
+writeFileSync(
+  mockCliAuthErrorPath,
+  `#!/bin/bash
+echo '{"type":"result","subtype":"success","is_error":true,"result":"Invalid API key · Please run /login"}'
+`,
+);
+chmodSync(mockCliAuthErrorPath, 0o755);
+
+// A connection dropped BEFORE the CLI printed its result line: clean exit, truncated stream, no result event.
+const mockCliTruncatedPath = join(mockCliDir, "claude-truncated");
+writeFileSync(
+  mockCliTruncatedPath,
+  `#!/bin/bash
+echo '{"type":"assistant","message":"partial work"}'
+`,
+);
+chmodSync(mockCliTruncatedPath, 0o755);
 
 const mockCliVersionPath = join(mockCliDir, "claude-version");
 writeFileSync(
@@ -250,6 +302,54 @@ describe("ClaudeCodeAgentPlugin", () => {
     }
   });
 
+  // ── Run-outcome Tests (issue #49) ─────────────────────────────────────────
+
+  /**
+   * Run the plugin against a mock CLI and return the AdapterError its run rejected with.
+   * A run that resolves is itself the failure under test, so it surfaces as an unmistakable sentinel.
+   */
+  async function runAndCatchError(cliPath: string): Promise<AdapterError> {
+    const plugin = new ClaudeCodeAgentPlugin();
+    plugin.manifest = manifest;
+    plugin.context = createTestPluginContext();
+    await plugin.initialize({ cli_path: cliPath });
+    return plugin.run(createMockAgentRunRequest()).then(
+      () => createAdapterError("run_unexpectedly_succeeded", "the run resolved instead of rejecting"),
+      (err: unknown) => (err as AdapterMethodError).adapterError,
+    );
+  }
+
+  it("fails a run whose result event is_error, even when the subtype says success (the dropped connection)", async () => {
+    const error = await runAndCatchError(mockCliResultErrorPath);
+
+    expect(error.code).toBe("cli_error");
+    // Retryable — otherwise agent-step's retry loop never fires and the phase burns on no_result.
+    expect(error.retryable).toBe(true);
+    // The message must name the real cause; "CLI returned error: unknown" is what made this undiagnosable.
+    expect(error.message).toContain("Connection closed mid-response");
+  });
+
+  it("does not salvage an errored result event on the non-zero-exit path", async () => {
+    const error = await runAndCatchError(mockCliExitOneResultErrorPath);
+
+    expect(error.code).toBe("cli_error");
+    expect(error.retryable).toBe(true);
+    expect(error.message).toContain("Connection closed mid-response");
+  });
+
+  it("classifies a non-transient run error as terminal so it is never retried", async () => {
+    const error = await runAndCatchError(mockCliAuthErrorPath);
+
+    expect(error.retryable).toBe(false);
+    expect(error.message).toContain("Invalid API key");
+  });
+
+  it("fails retryably when the stream is cut off before the result event", async () => {
+    const error = await runAndCatchError(mockCliTruncatedPath);
+
+    expect(error.retryable).toBe(true);
+  });
+
   it("truncates error message to 2000 chars when stderr is huge", async () => {
     const plugin = new ClaudeCodeAgentPlugin();
     plugin.manifest = manifest;
@@ -264,6 +364,83 @@ describe("ClaudeCodeAgentPlugin", () => {
       // Error message should be bounded — code prefix + truncated stderr ≤ ~2050 chars
       expect(adapterErr.adapterError.message.length).toBeLessThan(2100);
     }
+  });
+});
+
+// ── classifyResultEvent / isTransientRunError (run-outcome classification) ─────
+
+describe("classifyResultEvent", () => {
+  it("fails the observed dropped-connection event: is_error true despite subtype success", () => {
+    expect(
+      classifyResultEvent({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: "API Error: Connection closed mid-response. The response above may be incomplete.",
+      }),
+    ).toEqual({
+      kind: "failed",
+      message: "API Error: Connection closed mid-response. The response above may be incomplete.",
+      retryable: true,
+    });
+  });
+
+  it("fails an event whose subtype is error", () => {
+    expect(classifyResultEvent({ subtype: "error", result: "something broke" })).toMatchObject({ kind: "failed" });
+  });
+
+  it("sources the message from a {type,text} result block, not [object Object]", () => {
+    const verdict = classifyResultEvent({
+      subtype: "success",
+      is_error: true,
+      result: { type: "text", text: "API Error: Connection closed" },
+    });
+
+    expect(verdict).toEqual({ kind: "failed", message: "API Error: Connection closed", retryable: true });
+  });
+
+  it("falls back to a stable message when the event carries no cause at all", () => {
+    expect(classifyResultEvent({ subtype: "error" })).toEqual({
+      kind: "failed",
+      message: "unknown error",
+      retryable: false,
+    });
+  });
+
+  it("passes a successful run: is_error false, and is_error absent (the salvage path's event)", () => {
+    expect(classifyResultEvent({ subtype: "success", is_error: false, result: "done" })).toEqual({ kind: "ok" });
+    expect(classifyResultEvent({ subtype: "success", result: { type: "text", text: "Salvaged output" } })).toEqual({
+      kind: "ok",
+    });
+  });
+});
+
+describe("isTransientRunError", () => {
+  it.each([
+    "API Error: Connection closed mid-response. The response above may be incomplete.",
+    "read ECONNRESET",
+    "socket hang up",
+    "Request timed out",
+    "rate limit exceeded",
+    "529 Overloaded",
+    "503 Service Unavailable",
+    "Internal server error",
+    // The real shape Claude's CLI reports a status code in — the code only counts in an error context.
+    'API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}',
+    'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+  ])("retries the transient failure: %s", (message) => {
+    expect(isTransientRunError(message)).toBe(true);
+  });
+
+  it.each([
+    "Invalid API key · Please run /login",
+    "authentication failed",
+    "Agent run rejected: the owner denied the action",
+    "Something nobody has seen before",
+    // Word-bounded status codes: prose about counts must never read as a 500.
+    "processed 500 files",
+  ])("treats as terminal (fail safe — an unknown error escalates rather than looping): %s", (message) => {
+    expect(isTransientRunError(message)).toBe(false);
   });
 });
 

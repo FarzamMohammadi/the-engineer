@@ -84,6 +84,66 @@ export function processNdjsonLine(line: string): NdjsonLineResult {
   }
 }
 
+// ── Run-outcome classification ────────────────────────────────────────────────
+
+/** The verdict on a CLI result event: the run succeeded, or it failed — and whether that failure is worth a retry. */
+export type ResultEventVerdict =
+  | { readonly kind: "ok" }
+  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean };
+
+/**
+ * Infrastructure blips worth another attempt, matched against the engine's own error message.
+ *
+ * An ALLOWLIST, deliberately. Only a recognized transient failure is retried; every other error is still a
+ * *failure* — that is the fix — but a terminal one. An unrecognized error therefore preserves today's
+ * escalate-to-the-owner behavior rather than risking a retry loop that burns money on a deterministic fault.
+ * Authentication failures need no special case: they match nothing here, so they fall through to terminal.
+ *
+ * An HTTP status code only counts when it sits in an error context ("API Error: 429 …", "status 503"). A
+ * word boundary alone is not enough — it happily matches the 500 in "processed 500 files", and a false
+ * transient is the expensive direction to be wrong in: it retries a deterministic failure three times.
+ */
+const TRANSIENT_RUN_ERROR =
+  /connection (closed|error|reset)|econnreset|econnrefused|epipe|etimedout|socket hang up|timed out|timeout|rate[ _-]?limit|overloaded|service unavailable|internal server error|server error|network error|\b(error|status)\W{0,2}(429|500|502|503|504|529)\b/i;
+
+/** Whether a run-ending error message names a transient/infrastructure failure (see `TRANSIENT_RUN_ERROR`). */
+export function isTransientRunError(message: string): boolean {
+  return TRANSIENT_RUN_ERROR.test(message);
+}
+
+/**
+ * Decide whether a CLI result event reports a successful run.
+ *
+ * The engine signals failure two ways and we honor BOTH: `is_error: true` on the result event, and
+ * `subtype: "error"`. Reading `subtype` alone was the defect behind issue #49 — a dropped API connection
+ * emits `{"subtype":"success","is_error":true,"result":"API Error: Connection closed mid-response…"}`,
+ * which read as a *successful* run, so the phase burned on `no_result` instead of retrying. Honoring
+ * `is_error` regardless of `subtype` also subsumes the `error_during_execution` / `error_max_turns`
+ * subtypes that the `subtype === "error"` check misses.
+ *
+ * `is_error` is compared strictly against `true`: it is absent on healthy events (including the ones the
+ * non-zero-exit salvage path recovers), and a truthiness check would fail those runs.
+ */
+export function classifyResultEvent(event: Record<string, unknown>): ResultEventVerdict {
+  if (event["is_error"] !== true && event["subtype"] !== "error") {
+    return { kind: "ok" };
+  }
+  // The cause lives in `result` (a bare string, or a `{type,text}` block — `extractContent` normalizes both).
+  // Sourcing it from anywhere else is what previously surfaced an API outage as "CLI returned error: unknown".
+  const message = extractContent(event) || String(event["error"] ?? "") || "unknown error";
+  return { kind: "failed", message, retryable: isTransientRunError(message) };
+}
+
+/** The adapter error for a run the engine reported as failed — carries the engine's own message and our retry verdict. */
+function failedRunError(verdict: Extract<ResultEventVerdict, { kind: "failed" }>): AdapterMethodError {
+  return new AdapterMethodError(
+    createAdapterError("cli_error", `Claude CLI run failed: ${verdict.message}`, {
+      retryable: verdict.retryable,
+      severity: AdapterErrorSeverities.error,
+    }),
+  );
+}
+
 // ── Live activity mapping ─────────────────────────────────────────────────────
 
 /**
@@ -476,11 +536,19 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
 
         if (code !== 0) {
           // ── Attempt to salvage from streaming state ──
-          // If we captured a result event during streaming, use it despite non-zero exit
-          if (parsed.resultEvent && parsed.resultEvent["subtype"] !== "error") {
+          // A result event captured during streaming is used despite the non-zero exit — but ONLY when it
+          // reports a successful run. An errored result event means the run itself failed; salvaging it
+          // would hand Core a truncated run dressed up as work.
+          if (parsed.resultEvent) {
+            // Set before either branch: a rate-limited run is exactly when quota headers matter most.
             this.lastRateLimits = parsed.rateLimits;
-            this.context.logger.info("CLI exited non-zero but result event captured — salvaging", { code });
-            resolve(buildAgentRunResult(parsed.resultEvent, durationMs));
+            const verdict = classifyResultEvent(parsed.resultEvent);
+            if (verdict.kind === "ok") {
+              this.context.logger.info("CLI exited non-zero but result event captured — salvaging", { code });
+              resolve(buildAgentRunResult(parsed.resultEvent, durationMs));
+              return;
+            }
+            reject(failedRunError(verdict));
             return;
           }
 
@@ -501,23 +569,24 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
 
         // ── Happy path: use streamed result ──
         if (!parsed.resultEvent) {
-          reject(new AdapterMethodError(createAdapterError("internal_error", "No result event found in CLI output")));
-          return;
-        }
-
-        if (parsed.resultEvent["subtype"] === "error") {
+          // A clean exit with no result line means the stream was cut off before the CLI could print its
+          // result — the same dropped connection, landing a moment earlier. Retryable, not terminal.
           reject(
             new AdapterMethodError(
-              createAdapterError(
-                "internal_error",
-                `CLI returned error: ${String(parsed.resultEvent["error"] ?? "unknown")}`,
-              ),
+              createAdapterError("internal_error", "No result event found in CLI output", { retryable: true }),
             ),
           );
           return;
         }
 
         this.lastRateLimits = parsed.rateLimits;
+
+        const verdict = classifyResultEvent(parsed.resultEvent);
+        if (verdict.kind === "failed") {
+          reject(failedRunError(verdict));
+          return;
+        }
+
         resolve(buildAgentRunResult(parsed.resultEvent, durationMs));
       });
 

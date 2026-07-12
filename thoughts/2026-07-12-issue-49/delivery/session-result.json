@@ -1,0 +1,18 @@
+{
+  "status": "ok",
+  "summary": "Wrote the PR title and body from the full diff against main — the fix, the two traps it avoids, the gates, and four honest follow-ups (cost-on-error attribution, isSignalKill, sibling plugins, #34 resume).",
+  "details": {
+    "title": "Fail an errored agent run so transient blips retry, not burn the phase",
+    "deliverables": [
+      "thoughts/2026-07-12-issue-49/delivery/pr-title.md",
+      "thoughts/2026-07-12-issue-49/delivery/pr-description.md"
+    ],
+    "sources": [
+      "git log/diff main...HEAD (5 commits: src, docs, tests)",
+      "requirements/requirements.md",
+      "review/refine/refinements.md"
+    ],
+    "gates_reported": "lint, typecheck, test (2870 passed / 148 files), test:integration (67 passed / 8 files) — all green per the refine trail",
+    "notes": "Presentation only; no code changed. Review-round changes (bare status-code shapes, cli_error on the truncated-stream path, the cost-attribution doc note) are folded into the narrative as if they landed with the original work, per the write-the-whole-PR instruction."
+  }
+}

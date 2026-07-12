@@ -4,7 +4,6 @@ import { type PrEvent, PrEventTypes } from "../../schemas/git-hosting-events.js"
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { BlockCategories, BlockReasons, type BlockedDetails, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
-import { HOST_BLOCKED_MERGE_CATEGORY, hostBlockedMergeNeeded } from "../orchestrator/pipeline/host-blocked-merge.js";
 import { arbitrate, dedupePrEvents, findAuthorizedApproval } from "../orchestrator/pipeline/pr-events.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { PrEventPollerContext } from "./types.js";
@@ -20,17 +19,19 @@ import type { PrEventPollerContext } from "./types.js";
 // Two re-entry paths. Rework events re-enter the upstream pipeline (new comments →
 // requirements, CI failure / merge conflict → execution). The merge events re-enter at
 // delivery's auto-merge, which performs the merge. An authorized /approve is the
-// single-contributor approval path: when a live re-check confirms the PR is green and
-// mergeable, the poller promotes it to a merge (dropping the same-poll comments, which
-// would otherwise win precedence and route to requirements); a not-yet-green /approve
-// keeps the task waiting rather than attempting a doomed merge. When that /approve lands
-// on a PR the host's branch protection *blocks* (green but merge_state=blocked, e.g. a
-// required formal review a comment cannot satisfy), the poller does NOT promote — a merge
-// the host will not honor would re-push the branch and loop — it hands the task off on the
-// shared host-blocked-merge contract (`orchestrator/pipeline/host-blocked-merge.ts`), the
-// same lifecycle state and the same owner-facing message delivery's auto-merge resolves
-// this identical condition to. That moves the task off this poll set (bounding it to one
-// escalation) while leaving it resumable once the owner unblocks the merge on the host.
+// single-contributor approval path: when a live re-check confirms the PR is green and the
+// host will take a merge, the poller promotes it to a merge (dropping the same-poll comments,
+// which would otherwise win precedence and route to requirements); a not-yet-green /approve
+// keeps the task waiting.
+//
+// A PR the host reports as protection-`blocked` still promotes. That is the host's verdict on
+// its own rules, not on whether the merge can happen: an admin token on a repo that permits a
+// bypass merges it normally, and for a lone owner that bypass is the only automated route —
+// the PR is authored under the owner's own account, and a host will not let an author approve
+// their own pull request, so the required review is unsatisfiable by anyone. The /approve
+// comment IS the owner's approval for that reason. Whether the host ultimately takes the merge
+// is decided by delivery's auto-merge, which resolves a refusal into an owner hand-off and
+// never a rework — so promoting costs at most one rejected attempt.
 
 /** Polls open PRs for events and re-enters their tasks. */
 export interface PrEventPoller {
@@ -141,13 +142,11 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
 
   /**
    * Narrow the plugin's events to what is genuinely actionable now. An authorized /approve on a PR a live
-   * re-check confirms is green and mergeable is promoted to pr_ready_to_merge — the merge path — and the
+   * re-check confirms is green and merge-worthy is promoted to pr_ready_to_merge — the merge path — and the
    * same-poll comments are dropped (an approval is not rework, and precedence would otherwise route the
-   * comments to requirements). When the same /approve lands on a PR the host's branch protection *blocks*,
-   * promoting would attempt a merge the host will not honor — re-pushing the branch and looping forever — so
-   * the task is escalated to the owner instead and no event routes this poll. Otherwise: drop feedback
-   * already accommodated, drop a comments event with nothing to act on (a bare changes-requested), and drop a
-   * comments event carrying an authorized /approve (the task keeps waiting until the merge preconditions hold).
+   * comments to requirements). Otherwise: drop feedback already accommodated, drop a comments event with
+   * nothing to act on (a bare changes-requested), and drop a comments event carrying an authorized /approve
+   * (the task keeps waiting until the merge preconditions hold).
    */
   async function actionableEvents(
     task: Task,
@@ -159,13 +158,6 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
     if (disposition === "promote") {
       recordApprovePromotion(task, deduped);
       return [{ type: PrEventTypes.pr_ready_to_merge }];
-    }
-    if (disposition === "escalate_blocked") {
-      // A merge the host will not honor never drives rework. Escalate to the owner (side effect) and route
-      // nothing this poll; the escalation moves the task off the pr_review_pending poll set, so the loop is
-      // structurally bounded to a single escalation.
-      escalateMergeBlocked(task, deduped);
-      return [];
     }
     return deduped.filter(isActionableRework);
   }
@@ -201,15 +193,23 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   /**
    * How an authorized /approve in this poll should be handled, from a single live re-check. /approve is the
    * single-contributor approval path, gated by the enable_comment_approval safety flag:
-   *   - `promote`  — the PR is open, green, and mergeable: turn the /approve into a merge (the same
-   *     preconditions the plugin computes for a formal approval's pr_ready_to_merge).
-   *   - `escalate_blocked` — the PR is open and green but the host's branch protection *blocks* the merge
-   *     (`merge_state === "blocked"`): a /approve comment cannot satisfy a required formal review, so
-   *     promoting would attempt a doomed merge and loop. Escalate to the owner instead.
+   *   - `promote` — the PR is open, green, and the host will either merge it (`mergeable`) or merge it under
+   *     a bypass (`blocked`): turn the /approve into a merge.
    *   - `wait` — comment-approval disabled, no authorized /approve, the re-check threw, or the PR is not yet
-   *     green/mergeable-or-blocked: the task keeps waiting rather than attempting a doomed merge.
-   * The blocked check is gated on `checks_state === "passing"` (symmetric with `promote`) so a red-CI blocked
-   * PR still falls through to `wait` and the normal CI-rework path, never to this escalation.
+   *     green / not yet resolved: the task keeps waiting.
+   *
+   * `blocked` promotes alongside `mergeable`, which is the non-obvious part. `blocked` means the host's own
+   * protection gates the merge (a required review is missing) — it does not mean the merge cannot happen.
+   * A token with admin rights on a repo that permits bypass merges a `blocked` PR normally. And for a lone
+   * owner that bypass is the only automated route at all: the PR is authored under the owner's own account,
+   * a host will not let an author approve their own pull request, and so the required review can never be
+   * satisfied by anyone. The /approve comment IS the owner's approval for that reason; refusing to promote
+   * on `blocked` would make it a dead end and leave every PR to be merged by hand.
+   *
+   * Promoting a merge the host ultimately refuses is safe: delivery's merge step resolves the refusal to a
+   * hand-off that blocks for the owner and never reworks, so a rejected merge costs one attempt, not a loop.
+   * Both branches are gated on `checks_state === "passing"`, so a red-CI PR still falls through to `wait`
+   * and the normal CI path.
    */
   async function resolveApproveDisposition(
     task: Task,
@@ -228,11 +228,8 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       if (status.state !== "open" || status.checks_state !== "passing") {
         return "wait";
       }
-      if (status.merge_state === "mergeable") {
+      if (status.merge_state === "mergeable" || status.merge_state === "blocked") {
         return "promote";
-      }
-      if (status.merge_state === "blocked") {
-        return "escalate_blocked";
       }
       return "wait";
     } catch (error) {
@@ -299,60 +296,6 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
       }
     }
     return null;
-  }
-
-  /**
-   * Escalate an authorized /approve the host's branch protection will not honor. Promoting it would attempt
-   * a merge the host refuses — which re-pushes the branch and loops on every poll — so instead the task is
-   * handed off on the SHARED host-blocked-merge contract: the same block category and the same owner-facing
-   * message that delivery's auto-merge resolves this identical condition to, so the owner reads one coherent
-   * hand-off however it was detected (see `orchestrator/pipeline/host-blocked-merge.ts`).
-   *
-   * The category collapses to `need_more_info`, which takes the task off the `pr_review_pending` poll set —
-   * structurally bounding this to one escalation — and onto the owner-escalation ladder, while leaving it
-   * resumable. The poller writes the block directly (it is not in the pipeline, so it cannot route through
-   * the runner's `blockTask`), which is why it also sends the notifications the block's own delivery would
-   * have. `pending_pr_event` is cleared defensively so no stale event re-dispatches the task back into the
-   * loop we are escaping. Mirrors `escalateBlockerCap`'s structure.
-   */
-  function escalateMergeBlocked(task: Task, events: readonly PrEvent[]): void {
-    const prNumber = task.review?.pr_number ?? null;
-    // A /approve comment is never dismissed by the cleanup push (only a formal approval is), and this path
-    // never pushed one — so this is always the plain hand-off, never the re-approve variant.
-    const needed = hostBlockedMergeNeeded(prNumber, false);
-    recordMergeBlockedEscalation(task, approverOf(events));
-    // Defensive: a pending event would re-dispatch this task straight back into the loop we are escaping.
-    taskEngine.updateTaskField(task.id, "pending_pr_event", null);
-    taskEngine.updateTaskField(task.id, "blocked", {
-      reason: BlockReasons.need_more_info,
-      category: HOST_BLOCKED_MERGE_CATEGORY,
-      sub_phase: "await-review",
-      needed,
-    } satisfies BlockedDetails);
-    observer.warn("PR /approve blocked by branch protection — escalating to the owner", {
-      taskId: task.id,
-      prNumber,
-    });
-    notifications.notify({ kind: NotificationKinds.alert, taskId: task.id, message: needed });
-    notifications.notify({ kind: NotificationKinds.ticket_comment, taskId: task.id, message: needed });
-  }
-
-  /** Record the merge-blocked escalation as a decision — the promote-anyway path was available and deliberately not taken. */
-  function recordMergeBlockedEscalation(task: Task, approver: string | null): void {
-    observer.recordDecision(
-      "approve_comment_merge_blocked",
-      `PR #${String(task.review?.pr_number)} carries an authorized /approve, but a live re-check shows the host's branch protection blocks the merge (merge_state=blocked)`,
-      [
-        { id: "promote_to_merge", description: "Promote the /approve and attempt the merge anyway" },
-        { id: "escalate", description: "Stop and block for the owner to approve on the host" },
-      ],
-      "escalate",
-      approver
-        ? `Authorized /approve by "${approver}" cannot satisfy the host's required formal review — promoting would attempt a doomed merge that re-pushes the branch and loops`
-        : "The host's branch protection needs a formal review a /approve comment cannot satisfy — promoting would loop on a doomed merge",
-      1,
-      { task_id: task.id },
-    );
   }
 
   function routeEvent(task: Task, winner: PrEvent): void {
@@ -506,7 +449,7 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
  * How the poller handles an authorized /approve this poll, from one live re-check: promote it to a merge,
  * escalate to the owner because the host blocks the merge, or keep waiting.
  */
-type ApproveDisposition = "promote" | "escalate_blocked" | "wait";
+type ApproveDisposition = "promote" | "wait";
 
 /** The system-detected PR events that must converge or be escalated — distinct from human feedback and the terminal merge events. */
 type BlockerEventType = typeof PrEventTypes.pr_merge_conflict | typeof PrEventTypes.pr_ci_failure;

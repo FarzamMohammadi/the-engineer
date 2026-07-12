@@ -226,32 +226,39 @@ describe("auto-merge run", () => {
     expect(mergePR).not.toHaveBeenCalled();
   });
 
-  it("hands off to the owner without merging when the host blocks the merge (branch protection) — never reworks", async () => {
-    // The highest-priority guard (issue #47): a `blocked` PR is decided in readiness, BEFORE any mergePR
-    // call. There is no doomed merge (so no branch re-push) and it blocks for the owner, never routes to
-    // execution rework — the code is fine, only the merge is gated. This is what makes the infinite loop
-    // structurally impossible: awaiting_human ⇒ need_more_info takes the task off the review-poll set.
-    const { ctx, mergePR, notify, published, observer } = mockCtx({ status: { merge_state: "blocked" } });
+  it("still attempts the merge when the host reports the PR as protection-blocked", async () => {
+    // `blocked` is the host's verdict on its own rules, not on whether we can merge: a token with admin
+    // rights on a repo that permits a bypass merges a blocked PR normally, and for a lone owner — whose PRs
+    // are authored under their own account, and whom the host will not let approve their own pull request —
+    // that bypass is the only automated route there is. So readiness must NOT pre-refuse; it attempts the
+    // merge and lets the host decide. A refusal is handled where it happens (see the merge-failure tests).
+    const { ctx, mergePR } = mockCtx({ status: { merge_state: "blocked" } });
 
     const result = await autoMerge.run(ctx);
 
-    expect(result).toMatchObject({
-      outcome: "ok",
-      data: { disposition: "needs_human_merge", pr_number: 7, approval_dismissed: false },
+    expect(mergePR).toHaveBeenCalledWith("acme/app", 7, expect.any(String));
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "merged" } });
+  });
+
+  it("hands a host-refused merge off to the owner — never reworks", async () => {
+    // The host declines the merge (its protection allows no bypass for this token). That is not a defect in
+    // the code — only the merge is gated — so it must never route to execution rework. It blocks for the
+    // owner instead, which is also what bounds the merge path: awaiting_human ⇒ need_more_info takes the
+    // task off the review-poll set, so the promote → refuse cycle cannot repeat.
+    const { ctx, mergePR, observer } = mockCtx({
+      status: { merge_state: "blocked" },
+      mergeResult: { success: false, reason: "not_mergeable", message: "Pull Request is not mergeable" },
     });
-    expect(mergePR).not.toHaveBeenCalled();
-    expect(autoMergeNext(result as RoutableResult)).toMatchObject({
-      go: "block",
-      category: HOST_BLOCKED_MERGE_CATEGORY,
-    });
-    // The block's own delivery is the single owner-facing message — `run` must NOT also notify, or the owner
-    // gets the hand-off twice on the same PR. Nothing is recorded/published as merged either.
-    expect(notify).not.toHaveBeenCalled();
-    expect(published).toEqual([]);
-    // The readiness decision records needs_human_merge as chosen, with it among the offered alternatives.
-    const decision = observer.decisions.find((entry) => entry.name === "merge_readiness");
+
+    const result = await autoMerge.run(ctx);
+
+    expect(mergePR).toHaveBeenCalled();
+    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge", pr_number: 7 } });
+    const route = autoMergeNext(result as RoutableResult);
+    expect(route).toMatchObject({ go: "block", category: HOST_BLOCKED_MERGE_CATEGORY });
+    expect(route).not.toMatchObject({ go: "jump", to: Phases.execution });
+    const decision = observer.decisions.find((entry) => entry.name === "merge_outcome");
     expect(decision?.chosen).toBe("needs_human_merge");
-    expect(decision?.options?.map((option: { id: string }) => option.id)).toContain("needs_human_merge");
   });
 
   it("waits rather than reworking when mergeability is not yet computed (unknown)", async () => {

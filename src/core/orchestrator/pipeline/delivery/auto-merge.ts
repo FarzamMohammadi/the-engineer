@@ -249,19 +249,28 @@ function decideReadiness(ctx: Ctx, repo: string, status: PRStatus): MergeReadine
   if (status.merge_state === "conflicting") {
     return { disposition: "merge_conflict", reasoning: "the PR no longer merges cleanly into its base" };
   }
-  // `blocked` is mergeable in *shape* but the host will not complete the merge (branch protection / a
-  // required review a `/approve` comment cannot satisfy). There is nothing to re-implement — the code is
-  // fine, only the merge is gated — so this must NOT rework. Hand off to the owner *before* any `mergePR`
-  // call: attempting the doomed merge would push a thoughts-cleanup commit (re-pushing the branch) and its
-  // rejection code is unreliable, which is exactly what routed this to rework and looped it. Deciding here,
-  // in readiness, means the doomed attempt never happens.
-  if (status.merge_state === "blocked") {
-    return {
-      disposition: "needs_human_merge",
-      reasoning:
-        "the host's branch protection blocks the merge (a required review the Engineer cannot satisfy) — a human must approve on the host or complete the merge",
-    };
-  }
+  // `blocked` deliberately does not short-circuit — the merge is still attempted. The reason is subtle:
+  //
+  //   `blocked` is the host's verdict on its own protection rules ("a required review is missing"). It is
+  //   NOT a verdict on whether *we* can merge. Where the token holds admin rights and protection permits a
+  //   bypass, the host merges a `blocked` PR without complaint — the merge call is an ordinary one, and the
+  //   bypass is applied on the host's side. Refusing here would decline merges the host would have accepted.
+  //
+  //   That bypass is the only route to an automated merge for a lone owner. The Engineer opens the PR under
+  //   the owner's own account, and a host will not let an author approve their own pull request — so a
+  //   "one approving review" rule can never be satisfied: no one exists who is allowed to approve it. The
+  //   `/approve` comment is the owner's approval precisely because the formal one is unreachable. Declining
+  //   on `blocked` would strand every such PR and hand the merge back to the owner forever.
+  //
+  // Attempting is safe because a refusal is caught where it happens, not guessed at here: the host's refusal
+  // surfaces as `not_mergeable`, which resolves to `needs_human_merge` — block for the owner, never rework.
+  // So the attempt either merges or escalates cleanly; it can never send a sound PR back to execution. Any
+  // guard against that belongs at the failure site, not in this readiness check.
+  //
+  // The accepted cost: a genuine refusal wastes the pre-merge thoughts-cleanup push, and where the host
+  // dismisses stale reviews that push also drops a formal approval. `approval_dismissed` carries that fact
+  // into the owner's message. It is the price of not pre-emptively refusing a merge the host would allow.
+
   // `unknown` mergeability is the host still computing it (common right after a push) — wait and re-check,
   // never rework, so a not-yet-resolved merge state cannot send a clean PR back to execution.
   if (status.merge_state === "unknown") {

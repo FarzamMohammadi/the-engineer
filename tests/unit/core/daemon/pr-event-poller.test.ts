@@ -3,14 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
 import { createPrEventPoller } from "../../../../src/core/daemon/pr-event-poller.js";
 import type { PrEventPollerContext } from "../../../../src/core/daemon/types.js";
-import {
-  HOST_BLOCKED_MERGE_CATEGORY,
-  hostBlockedMergeNeeded,
-} from "../../../../src/core/orchestrator/pipeline/host-blocked-merge.js";
 import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { BlockReasons, type BlockedDetails, type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
+import { type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTask } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { createTestPeopleDirectory } from "../../../helpers/test-people-directory.js";
@@ -297,11 +293,14 @@ describe("PrEventPoller", () => {
       expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ci_failure"));
     });
 
-    it("escalates to the owner instead of promoting when the host's branch protection blocks the merge", async () => {
-      // Issue #47: a green PR whose merge_state is `blocked` (branch protection needs a formal review a
-      // /approve comment cannot satisfy). Promoting would attempt a doomed merge that re-pushes the branch
-      // and loops. Instead the poller escalates: no promotion, and the task is re-blocked under
-      // `need_more_info` (which takes it off the pr_review_pending poll set — the structural loop bound).
+    it("promotes an authorized /approve on a host-blocked PR — the merge is attempted, not refused here", async () => {
+      // `blocked` is the host's verdict on its own protection rules (a required review is missing), not a
+      // verdict on whether the merge can happen: an admin token on a repo that permits a bypass merges it
+      // normally. And for a lone owner the bypass is the only automated route at all — the PR is authored
+      // under the owner's own account, and a host will not let an author approve their own pull request, so
+      // the required review is unsatisfiable by anyone. The /approve comment IS that owner's approval.
+      // Refusing to promote here would strand every such PR. Whether the host actually takes the merge is
+      // delivery's call, and a refusal there hands off to the owner rather than reworking.
       const { poller, requestTransition, updateTaskField, notify } = setup({
         events: [approve()],
         prStatus: { merge_state: "blocked" },
@@ -309,33 +308,17 @@ describe("PrEventPoller", () => {
 
       await poller.poll();
 
-      // No promotion: no pr_ready_to_merge event, no re-queue transition.
-      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
-      expect(requestTransition).not.toHaveBeenCalled();
-      // Re-blocked under need_more_info / awaiting_human — off the pr_review_pending poll set. This is the
-      // SAME contract delivery's auto-merge resolves the same condition to (see host-blocked-merge-contract).
-      expect(updateTaskField).toHaveBeenCalledWith(
-        "t1",
-        "blocked",
-        expect.objectContaining({
-          reason: BlockReasons.need_more_info,
-          category: HOST_BLOCKED_MERGE_CATEGORY,
-          needed: hostBlockedMergeNeeded(7, false),
-        }),
-      );
-      // Pending event cleared defensively so no stale event re-dispatches the task into the loop.
-      expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", null);
-      // The owner is told, actionably — and with the one honest message, not a promise the Engineer may not
-      // be able to keep (it never says an unconditional "I'll merge it").
-      expect(notify).toHaveBeenCalledWith(
-        expect.objectContaining({ kind: NotificationKinds.alert, message: hostBlockedMergeNeeded(7, false) }),
-      );
+      expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ready_to_merge"));
+      // The poller does not pre-empt the host: it neither blocks the task nor alerts the owner.
+      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "blocked", expect.anything());
+      expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.alert }));
     });
 
-    it("does not escalate a blocked PR that carries no authorized /approve — it is just awaiting its review", async () => {
+    it("does not promote a blocked PR that carries no authorized /approve — it is just awaiting its review", async () => {
       // The dangerous false positive: a PR with required reviews and no approval yet ALSO reports
       // merge_state `blocked` — that is the normal waiting state, the highest-traffic path in the system.
-      // The escalation is gated on an authorized /approve, so this poll must do nothing at all.
+      // Promotion is gated on an authorized /approve, so this poll must not reach for the merge at all.
       const { poller, requestTransition, updateTaskField, notify } = setup({
         events: [{ type: PrEventTypes.pr_comments, comments: [comment("c1", "alice", "looks good so far")] }],
         prStatus: { merge_state: "blocked" },
@@ -343,40 +326,25 @@ describe("PrEventPoller", () => {
 
       await poller.poll();
 
+      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
       expect(updateTaskField).not.toHaveBeenCalledWith("t1", "blocked", expect.anything());
       expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.alert }));
       // The comment is ordinary reviewer feedback — it still reworks as it always did.
       expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_comments"));
     });
 
-    it("cannot re-form the loop — the escalation's own write takes the task off the poll set", async () => {
-      // Criterion 3: the previously-unbounded pr_ready_to_merge re-entry path. The bound here is STRUCTURAL,
-      // not a counter — the escalation writes `reason: need_more_info`, and the daemon only ever polls tasks
-      // blocked on `pr_review_pending`. So model that re-query faithfully rather than stubbing an empty list:
-      // the poll set is derived from the reason the poller ACTUALLY wrote. That makes this test prove the
-      // write is the bound, instead of asserting it by fiat — and makes it fail if the escalation is removed,
-      // weakened to a non-terminal reason, or replaced by a promotion.
-      const { poller, task, requestTransition, updateTaskField, getBlockedTasksByReason } = setup({
-        events: [approve()],
-        prStatus: { merge_state: "blocked" },
-      });
-      const blockWrites = () => updateTaskField.mock.calls.filter((call) => call[1] === "blocked");
-      getBlockedTasksByReason.mockImplementation((reason: string) => {
-        const written = blockWrites().at(-1)?.[2] as BlockedDetails | undefined;
-        // Before any escalation the task sits on the review-poll set; afterwards, wherever its block reason says.
-        return (written?.reason ?? BlockReasons.pr_review_pending) === reason ? [task] : [];
+    it("does not promote a red-CI blocked PR — a failing check still takes the CI path", async () => {
+      // Promotion is gated on `checks_state === "passing"` for `blocked` exactly as it is for `mergeable`,
+      // so a protection-blocked PR whose CI is red never sneaks into the merge path — it reworks the CI.
+      const { poller, requestTransition, updateTaskField } = setup({
+        events: [approve(), { type: PrEventTypes.pr_ci_failure }],
+        prStatus: { merge_state: "blocked", checks_state: "failing" },
       });
 
-      await poller.poll(); // first poll: sees the /approve on a blocked PR and escalates
+      await poller.poll();
 
-      expect(blockWrites()).toHaveLength(1);
-      expect(blockWrites()[0]?.[2]).toMatchObject({ reason: BlockReasons.need_more_info });
-
-      await poller.poll(); // second poll: the task is no longer on the pr_review_pending set
-
-      // Escalated exactly once, and never promoted to a merge the host would refuse — the loop cannot re-form.
-      expect(blockWrites()).toHaveLength(1);
-      expect(requestTransition).not.toHaveBeenCalled();
+      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_ci_failure"));
     });
   });
 

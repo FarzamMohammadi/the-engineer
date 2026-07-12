@@ -13,6 +13,7 @@ import { sanitizeErrorMessage } from "../../../../utils/sanitize.js";
 import type { PublishInput } from "../../../interfaces/event-bus.interface.js";
 import type { WorkspaceRecord } from "../../../interfaces/workspace-manager.interface.js";
 import { removeThoughtsAndPush } from "../../pr-manager.js";
+import { HOST_BLOCKED_MERGE_CATEGORY, hostBlockedMergeNeeded } from "../host-blocked-merge.js";
 import { traceScope } from "../observability.js";
 import {
   BlockCategories,
@@ -42,8 +43,15 @@ import { skipWhenPushOnly } from "./deliverable.js";
 //
 // Routing splits by cause (the thoughts removal, the merge call, and the merge record
 // are effects; `next` is pure):
-//   - merged / already-merged / auto-merge-disabled / host-blocked → done (the deliverable
-//     exists, or the host requires a human to perform the merge — either way we stop, never loop)
+//   - merged / already-merged / auto-merge-disabled → done. These are genuine, honest terminal
+//     hand-offs: the deliverable exists (the PR is merged, or the owner turned auto-merge off
+//     and merges it themselves).
+//   - host-blocked → block on the shared host-blocked-merge contract, NOT done. The PR is
+//     unmerged and undelivered, so completing the task would post "Task completed successfully."
+//     on an unmerged PR, destroy the worktree, and forbid the retry the hand-off message itself
+//     asks for. Blocking keeps the task resumable and off the review-poll set, so the loop stays
+//     structurally impossible while the owner unblocks the merge on the host. Never a rework —
+//     the code is fine; only the merge is gated. See `../host-blocked-merge.ts`.
 //   - CI failing / merge conflict → jump back to execution to fix it (a rework, so the
 //     stale approval is dismissed and a human must re-approve before the next merge —
 //     that human gate is what bounds the loop)
@@ -62,6 +70,17 @@ type MergeDisposition =
 /** The subset of dispositions a failed merge attempt can resolve to — routed by {@link classifyMergeFailure}. */
 type MergeFailureDisposition = Extract<MergeDisposition, "merge_conflict" | "needs_human_merge" | "retry_wait">;
 
+/**
+ * What `run` reports to the pure `next` through `result.data`. A host-blocked hand-off carries the two
+ * facts only `run` can know and `next` needs to word the owner's message: which PR, and whether the
+ * pre-merge cleanup push dismissed a formal approval.
+ */
+interface MergeResultData {
+  readonly disposition?: MergeDisposition;
+  readonly pr_number?: number;
+  readonly approval_dismissed?: boolean;
+}
+
 /** Delivery: merge the approved PR. Entry-only — reached by an external event, not by advance. Skipped in push-only. */
 export const autoMerge: SubPhase = {
   name: "auto-merge",
@@ -70,7 +89,7 @@ export const autoMerge: SubPhase = {
   next: autoMergeNext,
 };
 
-/** Route on how the merge resolved: a completed (or externally-completed) merge is done; an unmergeable PR reworks; a transient miss waits. */
+/** Route on how the merge resolved: a completed (or externally-completed) merge is done; an unmergeable PR reworks; a host-blocked merge hands off to the owner; a transient miss waits. */
 export function autoMergeNext(result: RoutableResult): Route {
   if (result.outcome === "needs_human") {
     return {
@@ -79,12 +98,23 @@ export function autoMergeNext(result: RoutableResult): Route {
       needed: "Resolve the merge ambiguity before continuing",
     };
   }
-  const disposition = (result.data as { disposition?: MergeDisposition } | undefined)?.disposition;
-  switch (disposition) {
+  const data = (result.data as MergeResultData | undefined) ?? {};
+  switch (data.disposition) {
     case "ci_failure":
       return { go: "jump", to: Phases.execution, carry: { summary: CI_REWORK_SUMMARY } };
     case "merge_conflict":
       return { go: "jump", to: Phases.execution, carry: { summary: CONFLICT_REWORK_SUMMARY } };
+    case "needs_human_merge":
+      // The host will not complete the merge. Block on the shared contract — the same lifecycle state and
+      // the same message the poller's /approve path lands on for this identical condition — rather than
+      // completing a task whose PR is unmerged. The block's canonical delivery (the orchestrator's
+      // `deliverBlockedQuestion`) is what tells the owner, so `run` must NOT also notify: one event, one
+      // message.
+      return {
+        go: "block",
+        category: HOST_BLOCKED_MERGE_CATEGORY,
+        needed: hostBlockedMergeNeeded(data.pr_number ?? null, data.approval_dismissed ?? false),
+      };
     case "retry_wait":
       return {
         go: "block",
@@ -177,17 +207,19 @@ async function runAutoMerge(ctx: Ctx): Promise<SubPhaseResult> {
     }
     case "needs_human_merge": {
       // The host will not complete the merge (branch protection). Hand off to the owner *without* attempting
-      // the doomed merge — no `mergePR` call, no branch re-push, no rework. Terminal (`autoMergeNext` → done),
-      // so the task leaves the review-poll set and the loop is structurally impossible. `false`: no cleanup
-      // push happened, so no formal approval could have been dismissed.
+      // the doomed merge — no `mergePR` call, no branch re-push, no rework. `next` blocks this on the shared
+      // host-blocked contract, so the task leaves the review-poll set (the loop is structurally impossible)
+      // yet stays resumable once the owner unblocks the merge on the host. The block's own delivery is the
+      // single owner-facing message — do not notify here too. `false`: no cleanup push happened, so no formal
+      // approval could have been dismissed.
       ctx.observer.info("Host blocks the merge (branch protection) — handing off to the owner without merging", {
         taskId: ctx.task.id,
         prNumber,
         mergeState: status.merge_state,
       });
-      notifyHostBlockedMerge(ctx, prNumber, false);
-      return resolved(
-        "needs_human_merge",
+      return handedOff(
+        prNumber,
+        false,
         `PR #${String(prNumber)} handed off — the host's branch protection blocks the merge`,
       );
     }
@@ -349,10 +381,12 @@ function removeThoughtsBeforeMerge(ctx: Ctx): boolean {
 
 /**
  * Route a failed merge attempt by its typed failure reason. A conflict reworks. A host block — a rule the
- * Engineer cannot satisfy with its token (a required review, or no merge permission) — is handed off to
- * the owner to merge: terminal, so the task leaves the review-poll set and cannot re-trigger. Anything
- * else is treated as transient and retried. The route is recorded (Coding Standards § 14 — merge failure
- * by cause), so the owner can always see why a PR did not merge itself.
+ * Engineer cannot satisfy with its token (a required review, or no merge permission) — is handed off to the
+ * owner on the shared host-blocked contract, the same state and message readiness lands on for the same
+ * condition; the task leaves the review-poll set and cannot re-trigger. This is the rare detect→merge race:
+ * readiness saw a mergeable PR, but the live merge was still refused. Anything else is treated as transient
+ * and retried. The route is recorded (Coding Standards § 14 — merge failure by cause), so the owner can
+ * always see why a PR did not merge itself.
  */
 function routeMergeFailure(
   ctx: Ctx,
@@ -367,8 +401,16 @@ function routeMergeFailure(
     case "merge_conflict":
       return resolved("merge_conflict", `Merge rejected as conflicting: ${message}`);
     case "needs_human_merge": {
-      notifyHostBlockedMerge(ctx, prNumber, approvalDismissed);
-      return resolved("needs_human_merge", `PR #${String(prNumber)} handed off — the host blocks the Engineer's merge`);
+      ctx.observer.info("Host blocked the merge — handing off to the owner to complete it", {
+        taskId: ctx.task.id,
+        prNumber,
+        approvalDismissed,
+      });
+      return handedOff(
+        prNumber,
+        approvalDismissed,
+        `PR #${String(prNumber)} handed off — the host blocks the Engineer's merge`,
+      );
     }
     default: {
       ctx.observer.warn("Merge did not complete — returning to the review wait to retry", {
@@ -430,23 +472,6 @@ function recordMergeOutcome(ctx: Ctx, prNumber: number, reason: MergeFailureReas
   );
 }
 
-/**
- * Notify the owner that the PR is ready but the host will not let the Engineer merge it, so they complete
- * the merge. When the pre-merge thoughts-cleanup push dismissed a formal approval, the message says so and
- * asks for a fresh approval; otherwise it is the plain "merge it" hand-off.
- */
-function notifyHostBlockedMerge(ctx: Ctx, prNumber: number, approvalDismissed: boolean): void {
-  ctx.observer.info("Host blocked the merge — completing for the owner to merge", {
-    taskId: ctx.task.id,
-    prNumber,
-    approvalDismissed,
-  });
-  const message = approvalDismissed
-    ? `PR #${String(prNumber)} is ready, but my thoughts-cleanup commit dismissed your earlier approval. Re-approve it and merge when you're ready.`
-    : `PR #${String(prNumber)} is approved and ready, but the host won't let me complete the merge (its rules need a human). Merge it when you're ready.`;
-  ctx.notifications.notify({ kind: NotificationKinds.ticket_comment, taskId: ctx.task.id, message });
-}
-
 /** Inputs for recording a completed merge. `notifyMilestone` is true for a self-merge, false for the external-merge backfill. */
 interface RecordMergeInput {
   readonly repo: string;
@@ -502,5 +527,23 @@ function recordMerge(ctx: Ctx, input: RecordMergeInput): void {
 
 /** A merge attempt that ran cleanly: an `ok` result carrying the disposition `next` routes on. */
 function resolved(disposition: MergeDisposition, summary: string): SubPhaseResult {
-  return { outcome: "ok", summary, data: { disposition } };
+  return { outcome: "ok", summary, data: { disposition } satisfies MergeResultData };
+}
+
+/**
+ * The host-blocked hand-off: an `ok` result that also carries what the pure `next` needs to word the owner's
+ * message — which PR, and whether the pre-merge cleanup push dismissed a formal approval (so the owner is
+ * asked to *re*-approve). `next` turns this into the block; nothing is notified here, so the owner gets the
+ * single message the block delivers.
+ */
+function handedOff(prNumber: number, approvalDismissed: boolean, summary: string): SubPhaseResult {
+  return {
+    outcome: "ok",
+    summary,
+    data: {
+      disposition: "needs_human_merge",
+      pr_number: prNumber,
+      approval_dismissed: approvalDismissed,
+    } satisfies MergeResultData,
+  };
 }

@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { autoMerge, autoMergeNext } from "../../../../../../src/core/orchestrator/pipeline/delivery/auto-merge.js";
 import {
+  HOST_BLOCKED_MERGE_CATEGORY,
+  hostBlockedMergeNeeded,
+} from "../../../../../../src/core/orchestrator/pipeline/host-blocked-merge.js";
+import {
   BlockCategories,
   type Ctx,
   Phases,
@@ -18,6 +22,13 @@ vi.mock("../../../../../../src/core/orchestrator/pr-manager.js", () => ({
 }));
 
 const okResult = (disposition: string): RoutableResult => ({ outcome: "ok", summary: "", data: { disposition } });
+
+/** The host-blocked hand-off `run` reports: the disposition plus what the pure `next` needs to word the owner's message. */
+const hostBlockedResult = (approvalDismissed = false): RoutableResult => ({
+  outcome: "ok",
+  summary: "",
+  data: { disposition: "needs_human_merge", pr_number: 7, approval_dismissed: approvalDismissed },
+});
 
 const readyReview: ReviewState = {
   pr_number: 7,
@@ -96,8 +107,25 @@ describe("auto-merge next", () => {
     expect(autoMergeNext(okResult("auto_merge_disabled"))).toEqual({ go: "done" });
   });
 
-  it("completes the task on a host-blocked merge — the host needs a human to merge", () => {
-    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
+  it("blocks (never completes) on a host-blocked merge — the PR is unmerged, so 'done' would be a false completion", () => {
+    // Issue #47, criteria 9–11: the same condition the poller escalates on must land on the SAME contract —
+    // blocked + awaiting_human, resumable. `done` would mark the task `completed` and post "Task completed
+    // successfully." on an unmerged PR, destroy the worktree, and forbid the retry the message itself asks for.
+    const route = autoMergeNext(hostBlockedResult());
+
+    expect(route).toEqual({
+      go: "block",
+      category: HOST_BLOCKED_MERGE_CATEGORY,
+      needed: hostBlockedMergeNeeded(7, false),
+    });
+    // Not a rework either — there is nothing to re-implement; only the merge is gated.
+    expect(route).not.toMatchObject({ go: "jump" });
+  });
+
+  it("carries the re-approve wording when the cleanup push dismissed a formal approval", () => {
+    expect(autoMergeNext(hostBlockedResult(true))).toMatchObject({
+      needed: hostBlockedMergeNeeded(7, true),
+    });
   });
 
   it("jumps to execution to fix a failing CI", () => {
@@ -200,18 +228,25 @@ describe("auto-merge run", () => {
 
   it("hands off to the owner without merging when the host blocks the merge (branch protection) — never reworks", async () => {
     // The highest-priority guard (issue #47): a `blocked` PR is decided in readiness, BEFORE any mergePR
-    // call. There is no doomed merge (so no branch re-push) and it routes to done, never to execution rework
-    // — the code is fine, only the merge is gated. This is what makes the infinite loop structurally
-    // impossible: the task leaves the poll set on the first detection.
+    // call. There is no doomed merge (so no branch re-push) and it blocks for the owner, never routes to
+    // execution rework — the code is fine, only the merge is gated. This is what makes the infinite loop
+    // structurally impossible: awaiting_human ⇒ need_more_info takes the task off the review-poll set.
     const { ctx, mergePR, notify, published, observer } = mockCtx({ status: { merge_state: "blocked" } });
 
     const result = await autoMerge.run(ctx);
 
-    expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
+    expect(result).toMatchObject({
+      outcome: "ok",
+      data: { disposition: "needs_human_merge", pr_number: 7, approval_dismissed: false },
+    });
     expect(mergePR).not.toHaveBeenCalled();
-    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
-    // The owner is told once (the host-blocked hand-off), and nothing is recorded/published as merged.
-    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "ticket_comment" }));
+    expect(autoMergeNext(result as RoutableResult)).toMatchObject({
+      go: "block",
+      category: HOST_BLOCKED_MERGE_CATEGORY,
+    });
+    // The block's own delivery is the single owner-facing message — `run` must NOT also notify, or the owner
+    // gets the hand-off twice on the same PR. Nothing is recorded/published as merged either.
+    expect(notify).not.toHaveBeenCalled();
     expect(published).toEqual([]);
     // The readiness decision records needs_human_merge as chosen, with it among the offered alternatives.
     const decision = observer.decisions.find((entry) => entry.name === "merge_readiness");
@@ -271,19 +306,23 @@ describe("auto-merge run", () => {
     expect(published).toEqual([]);
   });
 
-  it("hands the merge off to the owner when the host blocks the Engineer (not_mergeable) — terminal, notified, no record", async () => {
+  it("hands the merge off to the owner when the host blocks the Engineer (not_mergeable) — blocked, no record", async () => {
     const { ctx, updateTaskField, notify, published, observer } = mockCtx({
       mergeResult: { success: false, reason: "not_mergeable", message: "At least 1 approving review is required" },
     });
 
     const result = await autoMerge.run(ctx);
 
-    // Terminal hand-off: needs_human_merge routes to done — no rework, no retry-wait, so the task leaves the
-    // review-poll set and the PR #28 re-trigger loop cannot form.
+    // The detect→merge race backstop lands on the same contract readiness does: needs_human_merge → block,
+    // no rework, no retry-wait — so the task leaves the review-poll set and the PR #28 re-trigger loop
+    // cannot form, while staying resumable once the owner unblocks the merge on the host.
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
-    expect(autoMergeNext(okResult("needs_human_merge"))).toEqual({ go: "done" });
-    // The owner is told once; nothing is recorded as merged.
-    expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: "ticket_comment" }));
+    expect(autoMergeNext(result as RoutableResult)).toMatchObject({
+      go: "block",
+      category: HOST_BLOCKED_MERGE_CATEGORY,
+    });
+    // The block delivers the single message — `run` does not notify. Nothing is recorded as merged.
+    expect(notify).not.toHaveBeenCalled();
     expect(updateTaskField).not.toHaveBeenCalled();
     expect(published).toEqual([]);
     // The route is observable as a recorded decision.
@@ -299,40 +338,46 @@ describe("auto-merge run", () => {
 
   it("tells the owner to re-approve when the thoughts-cleanup push dismissed their formal approval", async () => {
     vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
-    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: true, mergeResult: hostBlocked });
+    const { ctx } = mockCtx({ excludeThoughts: true, reviewApproved: true, mergeResult: hostBlocked });
 
-    await autoMerge.run(ctx);
+    const result = await autoMerge.run(ctx);
 
-    expect(notify).toHaveBeenLastCalledWith(
-      expect.objectContaining({ message: expect.stringMatching(/dismissed your earlier approval/i) }),
-    );
+    // `run` reports the dismissal; the pure `next` words the block's message from it — the nuance survives
+    // the move from a notification to the block's `needed`.
+    expect(result).toMatchObject({ outcome: "ok", data: { approval_dismissed: true } });
+    expect(autoMergeNext(result as RoutableResult)).toMatchObject({
+      needed: expect.stringMatching(/dismissed your earlier approval/i),
+    });
   });
 
   it("keeps the plain hand-off when only a /approve comment was used (no formal approval to dismiss)", async () => {
     vi.mocked(removeThoughtsAndPush).mockReturnValue(true);
-    const { ctx, notify } = mockCtx({ excludeThoughts: true, reviewApproved: false, mergeResult: hostBlocked });
+    const { ctx } = mockCtx({ excludeThoughts: true, reviewApproved: false, mergeResult: hostBlocked });
 
-    await autoMerge.run(ctx);
+    const result = await autoMerge.run(ctx);
 
-    expect(notify).toHaveBeenLastCalledWith(
-      expect.objectContaining({ message: expect.stringMatching(/merge it when you're ready/i) }),
-    );
+    expect(result).toMatchObject({ outcome: "ok", data: { approval_dismissed: false } });
+    expect(autoMergeNext(result as RoutableResult)).toMatchObject({
+      needed: expect.stringMatching(/needs a formal review approval/i),
+    });
   });
 
-  it("regression (PR #28): a host-blocked merge resolves terminally — the /approve loop cannot form", async () => {
+  it("regression (PR #28 / issue #47): a host-blocked merge hands off without looping or falsely completing", async () => {
     const { ctx, notify, updateTaskField, published } = mockCtx({ mergeResult: hostBlocked });
 
     const result = await autoMerge.run(ctx);
 
-    // The host block resolves to needs_human_merge, which routes to a terminal completion — NOT back to
-    // awaiting_pr_review, the re-block that re-queued the task and let the poller re-promote the same
-    // /approve into a doomed merge, forever.
+    // The host block resolves to needs_human_merge, which blocks under awaiting_human (⇒ need_more_info, off
+    // the review-poll set) — NOT back to awaiting_pr_review, the re-block that re-queued the task and let the
+    // poller re-promote the same /approve into a doomed merge, forever. And NOT `done`, which would falsely
+    // report the task complete on an unmerged PR.
     expect(result).toMatchObject({ outcome: "ok", data: { disposition: "needs_human_merge" } });
-    const route = autoMergeNext(okResult("needs_human_merge"));
-    expect(route).toEqual({ go: "done" });
+    const route = autoMergeNext(result as RoutableResult);
+    expect(route).toMatchObject({ go: "block", category: HOST_BLOCKED_MERGE_CATEGORY });
     expect(route).not.toMatchObject({ category: BlockCategories.awaiting_pr_review });
-    // The owner is notified exactly once; nothing is recorded as merged.
-    expect(notify).toHaveBeenCalledTimes(1);
+    expect(route.go).not.toBe("done");
+    // Nothing is notified from `run` (the block delivers), and nothing is recorded as merged.
+    expect(notify).not.toHaveBeenCalled();
     expect(updateTaskField).not.toHaveBeenCalled();
     expect(published).toEqual([]);
   });

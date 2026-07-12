@@ -4,6 +4,7 @@ import { type PrEvent, PrEventTypes } from "../../schemas/git-hosting-events.js"
 import { NotificationKinds } from "../../schemas/notifications.js";
 import { BlockCategories, BlockReasons, type BlockedDetails, type Task, TaskStates } from "../../schemas/task.js";
 import { sanitizeErrorMessage, sanitizeSecrets } from "../../utils/sanitize.js";
+import { HOST_BLOCKED_MERGE_CATEGORY, hostBlockedMergeNeeded } from "../orchestrator/pipeline/host-blocked-merge.js";
 import { arbitrate, dedupePrEvents, findAuthorizedApproval } from "../orchestrator/pipeline/pr-events.js";
 import type { NotificationRouter } from "./notification-router.js";
 import type { PrEventPollerContext } from "./types.js";
@@ -25,9 +26,11 @@ import type { PrEventPollerContext } from "./types.js";
 // keeps the task waiting rather than attempting a doomed merge. When that /approve lands
 // on a PR the host's branch protection *blocks* (green but merge_state=blocked, e.g. a
 // required formal review a comment cannot satisfy), the poller does NOT promote — a merge
-// the host will not honor would re-push the branch and loop — it escalates to the owner
-// with the actionable reason, which moves the task off this poll set and bounds it to one
-// escalation.
+// the host will not honor would re-push the branch and loop — it hands the task off on the
+// shared host-blocked-merge contract (`orchestrator/pipeline/host-blocked-merge.ts`), the
+// same lifecycle state and the same owner-facing message delivery's auto-merge resolves
+// this identical condition to. That moves the task off this poll set (bounding it to one
+// escalation) while leaving it resumable once the owner unblocks the merge on the host.
 
 /** Polls open PRs for events and re-enters their tasks. */
 export interface PrEventPoller {
@@ -301,36 +304,37 @@ export function createPrEventPoller(ctx: PrEventPollerContext, notifications: No
   /**
    * Escalate an authorized /approve the host's branch protection will not honor. Promoting it would attempt
    * a merge the host refuses — which re-pushes the branch and loops on every poll — so instead the task is
-   * blocked under `need_more_info` (which takes it off the `pr_review_pending` poll set and onto the
-   * owner-escalation ladder, structurally bounding this to one escalation) and the owner is told the
-   * actionable reason. `pending_pr_event` is cleared defensively so no stale event re-dispatches the task
-   * back into the loop we are escaping. Mirrors `escalateBlockerCap`'s structure.
+   * handed off on the SHARED host-blocked-merge contract: the same block category and the same owner-facing
+   * message that delivery's auto-merge resolves this identical condition to, so the owner reads one coherent
+   * hand-off however it was detected (see `orchestrator/pipeline/host-blocked-merge.ts`).
+   *
+   * The category collapses to `need_more_info`, which takes the task off the `pr_review_pending` poll set —
+   * structurally bounding this to one escalation — and onto the owner-escalation ladder, while leaving it
+   * resumable. The poller writes the block directly (it is not in the pipeline, so it cannot route through
+   * the runner's `blockTask`), which is why it also sends the notifications the block's own delivery would
+   * have. `pending_pr_event` is cleared defensively so no stale event re-dispatches the task back into the
+   * loop we are escaping. Mirrors `escalateBlockerCap`'s structure.
    */
   function escalateMergeBlocked(task: Task, events: readonly PrEvent[]): void {
-    const prNumber = task.review?.pr_number;
+    const prNumber = task.review?.pr_number ?? null;
+    // A /approve comment is never dismissed by the cleanup push (only a formal approval is), and this path
+    // never pushed one — so this is always the plain hand-off, never the re-approve variant.
+    const needed = hostBlockedMergeNeeded(prNumber, false);
     recordMergeBlockedEscalation(task, approverOf(events));
     // Defensive: a pending event would re-dispatch this task straight back into the loop we are escaping.
     taskEngine.updateTaskField(task.id, "pending_pr_event", null);
     taskEngine.updateTaskField(task.id, "blocked", {
       reason: BlockReasons.need_more_info,
-      category: BlockCategories.awaiting_human,
+      category: HOST_BLOCKED_MERGE_CATEGORY,
       sub_phase: "await-review",
-      needed: `PR #${String(prNumber)} is approved and green, but the host's branch protection blocks the merge — it needs a formal review approval a "/approve" comment cannot provide. Approve the PR on the host (or adjust its branch protection), then run "engineer retry" to resume and I'll merge it.`,
+      needed,
     } satisfies BlockedDetails);
     observer.warn("PR /approve blocked by branch protection — escalating to the owner", {
       taskId: task.id,
       prNumber,
     });
-    notifications.notify({
-      kind: NotificationKinds.alert,
-      taskId: task.id,
-      message: `PR #${String(prNumber)}: your /approve can't merge it — the host's branch protection needs a formal review approval. Approve the PR on the host (or adjust protection), then run "engineer retry" to resume.`,
-    });
-    notifications.notify({
-      kind: NotificationKinds.ticket_comment,
-      taskId: task.id,
-      message: `Your /approve is recorded, but the host's branch protection won't let me merge — it needs a formal review approval a comment can't provide. Approve the PR on the host (or adjust its branch protection), then run "engineer retry" and I'll merge it.`,
-    });
+    notifications.notify({ kind: NotificationKinds.alert, taskId: task.id, message: needed });
+    notifications.notify({ kind: NotificationKinds.ticket_comment, taskId: task.id, message: needed });
   }
 
   /** Record the merge-blocked escalation as a decision — the promote-anyway path was available and deliberately not taken. */

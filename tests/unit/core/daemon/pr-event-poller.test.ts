@@ -3,6 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../../src/core/daemon/notification-router.js";
 import { createPrEventPoller } from "../../../../src/core/daemon/pr-event-poller.js";
 import type { PrEventPollerContext } from "../../../../src/core/daemon/types.js";
+import {
+  HOST_BLOCKED_MERGE_CATEGORY,
+  hostBlockedMergeNeeded,
+} from "../../../../src/core/orchestrator/pipeline/host-blocked-merge.js";
 import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
@@ -307,19 +311,42 @@ describe("PrEventPoller", () => {
       // No promotion: no pr_ready_to_merge event, no re-queue transition.
       expect(updateTaskField).not.toHaveBeenCalledWith("t1", "pending_pr_event", "pr_ready_to_merge");
       expect(requestTransition).not.toHaveBeenCalled();
-      // Re-blocked under need_more_info / awaiting_human — off the pr_review_pending poll set.
+      // Re-blocked under need_more_info / awaiting_human — off the pr_review_pending poll set. This is the
+      // SAME contract delivery's auto-merge resolves the same condition to (see host-blocked-merge-contract).
       expect(updateTaskField).toHaveBeenCalledWith(
         "t1",
         "blocked",
         expect.objectContaining({
           reason: BlockReasons.need_more_info,
-          category: BlockCategories.awaiting_human,
+          category: HOST_BLOCKED_MERGE_CATEGORY,
+          needed: hostBlockedMergeNeeded(7, false),
         }),
       );
+      expect(BlockCategories.awaiting_human).toBe(HOST_BLOCKED_MERGE_CATEGORY);
       // Pending event cleared defensively so no stale event re-dispatches the task into the loop.
       expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", null);
-      // The owner is told, actionably.
-      expect(notify).toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.alert }));
+      // The owner is told, actionably — and with the one honest message, not a promise the Engineer may not
+      // be able to keep (it never says an unconditional "I'll merge it").
+      expect(notify).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: NotificationKinds.alert, message: hostBlockedMergeNeeded(7, false) }),
+      );
+    });
+
+    it("does not escalate a blocked PR that carries no authorized /approve — it is just awaiting its review", async () => {
+      // The dangerous false positive: a PR with required reviews and no approval yet ALSO reports
+      // merge_state `blocked` — that is the normal waiting state, the highest-traffic path in the system.
+      // The escalation is gated on an authorized /approve, so this poll must do nothing at all.
+      const { poller, requestTransition, updateTaskField, notify } = setup({
+        events: [{ type: PrEventTypes.pr_comments, comments: [comment("c1", "alice", "looks good so far")] }],
+        prStatus: { merge_state: "blocked" },
+      });
+
+      await poller.poll();
+
+      expect(updateTaskField).not.toHaveBeenCalledWith("t1", "blocked", expect.anything());
+      expect(notify).not.toHaveBeenCalledWith(expect.objectContaining({ kind: NotificationKinds.alert }));
+      // The comment is ordinary reviewer feedback — it still reworks as it always did.
+      expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_comments"));
     });
 
     it("cannot re-form the loop — once escalated, the task leaves the poll set and a later poll does nothing", async () => {

@@ -1,0 +1,5 @@
+{
+  "status": "<ok | needs_human | failed>",
+  "summary": "<one-line summary>",
+  "details": {}
+}

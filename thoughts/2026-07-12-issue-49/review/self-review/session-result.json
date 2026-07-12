@@ -1,0 +1,45 @@
+{
+  "status": "ok",
+  "summary": "Self-review done: the fix is correct, in scope, and well-tested (gates re-run green by me); 4 findings — 1 medium (transient allowlist misses common 5xx/429 message shapes, so those failures still burn the phase) and 3 low cleanups.",
+  "details": {
+    "findings": [
+      {
+        "id": "F1",
+        "severity": "medium",
+        "file": "src/plugins/agent/claude-code-agent/claude-code-agent.ts:106-107",
+        "summary": "TRANSIENT_RUN_ERROR only accepts a bare status code adjacent to 'error'/'status', so 'Request failed with status code 502', 'Error code: 529' and 'HTTP 502 Bad Gateway' classify terminal and are never retried — the exact failure mode the issue exists to fix, in a different message shape. Fails safe (no retry storm) and is not a regression, but AC#2 names 'server error' as retryable. The test table hides it: '529 Overloaded'/'503 Service Unavailable' pass via the word branches, not the numeric branch. Validated replacement regex + 4 extra table cases given in findings.md."
+      },
+      {
+        "id": "F2",
+        "severity": "low-medium",
+        "file": "src/core/orchestrator/pipeline/agent-step.ts:121, docs/plugins/agent/claude-code-agent.md:81",
+        "summary": "The accepted F3 cost tradeoff is documented as affecting 'a run that fails', but the AC#7 path (errored AFTER writing a valid result) is a phase that SUCCEEDS and now books $0 — run.result is null, so emitAgentCost never fires. Under-counts the ledger the budget guardrails read. Real fix is public_api (out of scope); the doc wording should name the case."
+      },
+      {
+        "id": "F3",
+        "severity": "low",
+        "file": "src/plugins/agent/claude-code-agent/claude-code-agent.ts:107",
+        "summary": "Dead alternation branch: 'internal server error' is a superstring of 'server error' and can never be the matching branch. Delete it; the existing test case still passes, which proves it was doing nothing."
+      },
+      {
+        "id": "F4",
+        "severity": "low",
+        "file": "src/plugins/agent/claude-code-agent/claude-code-agent.ts:576",
+        "summary": "The truncated-stream reject uses code 'internal_error' while its own comment calls it a dropped connection, contradicting failedRunError's deliberate 'cli_error' choice ('the CLI ran and reported an error — not an internal defect'). No behavioral impact (nothing in core/daemon branches on code) — a readability inconsistency, one-word fix."
+      }
+    ],
+    "verified_green": {
+      "lint": "exit 0",
+      "typecheck": "exit 0",
+      "test": "exit 0 — 2865 passed / 148 files"
+    },
+    "acceptance_criteria_confirmed": [
+      "AC#1 both decision sites honor is_error",
+      "AC#2 retryable:true set explicitly (not left at the false default)",
+      "AC#5 no_result is structurally unreachable when run.error is set",
+      "AC#6 the three existing no_result tests are untouched (diff removes only 2 import lines)",
+      "AC#7 result-aware retry guard present, correctly placed after the isRetryable check"
+    ],
+    "out_of_scope_note": "isSignalKill (claude-code-agent.ts:556) checks code 137/143, but Node reports signal kills as code===null with the signal in the handler's ignored second arg — likely dead. Pre-existing, untouched by this diff; noted for a follow-up issue, not fixed here."
+  }
+}

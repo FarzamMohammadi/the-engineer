@@ -1,37 +1,39 @@
 {
   "status": "ok",
-  "summary": "Verified the endless-rework mechanism by reading the code: mapMergeState ignores GitHub's mergeable_state so 'blocked' collapses to 'mergeable', the poller re-promotes /approve every poll via an unbounded pr_ready_to_merge path, and auto-merge's decideReadiness has no 'blocked' branch so a doomed merge's unreliable failure code misroutes to execution rework. Blast radius, host signal (mergeable_state, no extra API call), regression guards, delegated design forks, and the test surface are mapped in research.md. Premise confirmed valid — no premise_conflict.",
+  "summary": "Re-verified the two-path contradiction on HEAD and traced what each route actually does to the task — the `done` path destroys the worktree, makes the task non-retryable, and posts 'Task completed successfully.' on the unmerged PR, which decisively favors the blocked-resumable contract.",
   "details": {
-    "files_in_scope": [
-      "src/schemas/adapters.ts (PRStatus.merge_state enum — add host-agnostic 'blocked')",
-      "src/plugins/git-hosting/github-hosting/github-hosting.ts (mapMergeState/doGetPRStatus/derivePrEvents/classifyMergeError)",
-      "src/core/daemon/pr-event-poller.ts (shouldPromoteApproval + unbounded pr_ready_to_merge routing)",
-      "src/core/orchestrator/pipeline/delivery/auto-merge.ts (decideReadiness has no 'blocked' branch)",
-      "src/cli/bundled/plugin-docs.ts (bundled doc prose duplicates the merge-state/error mapping)"
-    ],
-    "context_files": [
-      "src/core/orchestrator/pipeline/pr-events.ts",
-      "src/schemas/git-hosting-events.ts + git-hosting-event-types.ts",
-      "src/schemas/task.ts (ReviewState.consecutive_blocker_reentries; BlockCategories)",
-      "src/schemas/config.ts (review_polling.max_blocker_reentries)"
-    ],
-    "verification": {
-      "commands": ["pnpm test:all", "pnpm run lint", "pnpm run typecheck"],
-      "note": "node_modules is NOT installed in this worktree; run pnpm install / pnpm setup before gates."
+    "pass": "research re-run 3 — reconciliation (criteria 9-13); sections 19-26 appended to research.md",
+    "code_state": "source = 8a5d87f (loop fix, criteria 1-8 landed); head commit a0848eb is thoughts-only (verified via git show --stat)",
+    "premise": "valid — contradiction intact on HEAD, verified line-by-line. No premise_conflict.",
+    "verified_contradiction": {
+      "path_a_poller": "pr-event-poller.ts:228-233 -> escalateMergeBlocked:309-334 = blocked / need_more_info / awaiting_human, resumable, message 'run engineer retry and I'll merge it'",
+      "path_b_auto_merge": "auto-merge.ts:226 -> needs_human_merge -> resolved() outcome:ok -> autoMergeNext:74-97 has no case -> default { go: 'done' } = completed/terminal, message 'Merge it when you are ready'",
+      "same_signal": "merge_state === 'blocked'"
     },
-    "key_findings": {
-      "host_signal": "pr.mergeable_state (REST, already on the pulls.get response the plugin fetches — no extra call). 'blocked' distinguishes protection-blocked from 'dirty'=conflict. reviewDecision is GraphQL-only, not needed.",
-      "robust_fix_spine": "Detect 'blocked' in readiness BEFORE calling mergePR, since the HTTP code of a doomed merge (405 vs 409) is unreliable and perturbed by the pre-merge thoughts push.",
-      "loop_bound": "Routing blocked -> existing terminal needs_human_merge (done) removes the task from the pr_review_pending poll set, bounding the loop structurally with no new counter.",
-      "two_promotion_paths": "formal-approval (derivePrEvents) and /approve-comment (poller shouldPromoteApproval) both converge on pr_ready_to_merge -> auto-merge; fixing decideReadiness covers both."
-    },
-    "delegated_design_forks": [
-      "escalation site: auto-merge only vs. poller too",
-      "terminal done (hand-off) vs. block-and-retry (resume+auto-merge after formal approval)",
-      "explicit loop bound only needed if task stays in poll set",
-      "'behind'/out-of-date-branch handling (must not land in conflict->rework arm)",
-      "escalation message: generic vs. enriched via getBranchProtection"
+    "new_findings_this_pass": [
+      "go:'done' -> handleCompletedOutcome (task-scheduler.ts:233-277): (1) `completed` is NOT in RETRYABLE_STATES [failed,blocked,cancelled] -> the task can NEVER be resumed, so Path A's promised outcome is structurally impossible on Path B; (2) cleanupWorkspace(id,true) destroys the worktree; (3) posts ticket_comment 'Task completed successfully.' to the source ticket — the owner literally sees 'I cannot merge it' followed by 'completed successfully' on the same unmerged PR (criterion 10, concretely); (4) eagerly reaps and frees the idempotency key.",
+      "NOT data-destructive: workspace-reaper:312-321 sees merged_at === null, treats it as push-only and PRESERVES the branch — checked deliberately since a completed+unmerged task looked like it might get its branch deleted. The PR survives; the harm is the false 'completed', the destroyed worktree, and lost resumability.",
+      "go:'block' + awaiting_human -> need_more_info puts the task on the health-monitor blocked-escalation ladder (checkBlockedEscalation excludes only pr_review_pending): reminder@4h repeating, self_unblock@8h, escalation_alert@48h -> task -> `failed`. So blocked-resumable nudges the owner, tries once to self-unblock, then fails HONESTLY — criterion 10 satisfied by an existing mechanism. Loop-safety is identical to `done` (both leave the pr_review_pending poll set), so it is NOT a differentiator.",
+      "Self-unblock nuance for design: awaiting_human IS eligible for evaluate_self_unblock (only awaiting_human_decision is skipped, health-monitor.ts:250-256). If the agent ever answers can_resolve:true, the task re-dispatches, re-blocks, and last_transition_at resets — restarting the ladder, so the 48h escalation may never fire (a slow ~8h re-check cycle). Flagged with honest uncertainty: the answer is an LLM call I cannot verify from code.",
+      "A THIRD path nobody named: derivePrEvents (github-hosting.ts:504) emits pr_ready_to_merge only when merge_state === 'mergeable', and the poller's escalation requires an /approve COMMENT. So a formally-approved + green + host-blocked PR produces no event, no promotion, no escalation — it sits under pr_review_pending receiving misleading 'waiting for review' reminders. Reachable via require-conversation-resolution, merge restrictions, an unreported required check, or CODEOWNER review. Mild (no loop, no rework) — surfaced as a scope question for design, NOT expanded into scope on my own authority."
     ],
-    "premise_conflict": false
+    "design_forks_surfaced_not_decided": [
+      "Which single contract (criterion 9) — evidence is now lopsided toward blocked-resumable: `done` destroys the worktree, forbids retry, and says 'completed successfully'; `block` preserves it, is retryable, nudges, and fails honestly. Minimal change: add a needs_human_merge case to autoMergeNext returning { go:'block', category: awaiting_human, needed } — mirroring the already-tested needs_human branch at :75-80.",
+      "Distinguish the block reason vs. word one honest message (criterion 11) — distinguishing stays expensive (reviewDecision is GraphQL-only; mergeable_state 'blocked' is a catch-all), so wording that holds in both cases is the cheap route. Path A's unconditional 'I will merge it' must go.",
+      "awaiting_human vs awaiting_human_decision for the reconciled block (self-unblock eligibility / guaranteed escalation).",
+      "Whether to close the third path (section 24) — a scope question against the owner's criteria 9-13."
+    ],
+    "corrections_to_prior_research": [
+      "node_modules IS installed in this worktree — the earlier 'must pnpm install first' note is stale.",
+      "auto-merge.test.ts { go:'done' } assertions are at lines 100, 212, 284, 331-332 (terminal comments at 281, 327)."
+    ],
+    "test_surface": [
+      "tests/unit/core/orchestrator/pipeline/delivery/auto-merge.test.ts — the four { go:'done' } assertions flip to the chosen contract",
+      "tests/unit/core/daemon/pr-event-poller.test.ts:295-333 — already encodes Path A; align the message assertion",
+      "NEW (criterion 12): a coherence regression proving both paths land in the same (state, reason, category) for the same merge_state === 'blocked'",
+      "preserve: mergeable-still-merges (criterion 5) and conflict-still-reworks (criterion 7)"
+    ],
+    "gates": "pnpm test:all && pnpm run lint && pnpm run typecheck (node_modules present — runnable directly)",
+    "open_questions": "none"
   }
 }

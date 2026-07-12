@@ -1,17 +1,29 @@
 {
   "status": "ok",
-  "summary": "Implemented Approach A: a first-class `blocked` merge_state routes a host-blocked merge to wait/escalate (auto-merge readiness + poller escalation) instead of rework; all gates green (typecheck, lint, test:all, check:exports); committed as 8a5d87f.",
+  "summary": "Reconciled the two host-blocked-merge paths onto one shared Core contract (blocked-resumable, one honest message), added the coherence regression test, and switched mapMergeState to a fail-safe allowlist; all gates green and committed.",
   "details": {
-    "commit": "8a5d87f",
-    "files_changed": 10,
-    "decisions": [
-      {
-        "category": "scope_expansion",
-        "summary": "Touched files beyond the single core file: the adapter contract, the GitHub plugin, both Core policy sites (auto-merge + poller), the plugin doc (source + regenerated bundle), and three test files.",
-        "chosen": "Edit contract + plugin + 2 Core sites + docs + tests together as one cohesive fix.",
-        "reasoning": "The fix is inherently cross-layer: the plugin must produce the new `blocked` signal, the contract must carry it, and both Core decision points must consume it — a partial change would leave an enum value nothing produces or consumes. Docs are marked GENERATED-from-source and CI fails on drift, so they must move with the code. This is within my scope_expansion autonomy (decide alone).",
-        "details": { "files": 10 }
-      }
+    "commits": [
+      "fbc45df #47: Resolve a host-blocked merge to one contract on both paths (criteria 9-12)",
+      "d70304e #47: Map mergeable_state by allowlist so an unknown state never merges (criterion 13)"
+    ],
+    "criteria_closed": [
+      "9 — both paths resolve merge_state=blocked to the same (state, reason, category) and the identical message",
+      "10 — no false 'completed': auto-merge blocks instead of routing to done, so 'Task completed successfully.' can no longer fire on an unmerged PR",
+      "11 — one honest message, true whether or not the Engineer can ever finish the merge ('I'll merge it if the host lets me; otherwise merge it yourself')",
+      "12 — new tests/unit/core/host-blocked-merge-contract.test.ts drives both paths on the same status and asserts one contract; genuine-merge and genuine-conflict regressions still green",
+      "13 (optional) — mapMergeState is now an allowlist: clean/unstable/has_hooks/behind -> mergeable, unknown/absent -> unknown, everything else (blocked, draft, future states) -> hand off"
+    ],
+    "gates": "pnpm test:all (2837 unit + 67 integration + 16 e2e) + lint + typecheck + check:exports — all exit 0",
+    "verification_note": "Mutation-tested the new guard: reverting autoMergeNext's needs_human_merge case to { go: 'done' } fails exactly the coherence and no-false-completion assertions, and passes again when restored.",
+    "notable_finds": [
+      "The obvious fix double-messages the owner: blockTask -> deliverBlockedQuestion already posts a ticket comment AND a chat question for an awaiting_human block, so notifyHostBlockedMerge had to be deleted, not kept.",
+      "Two GitHub plugin test fixtures set mergeable:true with no mergeable_state, which the allowlist correctly flagged as unknown. Real GitHub always returns mergeable_state, so I made the fixtures faithful rather than weakening the mapping to satisfy an unrealistic mock.",
+      "src/cli/bundled/plugin-docs.ts is generated from docs/plugins/** — I edited the bundle first and test:all caught it; fixed at the source and re-ran pnpm docs:bundle."
+    ],
+    "deliberate_scope_limits": [
+      "merged / auto_merge_disabled still route to done — those are genuine terminal hand-offs; criterion 10 is scoped to the host-blocked case.",
+      "sub_phase intentionally differs per path ('await-review' vs 'auto-merge') — each names where the task genuinely is, and both resumes end in the same place.",
+      "Not closed (deserves its own ticket): a formally-approved + green + host-blocked PR with no /approve comment emits no event, so it waits with a misleading 'waiting for review' reminder. It does not loop or rework, and closing it would risk the normal awaiting-required-review path. Issue #46 (CI debounce) also out of scope, as specified."
     ]
   }
 }

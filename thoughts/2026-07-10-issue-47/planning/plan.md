@@ -314,3 +314,292 @@ None. Every design fork the owner delegated is resolved above (escalate-vs-wait 
 block; `/approve`-vs-required-review → do not promote a blocked PR, escalate with the actionable reason;
 loop bound → structural, via leaving the poll set + the terminal hand-off). Requirements and research both
 recorded "no questions for the owner," and this plan needs none to proceed to execution.
+
+---
+---
+
+# Re-run pass — 2026-07-11: reconcile the two host-blocked paths (criteria 9–13)
+
+Source: the owner's review comment on PR #48 (requirements §"Re-run pass — 2026-07-09", criteria 9–13).
+Base: this branch, HEAD `a0848eb` (source state = `8a5d87f`; `a0848eb` touches only `thoughts/`).
+Builds on: `../requirements/requirements.md` and `../research/research.md` (read both first).
+
+**The sections above (pass 1) are the plan for criteria 1–8 — already implemented and committed in `8a5d87f`.
+They stand as the record of that work. This section plans the remaining, open work: criteria 9–13.**
+
+---
+
+## 27. What I verified myself (not inherited) — including two findings the prior phases missed
+
+I re-read every claim against HEAD rather than trusting the trail. Research §§11–26 check out. Two facts
+that change the design were **not** established by either prior phase:
+
+### 27.1 `go: "done"` is not a neutral "hand-off" — it emits a false completion and destroys the worktree
+
+`autoMergeNext` (auto-merge.ts:95) falls to `default → { go: "done" }` for `needs_human_merge`. Following
+that through: runner `planRoute` → `{kind:"complete"}` → daemon `handleCompletedOutcome`
+(`task-scheduler.ts:233–277`), which:
+
+1. transitions the task to `completed` — **not in `RETRYABLE_STATES`** (`task.ts:380` = failed/blocked/cancelled),
+   so `engineer retry` can never bring it back;
+2. calls `workspaceManager.cleanupWorkspace(taskId, true)` (:256) — **the worktree is destroyed**;
+3. posts a ticket comment: **`"Task completed successfully."`** (:264–268) — on a PR that is *not merged*;
+4. eagerly reaps and frees the idempotency key.
+
+So today the owner literally receives, on the same unmerged PR, *"the host won't let me complete the merge…
+Merge it when you're ready"* immediately followed by *"Task completed successfully."* **Criterion 10's "no
+false completed" is not an abstraction — it is a message the engine emits.** (Verified non-destructive:
+`workspace-reaper/index.ts:312–321` keeps the branch when `merged_at` is null. The PR survives; the harm is
+the false completion, the destroyed worktree, and the lost resumability.)
+
+### 27.2 The block path ALREADY notifies the owner — so the obvious fix double-messages them
+
+`blockTask` (`orchestrator/index.ts:449–458`) computes `isHumanWait = category === awaiting_human ||
+awaiting_human_decision`, and for a human wait calls **`deliverBlockedQuestion`**, which
+(`outreach.ts:44–59`) sends **a `ticket_comment` AND a `question` notification to the owner's chat**, and
+persists the text as `needed` for the dashboard.
+
+⇒ If I route `needs_human_merge` to `{go:"block", category: awaiting_human, needed: …}` **and** leave
+`runAutoMerge`'s existing `notifyHostBlockedMerge(...)` call in place, the owner gets **two** ticket comments
+for one event. The naive implementation of the chosen contract has this bug baked in. The fix is not
+incidental — it is a required part of the design: **the block's `needed` becomes the single owner-facing
+message on the auto-merge path, and `notifyHostBlockedMerge` is removed.**
+
+(`retry_wait` does not hit this: `awaiting_pr_review` is not a human wait, so `blockTask` does not deliver.
+The `needs_human` branch at auto-merge.ts:75–80 *does* — and it relies on exactly this delivery, which is the
+proof the pattern works.)
+
+### 27.3 The rest, confirmed
+
+- `decideReadiness` (:226) and `classifyMergeFailure` (:396–401) both resolve host-blocked → `needs_human_merge`. ✔
+- `resolved()` (:504) returns `outcome: "ok"` → disposition-driven routing. ✔
+- Poller `escalateMergeBlocked` (:309–334): `blocked` / `need_more_info` / `awaiting_human` /
+  `sub_phase: "await-review"`, message *"…run `engineer retry` to resume and **I'll merge it**."* ✔
+- `toBlockReason(awaiting_human) → need_more_info` (`index.ts:91–93`) ⇒ **off** the `pr_review_pending` poll
+  set (`poller:60`) ⇒ the loop is structurally impossible under `block`, exactly as it is under `done`.
+  **Loop-safety does not differentiate the two contracts** — everything else does.
+- `checkBlockedEscalation` (`health-monitor.ts:164–170`) covers every blocked task **except**
+  `pr_review_pending` ⇒ a `need_more_info` block gets the ladder: 4h repeating reminder → 8h self-unblock
+  check → 48h `escalation_alert` → **task → `failed`** (:285–289). An undelivered task ends `failed`, not
+  `completed` — criterion 10 satisfied by an *existing* mechanism.
+- `Route` (`types.ts:100–105`) already has `{go:"block", category, needed}`. No type change needed.
+- `mapMergeState` (github-hosting.ts:549–563) is a denylist: `mergeable===null→unknown`,
+  `false→conflicting`, `mergeable_state==="blocked"→blocked`, **else `mergeable`**. ✔
+- Existing tests encoding the old contract: `auto-merge.test.ts` lines 92/96/99–100/202–219/274–291/322–332
+  (four `{go:"done"}` assertions for `needs_human_merge`); `pr-event-poller.test.ts:295–333` (Path A's
+  category, already the target contract).
+- `node_modules` **is** installed. Gates run directly.
+
+---
+
+## 28. Approaches evaluated
+
+### Approach A — One shared Core contract module; both paths route to it (CHOSEN)
+
+A single Core module owns the host-blocked hand-off contract: **the block category, and the one honest
+message**. Both paths import it.
+
+- **auto-merge** gains `case "needs_human_merge"` in `autoMergeNext` → `{go:"block", category:
+  awaiting_human, needed: <shared message>}`, and **drops** `notifyHostBlockedMerge` (the block's canonical
+  delivery is the single message — §27.2).
+- **poller** keeps writing its own block (it is not in the pipeline and cannot call `blockTask`), but takes
+  its `needed`/notification text from the same module — so the two paths land on the **same (state, reason,
+  category)** and say the **same true thing**.
+- One message, worded true whether or not the Engineer can ever finish the merge (§29).
+
+**Cost:** 1 new ~40-line pure module, 1 switch case, 1 message swap, test updates. No schema change, no new
+`BlockCategory`, no new `PrEvent`, no config knob, no new API call.
+
+### Approach B — Distinguish the block reason (required-review vs. no-merge-permission) and branch the message
+
+Criterion 11's other permitted route. Would need `reviewDecision` (**GraphQL-only**; the plugin is REST) or
+`getBranchProtection` + matching the engine's own identity against `restrictions` — an extra API call per
+poll and a new identity concept. Research §13 established `mergeable_state === "blocked"` is a **catch-all**
+that cannot separate the two on its own.
+
+**Rejected.** It buys a *nicer* message and nothing else — no lifecycle correctness, no loop safety, no
+coherence — at the cost of a new API call, a GraphQL dependency or identity-matching heuristic, and a new
+failure mode (a wrong guess produces a *confidently wrong* message, worse than an honestly conditional one).
+The owner offered wording-that-holds as an equal alternative. **Complexity must earn its place; this doesn't.**
+
+### Approach C — Make the poller terminal to match auto-merge (`done` on both)
+
+The other way to achieve coherence. **Rejected outright:** §27.1 shows `done` is the *worse* contract on
+every axis the owner named — it emits "Task completed successfully." on an unmerged PR (violates criterion
+10 explicitly), destroys the worktree, and makes the task non-retryable, so the outcome the message promises
+(approve → retry → merge) becomes *impossible*. The owner's own steer ("reconsider marking the task `done`
+while the PR is still unmerged") points away from it.
+
+**Decision: Approach A.** It is the simplest path that fully meets criteria 9–12, and it reuses three
+existing, tested mechanisms (the `needs_human` → block shape, the canonical blocked-question delivery, and
+the health-monitor escalation ladder) instead of building anything new.
+
+---
+
+## 29. The single honest message (criterion 11)
+
+The REST plugin cannot cheaply tell *"a required review the owner can add"* (Engineer **can** merge after)
+from *"no merge permission"* (Engineer **never** can) — research §13. So the message must be true in **both**
+worlds. It must therefore drop Path A's unconditional *"I'll merge it"*.
+
+**Canonical text** (built by the shared module, used verbatim as `needed` by both paths):
+
+> PR #N is approved and green, but the host's branch protection won't let me complete the merge — it needs a
+> formal review approval that a "/approve" comment cannot provide. Approve the PR on the host (or adjust its
+> branch protection), then run "engineer retry": I'll re-check and merge it **if the host lets me**. If it
+> still refuses (for example, I don't have merge permission), merge it yourself — the branch and PR are ready.
+
+**Approval-dismissed variant** (reachable only from the merge-failure backstop, when the pre-merge
+thoughts-cleanup push dismissed a formal approval — this nuance exists today and must not be lost):
+
+> PR #N is ready, but my thoughts-cleanup commit dismissed your earlier approval, and the host's branch
+> protection now blocks the merge. Re-approve the PR on the host, then run "engineer retry": I'll re-check
+> and merge it **if the host lets me**. If it still refuses (for example, I don't have merge permission),
+> merge it yourself — the branch and PR are ready.
+
+Honesty check against what retry actually does (research §14, re-verified):
+- *auto-merge path* retry → resumes at `auto-merge` (its own checkpoint) → re-checks → merges if now clean, re-blocks if not. ✔ true.
+- *poller path* retry → resumes at `await-review` → re-parks → back on the poll set → promotes → merges. ✔ true.
+- *no-merge-permission* → both re-block; the message already told the owner to merge it themselves. ✔ true.
+
+---
+
+## 30. Stress test of the chosen plan
+
+| Check | Verdict |
+|---|---|
+| **Plugin opacity** — would Core compile with every plugin deleted? | **Yes.** The new module imports only `schemas/task.js`. Core reads the host-agnostic `PRStatus.merge_state === "blocked"`; only the GitHub plugin knows `mergeable_state`. Step 5 (optional) is entirely inside the plugin, behind the contract. Criterion 6 preserved. |
+| **Isolation** — shared mutable state / cross-task bleed? | **None.** The module is pure functions + constants. No caches, no counters, no module-level state. |
+| **Boundaries** — contracts, not internals? | **Yes.** The poller importing a Core policy module from `orchestrator/pipeline/` is the *established* precedent — it already imports `pr-events.js` (`arbitrate`, `dedupePrEvents`, `findAuthorizedApproval`). No cycle: the new module depends on `schemas/` only. Neither path reaches into the other. |
+| **Reversibility** — what is hard to undo? | Named honestly: **(a)** the `autoMergeNext` route change — one switch case, trivially revertible; **(b)** the new module — purely additive; **(c)** *step 5's `mapMergeState` allowlist is the least reversible in effect* — it changes which host states are allowed to merge. That is why it is **last, isolated, and droppable**. **No schema change, no new `BlockCategory`, no new `PrEvent`, no new config key, no new API call — nothing that locks in a contract a second hosting plugin would inherit.** |
+
+---
+
+## 31. Pre-mortem — it ships with a subtle flaw. What is it?
+
+**F1 — The owner gets two messages (highest probability).** The naive implementation keeps
+`notifyHostBlockedMerge` *and* adds the block, so `deliverBlockedQuestion` and the notify both post a ticket
+comment. **Mitigation:** delete `notifyHostBlockedMerge`; the block's `needed` is the single message. Test
+asserts `notify` is **not** called on the readiness path and that `needed` carries the text (Step 2).
+
+**F2 — The approval-dismissed nuance is silently lost.** Removing the notify would drop the "my cleanup
+commit dismissed your approval" variant, which only `run` knows about — and `autoMergeNext` is *pure*, so it
+cannot see it. **Mitigation:** thread `approval_dismissed` (and `pr_number`) through `result.data` so the
+pure `next` can select the right message. Both variants tested (Step 2).
+
+**F3 — A PR merely *awaiting* its required review gets escalated (the dangerous false positive).** A PR with
+required reviews and no approval yet **also** reports `mergeable_state === "blocked"` — that is the *normal*
+waiting state. Escalating on `blocked` alone would break the highest-traffic path in the system. **Mitigation:
+do not touch the existing gates.** The poller escalates only when an **authorized `/approve` + green** is
+present; `decideReadiness`'s `blocked` branch is reached only once a task has *entered* auto-merge (i.e.
+something already signalled ready). Both gates are preserved verbatim, and a **new regression test** proves a
+blocked PR with **no** `/approve` produces no escalation and no promotion (Step 3).
+
+**F4 — The optional allowlist stalls a genuine merge (criterion 5).** An allowlist means any state not on it
+stops merging. **Mitigation:** Step 5 is last, isolated, droppable, and carries a per-state unit matrix
+(`clean`/`unstable`/`has_hooks`/`behind` → mergeable → still merges). If it is not clean, it is dropped —
+the owner marked it explicitly optional.
+
+**F5 (accepted, not mitigated) — the slow self-unblock re-check cycle.** `awaiting_human` is eligible for the
+8h `evaluate_self_unblock` (only `awaiting_human_decision` is skipped, `health-monitor.ts:250–256`). If the
+agent answers "resolvable", the task goes active → resumes at `auto-merge` → re-checks → re-blocks →
+`last_transition_at` resets → the ladder restarts, so the 48h `failed` escalation may never fire.
+**Accepted, deliberately:** each lap costs one status re-check and no agent rework, **no branch push, no
+rework, no fast loop** — and if the owner *has* approved on the host in the meantime, that lap **merges the
+PR by itself**, which is precisely the "wait and re-check" the original issue asked for. The 4h reminders
+keep firing, so the owner is never in the dark. The alternative — a new `BlockCategory` to force determinism
+— means schema growth plus a change to the shared health monitor, and would misrepresent a merge block as a
+"discretionary decision". **This is also not a new behavior:** it is exactly what the poller's
+`awaiting_human` block does today, which the owner reviewed and did not object to. Documented as a follow-up
+candidate, not smuggled in here.
+
+---
+
+## 32. Ordered implementation
+
+### Step 1 — The shared contract module *(new file)*
+- [ ] Create `src/core/orchestrator/pipeline/host-blocked-merge.ts` — the **one** contract both paths resolve to. Pure; imports only `schemas/task.js`. Exports:
+  - `HOST_BLOCKED_MERGE_CATEGORY = BlockCategories.awaiting_human` — the single lifecycle target.
+  - `hostBlockedMergeNeeded(prNumber: number, approvalDismissed: boolean): string` — the honest message of §29 (both variants). This string is what both paths persist as `needed`.
+  - A file header explaining *why* the contract is blocked-resumable and not `done` (§27.1) — so the next reader cannot "simplify" it back into a completion.
+- [ ] Note in the header that `awaiting_human` ⇒ `need_more_info` ⇒ off the `pr_review_pending` poll set (the structural loop bound) **and** on the health-monitor escalation ladder (the honest `failed` terminal).
+- **Verify:** `pnpm run typecheck` && `pnpm run lint`.
+
+### Step 2 — auto-merge: route the host-blocked merge to the contract *(criteria 9, 10, 11)*
+- [ ] `src/core/orchestrator/pipeline/delivery/auto-merge.ts`: add `case "needs_human_merge":` to `autoMergeNext` (before `default`) returning `{ go: "block", category: HOST_BLOCKED_MERGE_CATEGORY, needed: hostBlockedMergeNeeded(prNumber, approvalDismissed) }`, reading `pr_number` / `approval_dismissed` from `result.data`.
+- [ ] Extend `resolved(...)` so the `needs_human_merge` results carry `pr_number` and `approval_dismissed` in `data` (F2). Keep `outcome: "ok"` — the disposition drives the route (the proven `retry_wait` shape); do **not** switch to `outcome: "needs_human"`, which would hit the generic "merge ambiguity" branch.
+- [ ] **Delete `notifyHostBlockedMerge`** and both of its call sites (readiness :188, failure backstop :370). The block's canonical delivery (`blockTask` → `deliverBlockedQuestion`) is now the single owner-facing message (F1). Keep the `observer.info` logs.
+- [ ] Update the sub-phase header comment (:46–48) — it currently documents "host-blocked → done … we stop, never loop". Replace with the blocked-resumable contract and *why* (`done` would emit a false completion and destroy the worktree). **Leave `merged` and `auto_merge_disabled` on `done`** — those are genuine, honest terminal hand-offs (the owner *configured* auto-merge off; the PR is the deliverable). Criterion 10 is about the *host-blocked* case only; over-correcting them would be scope creep.
+- **Verify:** `pnpm vitest run tests/unit/core/orchestrator/pipeline/delivery/auto-merge.test.ts`.
+- [ ] Update `auto-merge.test.ts`: the four `{go:"done"}` assertions for `needs_human_merge` (lines 100, 212, 284, 331–332) → the block route; retitle the "resolves **terminally**" cases (281, 322, 327). Assert: **no** `notify` from the readiness path, `needed` equals the shared message, and both message variants (plain + approval-dismissed). **Keep green:** `merged`/`auto_merge_disabled` → `done`; `conflicting` → `jump execution` (criterion 7); `merge` → merges (criterion 5); `retry_wait` → `awaiting_pr_review`.
+
+### Step 3 — poller: same contract, same words *(criteria 9, 11)*
+- [ ] `src/core/daemon/pr-event-poller.ts` → `escalateMergeBlocked`: take `category` and `needed` from the shared module (drop the hand-written *"…and I'll merge it"* — the promise the Engineer cannot keep). Keep writing `blocked` directly (the poller is not in the pipeline) and keep its `alert` + `ticket_comment` notifications, now with the honest text.
+- [ ] Keep `sub_phase: "await-review"` — it is where the task genuinely is, and it is what resume reads. The auto-merge path will be stamped `"auto-merge"` by the runner. **This asymmetry is correct and intended:** criterion 9's "same state" is the routing-relevant tuple **(state, reason, category)** + the same message + both resumable + neither terminal + neither reworking. The `sub_phase` differs because the task genuinely *is* at a different point, and both resume routes end in the same place (merge, if the host now allows it — §29).
+- [ ] Do **not** relax the `/approve` + `checks_state === "passing"` gate (F3).
+- **Verify:** `pnpm vitest run tests/unit/core/daemon/pr-event-poller.test.ts`.
+- [ ] Update `pr-event-poller.test.ts` (295–333): message assertion → the shared text; **keep** the `blocked`/`need_more_info`/`awaiting_human` assertions and the "cannot re-form the loop" test. **Add a regression test (F3): a `blocked` PR with NO authorized `/approve` ⇒ no escalation, no promotion, task stays waiting.**
+
+### Step 4 — The coherence regression test *(criterion 12 — the owner's explicit ask)*
+- [ ] New `tests/unit/core/host-blocked-merge-contract.test.ts` — a cross-cutting contract test that drives **both** paths on the **same** `merge_state: "blocked"` status and asserts they land on the **same** contract:
+  - auto-merge: `runAutoMerge` → `autoMergeNext` → `{go:"block", category: awaiting_human, needed: M}`, and `toBlockReason(awaiting_human) === need_more_info`.
+  - poller: `escalateMergeBlocked` writes `blocked` with `{reason: need_more_info, category: awaiting_human, needed: M}`.
+  - **the same `M`** — assert the *identical string*, from the shared module, on both.
+  - Assert **neither** path routes to `execution` and **neither** returns `{go:"done"}` (the two failures this whole issue is about).
+- This is the permanent guard: it fails if anyone re-splits the contract, re-terminalizes the hand-off, or lets the two messages drift.
+- **Verify:** `pnpm test:unit`.
+
+### Step 5 — *(Optional, droppable)* `mapMergeState` denylist → allowlist *(criterion 13)*
+Do **only if steps 1–4 are green and this stays clean.** The owner marked it explicitly not a gate.
+- [ ] `github-hosting.ts` `mapMergeState`: keep `mergeable === null/undefined → unknown` and `mergeable === false → conflicting` (criterion 7) unchanged, then for `mergeable === true` switch to an allowlist:
+  `clean | unstable | has_hooks | behind → mergeable` · `unknown | absent → unknown` (wait — never merge on an unverified state) · **everything else (`blocked`, `draft`, any future state) → `blocked`** (hand off).
+- Rationale: a doomed merge attempt is not free even post-fix — it first pushes a thoughts-cleanup commit, which can *dismiss a formal approval* (`dismiss_stale_reviews`). Never attempting a merge on a state we do not recognize is the fail-safe. `behind` **stays `mergeable`** (today's exact behavior — an out-of-date branch is not a conflict and GitHub merges it when protection allows; changing it is a separate question).
+- [ ] Update the `mapMergeState` doc comment **and** the duplicated prose in `src/cli/bundled/plugin-docs.ts:50` (a known drift hazard — the doc string currently describes the denylist and the `behind` rationale verbatim).
+- [ ] `github-hosting.test.ts`: per-state matrix — `clean`/`unstable`/`has_hooks`/`behind` → `mergeable` (criterion 5), `blocked`/`draft`/unrecognized → `blocked`, absent/`unknown` → `unknown`, `mergeable === false` → `conflicting` (criterion 7).
+- **Verify:** `pnpm vitest run tests/unit/plugins/git-hosting/github-hosting/github-hosting.test.ts`.
+
+### Step 6 — Gates
+- [ ] `pnpm test:all && pnpm run lint && pnpm run typecheck` — all green. A non-zero exit is a failure, never a warning to wave off.
+
+---
+
+## 33. Regression strategy — what guards this permanently
+
+| Guard | Test | Protects |
+|---|---|---|
+| **Coherence** | `host-blocked-merge-contract.test.ts` (new) | Criterion 9/12: both paths → same (state, reason, category) + the *identical* message. Fails if the contract re-splits or the messages drift. |
+| **No false completion** | same file: assert `needs_human_merge` never yields `{go:"done"}` | Criterion 10 — and, transitively, that "Task completed successfully." can never fire on an unmerged PR. |
+| **No rework on a blocked merge** | same file: assert neither path routes to `Phases.execution` | Criterion 1 — the original infinite loop. |
+| **Genuine merge still merges** | `auto-merge.test.ts` merge case + `mapMergeState` matrix | Criterion 5 (the regression most at risk from step 5). |
+| **Genuine conflict still reworks** | `auto-merge.test.ts` `conflicting → jump execution` | Criterion 7 — the new rule must not swallow real conflicts. |
+| **Normal review wait is untouched** | `pr-event-poller.test.ts` new case: blocked + **no** `/approve` ⇒ nothing happens | F3 — the dangerous false positive. |
+| **Loop cannot re-form** | existing `pr-event-poller.test.ts:325` | Criterion 3. |
+| **Honest message** | assert the `needed` text contains no unconditional "I'll merge it" | Criterion 11. |
+
+---
+
+## 34. Decisions — what I chose, what I rejected, what it locks in
+
+| # | Decision | Rejected | Locks in |
+|---|---|---|---|
+| D1 | **Blocked-resumable** is the single contract; both paths write `blocked`/`need_more_info`/`awaiting_human`. | `done`-terminal (Approach C) — it emits "Task completed successfully." on an unmerged PR, destroys the worktree, and forbids the retry its own message promises (§27.1). | One switch case. Trivially reversible. |
+| D2 | **One honest message**, conditional on the host ("I'll merge it *if the host lets me*; otherwise merge it yourself"). | Distinguishing the block reason (Approach B) — GraphQL-only `reviewDecision` / extra API call / identity matching, for a nicer message and nothing else. | Nothing. Approach B stays open as a later enhancement. |
+| D3 | **A shared Core module** owns the category + message; both paths import it. | Duplicating the string in two files (drifts — that is *how* this bug was born), or exporting from `auto-merge.ts` (drags the pipeline's deps into the daemon). | One ~40-line pure file. Purely additive. |
+| D4 | **Delete `notifyHostBlockedMerge`**; the block's canonical delivery is the single message. | Keeping it → two ticket comments per event (F1). | Nothing — `deliverBlockedQuestion` already reaches chat + ticket + dashboard. |
+| D5 | **`awaiting_human`**, not a new `BlockCategory`. | A new category to force the 48h escalation deterministically (F5) — schema growth + a change to the shared health monitor + it would misrepresent a merge block as a "discretionary decision". | The accepted slow re-check cycle (F5) — which is the "wait and re-check" the issue asked for, and is already today's poller behavior. |
+| D6 | **`merged` / `auto_merge_disabled` stay `done`.** | Also de-terminalizing them — they are *genuine* hand-offs (the owner configured auto-merge off; the PR is the deliverable). | Nothing. Criterion 10 is scoped to the host-blocked case. |
+| D7 | **`sub_phase` deliberately differs** ("await-review" vs "auto-merge") — each path names where the task genuinely is, and both resumes end in the same place. | Forcing one string for cosmetic symmetry — it would make the dashboard lie about where the task is parked. | Criterion 9 is met on the routing-relevant tuple + message, which is what "same state" means operationally. |
+| D8 | **Do the allowlist (step 5), last and droppable.** | Skipping it (it is optional) — but a doomed merge first *pushes* a cleanup commit that can dismiss a formal approval, so never attempting an unrecognized state is genuinely safer. `behind` stays `mergeable` (no behavior change). | The riskiest step; isolated and dropped if not clean. |
+
+**Scope declined (recorded, not taken):** research §24's *third* path — a **formally**-approved + green +
+host-blocked PR with **no** `/approve` comment emits no event, so it neither promotes nor escalates; it waits
+with a misleading "waiting for review" reminder. I am **not** closing it here: it is outside the owner's
+stated ask (criteria 9–13 name two paths), it does **not** loop or rework (it waits — mild harm), and closing
+it means escalating on `blocked` from a state where `blocked` is *also* the normal "awaiting required review"
+condition (F3) — a change that risks the highest-traffic path in the system to fix a rare, benign one. It
+deserves its own ticket with its own thought, not a rider on this one.
+
+## 35. Out of scope
+- Issue **#46** (CI non-final / re-running-checks debounce) — the sibling ticket, explicitly excluded.
+- The `behind` → "update the branch" question (§ step 5) — a separate behavior question.
+- The third-path escalation above.

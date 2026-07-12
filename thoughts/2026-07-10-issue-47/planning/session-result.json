@@ -1,28 +1,29 @@
 {
   "status": "ok",
-  "summary": "Plan written: add a first-class merge_state 'blocked' (plugin reads mergeable_state), route it to needs_human_merge in auto-merge (robust backstop) and to an owner escalation in the poller (front line); no doomed merge, no rework, bounded by leaving the poll set. Includes ordered steps + per-part verification and regression tests.",
+  "summary": "Planned the criteria 9-13 reconciliation: one shared Core contract module both host-blocked paths resolve to (blocked-resumable + one honest message), rejecting the done-terminal and distinguish-the-block-reason alternatives; 6 ordered steps with per-step verification and a permanent coherence regression test.",
   "details": {
-    "approach": "Approach A — first-class 'blocked' contract value handled at the two Core merge-readiness decision points; rejected a re-entry counter (Approach B) and promote-through-auto-merge (Approach C).",
-    "files_to_change": [
-      "src/plugins/git-hosting/github-hosting/github-hosting.ts (mapMergeState reads mergeable_state)",
-      "src/schemas/adapters.ts (merge_state enum += 'blocked')",
-      "src/core/orchestrator/pipeline/delivery/auto-merge.ts (decideReadiness + runAutoMerge switch: blocked -> needs_human_merge)",
-      "src/core/daemon/pr-event-poller.ts (resolveApproveDisposition tri-state + escalateMergeBlocked)",
-      "src/cli/bundled/plugin-docs.ts (keep merge-state doc in sync)",
-      "tests: github-hosting.test.ts, auto-merge.test.ts, pr-event-poller.test.ts"
+    "approach": "Approach A — a new pure Core module (src/core/orchestrator/pipeline/host-blocked-merge.ts) owns the single host-blocked hand-off contract (BlockCategories.awaiting_human + one honest message). auto-merge gains a `needs_human_merge` case in autoMergeNext routing to {go:'block', category, needed} and drops notifyHostBlockedMerge; the poller takes its needed/notification text from the same module. No schema change, no new BlockCategory, no new PrEvent, no new API call.",
+    "rejected": [
+      "Approach B (distinguish required-review vs no-merge-permission and branch the message) — needs GraphQL reviewDecision or an extra branch-protection call plus identity matching; buys a nicer message and no lifecycle correctness. The owner offered wording-that-holds as an equal alternative.",
+      "Approach C (make the poller terminal to match auto-merge) — `done` is the worse contract on every axis the owner named."
     ],
+    "two_findings_prior_phases_missed": [
+      "go:'done' is not a neutral hand-off: handleCompletedOutcome (task-scheduler.ts:233-277) destroys the worktree via cleanupWorkspace, makes the task non-retryable (completed is not in RETRYABLE_STATES), and posts the ticket comment 'Task completed successfully.' on an unmerged PR. Criterion 10's 'false completed' is a literal message the engine emits.",
+      "blockTask (orchestrator/index.ts:449-458) ALREADY delivers the block's `needed` to chat + ticket via deliverBlockedQuestion for awaiting_human. So routing auto-merge to `block` while keeping notifyHostBlockedMerge would post two ticket comments for one event — the naive implementation of the chosen contract has this bug baked in. The plan deletes the notify."
+    ],
+    "premortem": [
+      "F1 double owner message (mitigated: delete notifyHostBlockedMerge; the block's needed is the single message)",
+      "F2 approval-dismissed nuance lost (mitigated: thread pr_number + approval_dismissed through result.data so the pure `next` can pick the variant)",
+      "F3 a PR merely awaiting its required review also reports mergeable_state=blocked — escalating on `blocked` alone would break the normal review wait (mitigated: the existing /approve + green gates are preserved verbatim, plus a new regression test that a blocked PR with no /approve does nothing)",
+      "F4 the optional allowlist could stall a genuine merge (mitigated: step 5 is last, isolated, droppable, with a per-state matrix)",
+      "F5 accepted: awaiting_human is self-unblock eligible, so a permanently-blocked task may re-check every ~8h and never reach the 48h `failed` escalation. No rework, no branch push, no fast loop — and a lap merges the PR by itself once the owner approves. Rejected a new BlockCategory (schema growth + shared health-monitor change + it would misrepresent a merge block as a discretionary decision). This is already today's poller behavior."
+    ],
+    "scope_declined": "Research §24's third path (formally-approved + green + host-blocked PR with no /approve comment emits no event, so it waits with a misleading 'waiting for review' reminder). Outside the owner's stated ask, does not loop or rework, and closing it risks the highest-traffic path (F3). Recommended as its own ticket.",
     "verification": {
-      "commands": ["pnpm install", "pnpm run typecheck", "pnpm run lint", "pnpm test:all"],
-      "note": "node_modules not installed in this worktree — pnpm install is Step 0."
+      "gates": "pnpm test:all && pnpm run lint && pnpm run typecheck",
+      "per_step": "targeted vitest runs on auto-merge.test.ts, pr-event-poller.test.ts, the new host-blocked-merge-contract.test.ts, and github-hosting.test.ts",
+      "node_modules": "installed in this worktree — the prior phases' 'run pnpm install first' note is stale"
     },
-    "decisions": [
-      {
-        "category": "scope_expansion",
-        "summary": "Change spans plugin + adapter contract + two Core files + a bundled doc string + three test files, beyond the single 'core' file.",
-        "chosen": "Touch all listed files in one PR to deliver the fix completely (plugin detection + Core policy + doc sync + regression tests).",
-        "reasoning": "The fix is inherently cross-layer (host-truth in the plugin, wait/escalate policy in Core) as the issue itself mandates; splitting it would ship a partial, unsafe change. No broad refactor, dependency, public-API, destructive, or security change is involved.",
-        "details": { "files": 8 }
-      }
-    ]
+    "open_questions": "none — every remaining fork (which contract, distinguish-vs-word, the optional allowlist) was explicitly delegated to design by the owner"
   }
 }

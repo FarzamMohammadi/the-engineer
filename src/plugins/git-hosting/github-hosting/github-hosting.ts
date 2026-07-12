@@ -529,6 +529,15 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
 }
 
 /**
+ * The `mergeable_state` values where GitHub will actually complete the merge. An ALLOWLIST, deliberately:
+ * anything not named here is treated as a state we cannot vouch for and is handed off rather than merged
+ * (see {@link mapMergeState}). `behind` is on the list — an out-of-date branch is not a conflict, and GitHub
+ * merges it when protection does not require up-to-date branches, so excluding it would stall PRs the host
+ * would happily merge.
+ */
+const MERGEABLE_STATES = new Set(["clean", "unstable", "has_hooks", "behind"]);
+
+/**
  * Map GitHub's `mergeable` (`true` / `false` / `null`) and `mergeable_state` string onto the contract's
  * `merge_state`. The order matters:
  *
@@ -536,15 +545,22 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
  *    the seconds after a push). A distinct `unknown`, never folded into `conflicting` — folding it would
  *    treat every freshly-pushed PR as conflicting until the host catches up.
  * 2. `mergeable === false` → `conflicting`: a definitive textual conflict. Routed to rework.
- * 3. `mergeable_state === "blocked"` → `blocked`: mergeable in *shape* (`mergeable === true`) but the host
- *    will not complete the merge — branch protection needs a required review / other gate a `/approve`
- *    comment cannot satisfy. Core waits or hands off; it must never rework (there is nothing to
- *    re-implement). This check must come *before* collapsing `mergeable === true` to `mergeable`, because a
- *    blocked PR reports `mergeable === true` and a naive "true → mergeable" first would mask the block.
- * 4. otherwise → `mergeable`: the host will merge it (`clean`, `unstable`, `has_hooks`, `behind`, and any
- *    other non-`blocked` state where GitHub still merges). `behind` is deliberately NOT treated as blocked
- *    — it is an out-of-date branch, not a textual conflict, and GitHub merges it when protection does not
- *    require up-to-date branches; mapping it to `blocked` would stall PRs the host would merge.
+ * 3. otherwise the PR is mergeable in *shape* (`mergeable === true`), and `mergeable_state` decides whether
+ *    the host will actually complete the merge. This must be consulted BEFORE collapsing `mergeable === true`
+ *    to `mergeable`: a blocked PR still reports `mergeable === true`, so a naive "true → mergeable" would
+ *    mask the block.
+ *    - an allowlisted state ({@link MERGEABLE_STATES}) → `mergeable`: the host will merge it.
+ *    - `unknown` / missing → `unknown`: the host has not resolved the state, so Core waits and re-checks
+ *      rather than merging on an unverified answer.
+ *    - anything else (`blocked`, `draft`, and any state GitHub adds later) → `blocked`: mergeable in shape,
+ *      but the host will not complete the merge — branch protection needs a required review or another gate
+ *      a `/approve` comment cannot satisfy. Core waits or hands off; it must never rework (there is nothing
+ *      to re-implement — the code is fine, only the merge is gated).
+ *
+ * The allowlist is the fail-safe direction. A merge attempt is NOT free: it first pushes a thoughts-cleanup
+ * commit, which can dismiss a formal approval (`dismiss_stale_reviews`) and re-push the branch. So an
+ * unrecognized state hands off (recoverable — the owner merges, or unblocks and retries) rather than
+ * attempting a merge the host may refuse (which is what looped in issue #47).
  */
 function mapMergeState(
   mergeable: boolean | null | undefined,
@@ -556,10 +572,10 @@ function mapMergeState(
   if (mergeable === false) {
     return "conflicting";
   }
-  if (mergeableState === "blocked") {
-    return "blocked";
+  if (mergeableState === null || mergeableState === undefined || mergeableState === "unknown") {
+    return "unknown";
   }
-  return "mergeable";
+  return MERGEABLE_STATES.has(mergeableState) ? "mergeable" : "blocked";
 }
 
 type ChecksState = "passing" | "failing" | "pending" | "none" | "unknown";

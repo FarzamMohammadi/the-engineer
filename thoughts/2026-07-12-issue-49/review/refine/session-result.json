@@ -1,5 +1,7 @@
 {
-  "status": "<ok | needs_human | failed>",
-  "summary": "<one-line summary>",
-  "details": {}
+  "status": "ok",
+  "summary": "Confirmed all 4 self-review findings against the code and fixed each in place: widened the transient allowlist to catch bare status-code shapes ('status code 502', 'Error code: 529', 'HTTP 502') that classified terminal and would have burned the phase — the exact failure mode this issue exists to kill; dropped a redundant regex branch; switched the truncated-stream reject to cli_error; and corrected the cost-attribution doc to name the case where a succeeding sub-phase books $0. Added 5 regression cases covering the previously-untested numeric branch in both directions. All four gates green (lint 0, typecheck 0, 2870 unit, 67 integration).",
+  "details": {
+    "verdict": "ship"
+  }
 }

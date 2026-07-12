@@ -99,12 +99,14 @@ export type ResultEventVerdict =
  * escalate-to-the-owner behavior rather than risking a retry loop that burns money on a deterministic fault.
  * Authentication failures need no special case: they match nothing here, so they fall through to terminal.
  *
- * An HTTP status code only counts when it sits in an error context ("API Error: 429 …", "status 503"). A
- * word boundary alone is not enough — it happily matches the 500 in "processed 500 files", and a false
- * transient is the expensive direction to be wrong in: it retries a deterministic failure three times.
+ * An HTTP status code only counts when it sits in an error context ("API Error: 429 …", "status code 502",
+ * "HTTP 502 …"). A word boundary alone is not enough — it happily matches the 500 in "processed 500 files",
+ * and a false transient is the expensive direction to be wrong in: it retries a deterministic failure three
+ * times. The context word may be followed by an optional "code" ("Error code: 529", "status code 502") — a
+ * fixed non-word window alone cannot span that intervening word, so those shapes read as terminal without it.
  */
 const TRANSIENT_RUN_ERROR =
-  /connection (closed|error|reset)|econnreset|econnrefused|epipe|etimedout|socket hang up|timed out|timeout|rate[ _-]?limit|overloaded|service unavailable|internal server error|server error|network error|\b(error|status)\W{0,2}(429|500|502|503|504|529)\b/i;
+  /connection (closed|error|reset)|econnreset|econnrefused|epipe|etimedout|socket hang up|timed out|timeout|rate[ _-]?limit|overloaded|service unavailable|bad gateway|server error|network error|\b(?:error|status|http)(?:\s+code)?\W{0,2}(?:429|500|502|503|504|529)\b/i;
 
 /** Whether a run-ending error message names a transient/infrastructure failure (see `TRANSIENT_RUN_ERROR`). */
 export function isTransientRunError(message: string): boolean {
@@ -571,9 +573,14 @@ export class ClaudeCodeAgentPlugin extends AgentAdapter {
         if (!parsed.resultEvent) {
           // A clean exit with no result line means the stream was cut off before the CLI could print its
           // result — the same dropped connection, landing a moment earlier. Retryable, not terminal.
+          // `cli_error`, not `internal_error`, for the same reason `failedRunError` uses it: the CLI ran and
+          // its output ended short. That is an infrastructure failure, not a defect in this plugin.
           reject(
             new AdapterMethodError(
-              createAdapterError("internal_error", "No result event found in CLI output", { retryable: true }),
+              createAdapterError("cli_error", "No result event found in CLI output (truncated stream)", {
+                retryable: true,
+                severity: AdapterErrorSeverities.error,
+              }),
             ),
           );
           return;

@@ -428,6 +428,12 @@ describe("isTransientRunError", () => {
     // The real shape Claude's CLI reports a status code in — the code only counts in an error context.
     'API Error: 429 {"type":"error","error":{"type":"rate_limit_error"}}',
     'API Error: 500 {"type":"error","error":{"type":"api_error"}}',
+    // Bare status codes an intervening "code"/"HTTP" word separates from the error context. These are the
+    // shapes the numeric branch previously missed — every case above it either matches a *word* branch
+    // (overloaded, service unavailable) or the tight "API Error: NNN" shape, so nothing covered these.
+    "Request failed with status code 502",
+    "Error code: 529",
+    "HTTP 502 Bad Gateway",
   ])("retries the transient failure: %s", (message) => {
     expect(isTransientRunError(message)).toBe(true);
   });
@@ -437,8 +443,11 @@ describe("isTransientRunError", () => {
     "authentication failed",
     "Agent run rejected: the owner denied the action",
     "Something nobody has seen before",
-    // Word-bounded status codes: prose about counts must never read as a 500.
+    // Word-bounded status codes: prose about counts must never read as a 500. A status code is transient
+    // only in an error context — these guard the widened numeric branch against matching plain counts.
     "processed 500 files",
+    "migrated 502 records",
+    "Wrote 429 lines to output",
   ])("treats as terminal (fail safe — an unknown error escalates rather than looping): %s", (message) => {
     expect(isTransientRunError(message)).toBe(false);
   });

@@ -10,7 +10,7 @@ import {
 import type { PRComment, PRStatus } from "../../../../src/schemas/adapters.js";
 import { type PrEvent, PrEventTypes } from "../../../../src/schemas/git-hosting-events.js";
 import { NotificationKinds } from "../../../../src/schemas/notifications.js";
-import { BlockCategories, BlockReasons, type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
+import { BlockReasons, type BlockedDetails, type ReviewState, TaskStates } from "../../../../src/schemas/task.js";
 import { createMockTask } from "../../../helpers/mock-factories.js";
 import { createTestObserverFacade } from "../../../helpers/test-observer-facade.js";
 import { createTestPeopleDirectory } from "../../../helpers/test-people-directory.js";
@@ -84,6 +84,7 @@ function setup(options: SetupOptions = {}) {
 
   return {
     poller: createPrEventPoller(ctx, notifications),
+    task,
     detectPrEvents,
     getPRStatus,
     requestTransition,
@@ -322,7 +323,6 @@ describe("PrEventPoller", () => {
           needed: hostBlockedMergeNeeded(7, false),
         }),
       );
-      expect(BlockCategories.awaiting_human).toBe(HOST_BLOCKED_MERGE_CATEGORY);
       // Pending event cleared defensively so no stale event re-dispatches the task into the loop.
       expect(updateTaskField).toHaveBeenCalledWith("t1", "pending_pr_event", null);
       // The owner is told, actionably — and with the one honest message, not a promise the Engineer may not
@@ -349,20 +349,34 @@ describe("PrEventPoller", () => {
       expect(requestTransition).toHaveBeenCalledWith(...queuedFor("pr_comments"));
     });
 
-    it("cannot re-form the loop — once escalated, the task leaves the poll set and a later poll does nothing", async () => {
-      // The escalation moves the task off the pr_review_pending set (reason need_more_info). Model that the
-      // daemon's re-query no longer returns it: the second poll has nothing to act on, so it never re-escalates
-      // or re-promotes. This is what bounds the previously-unbounded pr_ready_to_merge re-entry path.
-      const { poller, requestTransition, notify, getBlockedTasksByReason } = setup({
+    it("cannot re-form the loop — the escalation's own write takes the task off the poll set", async () => {
+      // Criterion 3: the previously-unbounded pr_ready_to_merge re-entry path. The bound here is STRUCTURAL,
+      // not a counter — the escalation writes `reason: need_more_info`, and the daemon only ever polls tasks
+      // blocked on `pr_review_pending`. So model that re-query faithfully rather than stubbing an empty list:
+      // the poll set is derived from the reason the poller ACTUALLY wrote. That makes this test prove the
+      // write is the bound, instead of asserting it by fiat — and makes it fail if the escalation is removed,
+      // weakened to a non-terminal reason, or replaced by a promotion.
+      const { poller, task, requestTransition, updateTaskField, getBlockedTasksByReason } = setup({
         events: [approve()],
         prStatus: { merge_state: "blocked" },
       });
-      getBlockedTasksByReason.mockReturnValueOnce([]);
+      const blockWrites = () => updateTaskField.mock.calls.filter((call) => call[1] === "blocked");
+      getBlockedTasksByReason.mockImplementation((reason: string) => {
+        const written = blockWrites().at(-1)?.[2] as BlockedDetails | undefined;
+        // Before any escalation the task sits on the review-poll set; afterwards, wherever its block reason says.
+        return (written?.reason ?? BlockReasons.pr_review_pending) === reason ? [task] : [];
+      });
 
-      await poller.poll();
+      await poller.poll(); // first poll: sees the /approve on a blocked PR and escalates
 
+      expect(blockWrites()).toHaveLength(1);
+      expect(blockWrites()[0]?.[2]).toMatchObject({ reason: BlockReasons.need_more_info });
+
+      await poller.poll(); // second poll: the task is no longer on the pr_review_pending set
+
+      // Escalated exactly once, and never promoted to a merge the host would refuse — the loop cannot re-form.
+      expect(blockWrites()).toHaveLength(1);
       expect(requestTransition).not.toHaveBeenCalled();
-      expect(notify).not.toHaveBeenCalled();
     });
   });
 

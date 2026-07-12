@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { NotificationRouter } from "../../../src/core/daemon/notification-router.js";
 import { createPrEventPoller } from "../../../src/core/daemon/pr-event-poller.js";
 import type { PrEventPollerContext } from "../../../src/core/daemon/types.js";
+import { toBlockReason } from "../../../src/core/orchestrator/index.js";
 import { autoMerge, autoMergeNext } from "../../../src/core/orchestrator/pipeline/delivery/auto-merge.js";
 import {
   HOST_BLOCKED_MERGE_CATEGORY,
@@ -179,10 +180,14 @@ describe("the host-blocked merge contract — both paths, one resolution", () =>
   });
 
   it("the contract category is the one that leaves the review-poll set and stays resumable", () => {
-    // awaiting_human ⇒ need_more_info (not pr_review_pending) ⇒ the task is off the PR-event poll set, so the
-    // promote → doomed-merge → rework loop is structurally impossible; and `blocked` is retryable, so the
-    // owner can unblock the merge on the host and resume.
-    expect(HOST_BLOCKED_MERGE_CATEGORY).toBe(BlockCategories.awaiting_human);
+    // The auto-merge path returns only a CATEGORY; the block *reason* — which decides the daemon poll set the
+    // task lands on — is derived from it by `toBlockReason`. That derivation is the one link in this chain the
+    // poller path does not share (the poller writes `need_more_info` literally), so assert it directly rather
+    // than restate the constant's own definition: if `awaiting_human` ever mapped back to `pr_review_pending`,
+    // the auto-merge path would silently rejoin the PR-event poll set and issue #47's loop would return.
+    expect(toBlockReason(HOST_BLOCKED_MERGE_CATEGORY)).toBe(BlockReasons.need_more_info);
+    expect(toBlockReason(HOST_BLOCKED_MERGE_CATEGORY)).not.toBe(BlockReasons.pr_review_pending);
+    // And `blocked` on that reason is retryable, so the owner can unblock the merge on the host and resume.
     expect(HOST_BLOCKED_MERGE_CATEGORY).not.toBe(BlockCategories.awaiting_pr_review);
   });
 });

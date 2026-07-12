@@ -1,7 +1,0 @@
-{
-  "status": "ok",
-  "summary": "Confirmed both of the lens's test-quality findings — two guards on issue #47's headline loop-bound invariant passed with the code they covered deleted — fixed both in place, mutation-proved they now fail when the loop returns, independently cleared the behavior against all 13 criteria (incl. that the allowlisted 'behind' state cannot loop: a 405 refusal hands off on the same contract), and all gates are green.",
-  "details": {
-    "verdict": "ship"
-  }
-}

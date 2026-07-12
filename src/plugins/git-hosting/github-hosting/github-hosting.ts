@@ -197,7 +197,7 @@ export class GitHubHostingPlugin extends GitHostingAdapter {
 
     const checksState = await getChecksState(this.octokit, owner, repoName, pr.head.sha, this.context.logger);
     const state = mapPRState(pr.state, pr.merged);
-    const mergeState = mapMergeState(pr.mergeable);
+    const mergeState = mapMergeState(pr.mergeable, pr.mergeable_state);
 
     this.context.logger.debug("PR status fetched", {
       repo,
@@ -529,19 +529,53 @@ function mapPRState(state: string, merged: boolean): "open" | "closed" | "merged
 }
 
 /**
- * Map GitHub's tri-state `mergeable` (`true` / `false` / `null`) onto the contract's `merge_state`.
- * `null` (and a missing field) means GitHub has not finished computing mergeability — a distinct
- * `unknown`, never folded into `conflicting`. Folding it would treat every freshly-pushed PR as
- * conflicting until the host catches up.
+ * The `mergeable_state` values where GitHub will actually complete the merge. An ALLOWLIST, deliberately:
+ * anything not named here is treated as a state we cannot vouch for and is handed off rather than merged
+ * (see {@link mapMergeState}). `behind` is on the list — an out-of-date branch is not a conflict, and GitHub
+ * merges it when protection does not require up-to-date branches, so excluding it would stall PRs the host
+ * would happily merge.
  */
-function mapMergeState(mergeable: boolean | null | undefined): "mergeable" | "conflicting" | "unknown" {
-  if (mergeable === true) {
-    return "mergeable";
+const MERGEABLE_STATES = new Set(["clean", "unstable", "has_hooks", "behind"]);
+
+/**
+ * Map GitHub's `mergeable` (`true` / `false` / `null`) and `mergeable_state` string onto the contract's
+ * `merge_state`. The order matters:
+ *
+ * 1. `null` / missing `mergeable` → `unknown`: GitHub has not finished computing mergeability (common in
+ *    the seconds after a push). A distinct `unknown`, never folded into `conflicting` — folding it would
+ *    treat every freshly-pushed PR as conflicting until the host catches up.
+ * 2. `mergeable === false` → `conflicting`: a definitive textual conflict. Routed to rework.
+ * 3. otherwise the PR is mergeable in *shape* (`mergeable === true`), and `mergeable_state` decides whether
+ *    the host will actually complete the merge. This must be consulted BEFORE collapsing `mergeable === true`
+ *    to `mergeable`: a blocked PR still reports `mergeable === true`, so a naive "true → mergeable" would
+ *    mask the block.
+ *    - an allowlisted state ({@link MERGEABLE_STATES}) → `mergeable`: the host will merge it.
+ *    - `unknown` / missing → `unknown`: the host has not resolved the state, so Core waits and re-checks
+ *      rather than merging on an unverified answer.
+ *    - anything else (`blocked`, `draft`, and any state GitHub adds later) → `blocked`: mergeable in shape,
+ *      but the host will not complete the merge — branch protection needs a required review or another gate
+ *      a `/approve` comment cannot satisfy. Core waits or hands off; it must never rework (there is nothing
+ *      to re-implement — the code is fine, only the merge is gated).
+ *
+ * The allowlist is the fail-safe direction. A merge attempt is NOT free: it first pushes a thoughts-cleanup
+ * commit, which can dismiss a formal approval (`dismiss_stale_reviews`) and re-push the branch. So an
+ * unrecognized state hands off (recoverable — the owner merges, or unblocks and retries) rather than
+ * attempting a merge the host may refuse (which is what looped in issue #47).
+ */
+function mapMergeState(
+  mergeable: boolean | null | undefined,
+  mergeableState: string | null | undefined,
+): "mergeable" | "conflicting" | "blocked" | "unknown" {
+  if (mergeable === null || mergeable === undefined) {
+    return "unknown";
   }
   if (mergeable === false) {
     return "conflicting";
   }
-  return "unknown";
+  if (mergeableState === null || mergeableState === undefined || mergeableState === "unknown") {
+    return "unknown";
+  }
+  return MERGEABLE_STATES.has(mergeableState) ? "mergeable" : "blocked";
 }
 
 type ChecksState = "passing" | "failing" | "pending" | "none" | "unknown";

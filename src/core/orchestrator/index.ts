@@ -81,8 +81,15 @@ const SELF_UNBLOCK_TIMEOUT_MS = 300_000; // 5 minutes
  * Collapse the complete {@link BlockCategory} into the coarse {@link BlockReason} the daemon routes
  * on. The waits map one-to-one; an unavailable agent drives retry-policy backoff; every other failure
  * is a generic pipeline failure the owner must look at.
+ *
+ * Exported because this mapping is load-bearing for loop safety, not just an internal detail: a
+ * pipeline block (e.g. delivery's host-blocked merge) chooses only a *category*, and it is this
+ * function that decides which daemon poll set the task lands on. `awaiting_human → need_more_info` is
+ * what keeps a host-blocked merge OFF the `pr_review_pending` PR-event poll set; were it ever to map
+ * to `pr_review_pending`, the promote → doomed-merge → rework loop of issue #47 would silently return.
+ * Exported so that link can be asserted directly instead of assumed.
  */
-function toBlockReason(category: BlockCategory): BlockReason {
+export function toBlockReason(category: BlockCategory): BlockReason {
   switch (category) {
     case BlockCategories.awaiting_pr_review:
       return BlockReasons.pr_review_pending;

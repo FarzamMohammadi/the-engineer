@@ -32,6 +32,9 @@ function createMockOctokit() {
           state: "open",
           draft: true,
           mergeable: true,
+          // GitHub always returns `mergeable_state` alongside a non-null `mergeable`; "clean" is the
+          // host-will-merge answer. The mapping is an allowlist, so this field is load-bearing.
+          mergeable_state: "clean",
           merged: false,
           html_url: "https://github.com/acme/webapp/pull/51",
           head: { sha: "abc123" },
@@ -303,6 +306,53 @@ describe("GitHubHostingPlugin", () => {
       const status = await plugin.getPRStatus("acme/webapp", 51);
       expect(status.merge_state).toBe("conflicting");
     });
+
+    // `mergeable_state` decides whether the host will actually COMPLETE the merge, for a PR that is already
+    // mergeable in shape (`mergeable === true` — branch protection never flips that boolean). The mapping is
+    // an ALLOWLIST: only the states GitHub will merge read as `mergeable`; everything else hands off, so an
+    // unrecognized state can never drive the doomed merge that looped in issue #47.
+    const mergeStateCases: ReadonlyArray<{ state: string | undefined; expected: string; why: string }> = [
+      { state: "clean", expected: "mergeable", why: "the host will merge it — the ordinary happy path" },
+      { state: "unstable", expected: "mergeable", why: "non-required checks are red, but the host still merges" },
+      { state: "has_hooks", expected: "mergeable", why: "merges, with hooks" },
+      {
+        state: "behind",
+        expected: "mergeable",
+        why: "an out-of-date branch is not a conflict; GitHub merges it when protection allows — mapping it to blocked would stall PRs the host would merge",
+      },
+      {
+        state: "blocked",
+        expected: "blocked",
+        why: "branch protection needs a formal review a /approve comment cannot satisfy — the loop in issue #47",
+      },
+      { state: "draft", expected: "blocked", why: "the host refuses to merge a draft — hand off, never rework" },
+      {
+        state: "some_future_state",
+        expected: "blocked",
+        why: "a state we cannot vouch for: hand off (recoverable) rather than attempt a merge the host may refuse",
+      },
+      { state: "unknown", expected: "unknown", why: "the host has not resolved it — wait and re-check" },
+      { state: undefined, expected: "unknown", why: "absent: never merge on an unverified state" },
+    ];
+
+    for (const { state, expected, why } of mergeStateCases) {
+      it(`maps mergeable_state=${state ?? "(absent)"} to merge_state ${expected} — ${why}`, async () => {
+        mockOctokit.pulls.get.mockResolvedValueOnce({
+          data: {
+            number: 51,
+            state: "open",
+            draft: false,
+            mergeable: true,
+            ...(state === undefined ? {} : { mergeable_state: state }),
+            merged: false,
+            html_url: "https://github.com/acme/webapp/pull/51",
+            head: { sha: "abc123" },
+          },
+        });
+        const status = await plugin.getPRStatus("acme/webapp", 51);
+        expect(status.merge_state).toBe(expected);
+      });
+    }
 
     it("reports merged state", async () => {
       mockOctokit.pulls.get.mockResolvedValueOnce({
@@ -685,6 +735,13 @@ describe("derivePrEvents", () => {
   it("reports a merge conflict and withholds readiness", () => {
     const events = derivePrEvents(status({ merge_state: "conflicting" }), approved, []);
     expect(events.map((event) => event.type)).toEqual([PrEventTypes.pr_merge_conflict]);
+  });
+
+  it("treats a blocked PR as neither ready nor conflict — the host will not merge it, so it withholds both", () => {
+    // A PR blocked by branch protection (mergeable in shape, but the host will not complete the merge) must
+    // emit NO pr_ready_to_merge (a doomed merge that re-pushes the branch and loops) and NO pr_merge_conflict
+    // (the code is fine, only the merge is gated — reworking would be wrong). Core hands it off instead.
+    expect(derivePrEvents(status({ merge_state: "blocked" }), approved, [])).toEqual([]);
   });
 
   it("treats unknown mergeability as no conflict — withholds the event while the host computes it", () => {

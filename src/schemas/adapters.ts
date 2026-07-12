@@ -403,10 +403,13 @@ export const PRStatusSchema = z.object({
   number: z.number().int().positive(),
   state: z.enum(["open", "closed", "merged"]),
   draft: z.boolean(),
-  // Tri-state mergeability, mirroring `checks_state` — a host computes mergeability asynchronously, so
+  // Tri-plus-state mergeability, mirroring `checks_state` — a host computes mergeability asynchronously, so
   // "not yet computed" is a real, distinct answer, NOT a conflict. `unknown` must never be read as
   // `conflicting`: a freshly-pushed branch reads `unknown` for a few seconds before the host resolves it.
-  merge_state: z.enum(["mergeable", "conflicting", "unknown"]),
+  // `blocked` = mergeable in *shape* but the host will not complete the merge (branch protection / a
+  // required review). Core waits or hands off to the owner — it must never rework, because the code is fine
+  // and only the *merge* is gated. Distinct from `conflicting` (a textual conflict that DOES rework).
+  merge_state: z.enum(["mergeable", "conflicting", "blocked", "unknown"]),
   // Tri-plus-state CI status. `unknown` means the CI status could NOT be determined — the lookup itself
   // errored (a network blip, dropped connection, or rate-limit), so we genuinely do not know. It is NOT
   // `failing`: Core treats `unknown` as a wait — never rework, never merge — so a transient lookup error

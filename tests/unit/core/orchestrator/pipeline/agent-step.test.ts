@@ -1,9 +1,10 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { AdapterMethodError, createAdapterError } from "../../../../../src/adapters/index.js";
 import { agentStep } from "../../../../../src/core/orchestrator/pipeline/agent-step.js";
 import type { AgentRunResult } from "../../../../../src/schemas/adapters.js";
 import { createMockPipeline, fakeAgent } from "../../../../helpers/test-mock-pipeline.js";
@@ -175,6 +176,79 @@ describe("agentStep", () => {
     const result = await step()(ctx);
 
     expect(result).toMatchObject({ outcome: "failed", category: "agent_failed" });
+  });
+
+  // ── Transient-failure Retry (issue #49) ───────────────────────────────────
+  //
+  // Every test here rejects with a real AdapterMethodError, never a plain Error. `isRetryable`
+  // short-circuits on AdapterMethodError and reads `adapterError.retryable`; a plain Error would instead
+  // fall through to its message heuristic — a path production can never take, since AgentAdapter.run has
+  // already wrapped the plugin's throw. A retry test built on a plain Error passes even if the plugin never
+  // sets `retryable`, proving nothing. The `agent.run` call counts are the mutation-proof assertions.
+  describe("transient failure retry", () => {
+    /** The AdapterMethodError an agent plugin throws for a run the engine reported as failed. */
+    function runError(message: string, retryable: boolean): AdapterMethodError {
+      return new AdapterMethodError(createAdapterError("cli_error", message, { retryable }));
+    }
+
+    const DROPPED_CONNECTION = "Claude CLI run failed: API Error: Connection closed mid-response.";
+
+    it("retries a transient failure and completes the sub-phase normally when the next attempt succeeds", async () => {
+      let attempts = 0;
+      const agent = fakeAgent(() => {
+        attempts += 1;
+        if (attempts === 1) {
+          return Promise.reject(runError(DROPPED_CONNECTION, true));
+        }
+        writeResult({ status: "ok", summary: "second attempt did the work" });
+        return Promise.resolve(AGENT_RESULT);
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      // No burned phase, no no_result, no owner involvement — the retry simply absorbed the blip.
+      expect(result).toEqual({ outcome: "ok", summary: "second attempt did the work" });
+      expect(vi.mocked(agent.run)).toHaveBeenCalledTimes(2);
+    }, 10_000);
+
+    it("does not retry a terminal failure", async () => {
+      const agent = fakeAgent(() => Promise.reject(runError("Invalid API key · Please run /login", false)));
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toMatchObject({ outcome: "failed", category: "agent_unavailable" });
+      expect(vi.mocked(agent.run)).toHaveBeenCalledTimes(1);
+    });
+
+    it("names the real cause when retries are exhausted — never no_result", async () => {
+      const agent = fakeAgent(() => Promise.reject(runError(DROPPED_CONNECTION, true)));
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toMatchObject({ outcome: "failed", category: "agent_unavailable" });
+      const { detail } = result as { detail: string };
+      expect(detail).toContain("Connection closed");
+      expect(detail).not.toContain("session-result.json was not updated");
+      expect(vi.mocked(agent.run)).toHaveBeenCalledTimes(3);
+    }, 15_000);
+
+    it("does not re-run the agent when it errored AFTER writing a valid result", async () => {
+      // resetResultFile runs once, before the retry loop — so a retry here would overwrite the good result
+      // with a fresh template and could turn a passing run into no_result. The work is preferred instead.
+      const agent = fakeAgent(() => {
+        writeResult({ status: "ok", summary: "wrote the result, then the connection dropped" });
+        return Promise.reject(runError(DROPPED_CONNECTION, true));
+      });
+      const { ctx } = createMockPipeline({ agent, worktreePath: dir });
+
+      const result = await step()(ctx);
+
+      expect(result).toEqual({ outcome: "ok", summary: "wrote the result, then the connection dropped" });
+      expect(vi.mocked(agent.run)).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("details validation", () => {

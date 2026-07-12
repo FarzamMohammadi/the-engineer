@@ -107,7 +107,12 @@ async function runStep<TDetails>(options: AgentStepOptions<TDetails>, ctx: Ctx):
   const onActivity = buildActivitySink(agent, span.id, ctx);
 
   try {
-    const run = await runAgent(agent, { prompt, systemPrompt, traceOutputPath, onActivity }, options.stepName, ctx);
+    const run = await runAgent(
+      agent,
+      { prompt, systemPrompt, traceOutputPath, onActivity },
+      { stepName: options.stepName, directory },
+      ctx,
+    );
     const parsed = readResult(directory);
     const spanScope: AgentSpanScope = {
       ctx,
@@ -308,11 +313,17 @@ interface AgentRunOutcome {
   readonly error: unknown;
 }
 
+/** Which step the retry loop is running, and where that step's result file lives. */
+interface AgentStepScope {
+  readonly stepName: string;
+  readonly directory: string;
+}
+
 /** Run the agent with retry/backoff. Returns the run's result on success, or the final error for the caller to recover. */
 async function runAgent(
   agent: AgentAdapter,
   parts: AgentRequestParts,
-  stepName: string,
+  scope: AgentStepScope,
   ctx: Ctx,
 ): Promise<AgentRunOutcome> {
   const request = {
@@ -327,17 +338,28 @@ async function runAgent(
   let lastError: unknown;
   for (let attempt = 0; attempt < MAX_AGENT_RETRIES; attempt += 1) {
     try {
-      return { result: await gatedRun(agent, request, stepName, ctx), error: null };
+      return { result: await gatedRun(agent, request, scope.stepName, ctx), error: null };
     } catch (error) {
       lastError = error;
       const isLastAttempt = attempt === MAX_AGENT_RETRIES - 1;
       if (ctx.signal?.aborted || isLastAttempt || !isRetryable(error)) {
         return { result: null, error };
       }
+      if (hasValidResult(scope.directory)) {
+        // The run errored AFTER doing its job — retrying would destroy the work. `resetResultFile` runs once,
+        // before this loop, so attempt 2 overwrites session-result.json with a fresh template; if it then dies
+        // early, a run that had a perfectly good result fails `no_result`. Hand the error back instead:
+        // `runStep` prefers the written work over the error, which is the policy this guard keeps intact.
+        ctx.observer.info("Agent errored but already wrote a valid result — not retrying", {
+          taskId: ctx.task.id,
+          step: scope.stepName,
+        });
+        return { result: null, error };
+      }
       const delayMs = RETRY_BASE_MS * 2 ** attempt;
       ctx.observer.warn("Agent run failed — retrying", {
         taskId: ctx.task.id,
-        step: stepName,
+        step: scope.stepName,
         attempt: attempt + 1,
         delayMs,
       });
@@ -422,6 +444,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 // ── session-result.json I/O ──────────────────────────────────────────────────
+
+/** Whether the agent has already written a real, usable result — the work the retry loop must not clobber. */
+function hasValidResult(directory: string): boolean {
+  const parsed = readResult(directory);
+  return parsed !== null && parsed !== "invalid";
+}
 
 /** Read and hard-validate the result file. Missing → null; malformed or a stale template → "invalid". */
 function readResult(directory: string): SessionResult | null | "invalid" {

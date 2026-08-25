@@ -1,3 +1,5 @@
+
+
 # The Engineer
 
 [![CI](https://github.com/FarzamMohammadi/the-engineer/actions/workflows/ci.yml/badge.svg)](https://github.com/FarzamMohammadi/the-engineer/actions/workflows/ci.yml)
@@ -193,7 +195,7 @@ pnpm test:all         # All tiers (unit + integration + E2E)
 pnpm run typecheck    # tsc --noEmit (strict)
 pnpm run lint         # Biome + tsc + knip (unused exports) + madge (circular deps)
 pnpm run build        # Production build (tsdown + Vite dashboard)
-npx tsx src/index.ts  # Run CLI in dev mode
+pnpm dev <command>  # Run CLI in dev mode
 ```
 
 CI runs lint, typecheck, and tests on every push and pull request. See [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
